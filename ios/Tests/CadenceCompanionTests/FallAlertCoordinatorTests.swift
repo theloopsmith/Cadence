@@ -24,10 +24,17 @@ final class FallAlertCoordinatorTests: XCTestCase {
         try await super.tearDown()
     }
 
-    private func makeCoordinator() -> FallAlertCoordinator {
+    private func makeCoordinator(
+        checkInWindow: TimeInterval = FallAlertCoordinator.checkInWindowSec,
+        locationProvider: LocationProvider = LiveLocationProvider.shared,
+        speechListener: SpeechCheckInListenerProtocol = LiveSpeechCheckInListener.shared
+    ) -> FallAlertCoordinator {
         FallAlertCoordinator(
             detector: FallDetector(), audio: .shared,
-            screen: screen, dialer: dialer, sync: sync
+            screen: screen, dialer: dialer, sync: sync,
+            locationProvider: locationProvider,
+            speechListener: speechListener,
+            checkInWindow: checkInWindow
         )
     }
 
@@ -262,5 +269,59 @@ final class FallAlertCoordinatorTests: XCTestCase {
         c.escalate()
         XCTAssertFalse(c.isDispatched)
         XCTAssertFalse(AudioCueEngine.shared.isSirenActive)
+    }
+
+    /// Spoken "I am fine" streamed into the speech listener immediately resolves
+    /// the check-in and cancels the alert without requiring a manual button tap.
+    func testSpeechListenerUtteranceCancelsCheckIn() {
+        let mockListener = MockSpeechCheckInListener()
+        let c = makeCoordinator(speechListener: mockListener)
+        c.beginCheckIn(eventUUID: "fall-speech-cancel")
+        XCTAssertTrue(c.isAlertVisible)
+        XCTAssertTrue(mockListener.isListening)
+
+        mockListener.simulateUtterance("I am fine, just dropped something")
+        XCTAssertFalse(c.isAlertVisible)
+        XCTAssertEqual(c.lastOutcome, "canceled_false_alarm")
+        XCTAssertFalse(AudioCueEngine.shared.isSirenActive)
+    }
+
+    /// Spoken distress keyword ("help, I fell") streamed into the speech listener
+    /// triggers early escalation, bystander siren, and dispatch queue.
+    func testSpeechListenerDistressKeywordEscalatesEarly() {
+        let mockListener = MockSpeechCheckInListener()
+        let c = makeCoordinator(speechListener: mockListener)
+        c.beginCheckIn(eventUUID: "fall-speech-distress")
+        XCTAssertTrue(c.isAlertVisible)
+        XCTAssertTrue(mockListener.isListening)
+
+        mockListener.simulateUtterance("help me please", peakDbfs: -18.0)
+        XCTAssertTrue(c.isDispatched)
+        XCTAssertEqual(c.lastOutcome, "confirmed_waiting_dispatch")
+        XCTAssertTrue(AudioCueEngine.shared.isSirenActive)
+        XCTAssertEqual(sync.pendingCount(), 1)
+    }
+
+    /// GPS coordinates from the LocationProvider are automatically attached to
+    /// the queued fall event payload when escalated.
+    func testLocationProviderCoordinatesAreIncludedInEscalation() {
+        let mockLocation = MockLocationProvider(
+            currentLocation: LocationCoordinate(
+                latitude: 37.7749,
+                longitude: -122.4194,
+                horizontalAccuracyM: 4.5
+            )
+        )
+        let c = makeCoordinator(locationProvider: mockLocation)
+        c.beginCheckIn(eventUUID: "fall-location-gps")
+        c.escalate()
+
+        XCTAssertTrue(c.isDispatched)
+        let next = sync.peekNext()
+        XCTAssertNotNil(next)
+        let payload = next!.payloadJSON
+        XCTAssertTrue(payload.contains("\"latitude\":37.7749") || payload.contains("37.7749"))
+        XCTAssertTrue(payload.contains("\"longitude\":-122.4194") || payload.contains("-122.4194"))
+        XCTAssertTrue(payload.contains("4.5"))
     }
 }

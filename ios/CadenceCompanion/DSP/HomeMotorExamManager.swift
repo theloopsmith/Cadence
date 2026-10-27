@@ -109,6 +109,7 @@ public final class HomeMotorExamManager: ObservableObject {
     private var submitter: ExamSubmitting
     private let audio: AudioCueEngine
     private let sync: EventSyncManager
+    public let voiceMonitor: VoiceMonitor
 
     /// Seconds each prompt is given before the demo advances itself.
     public var stepPauseSec: Double = 1.0
@@ -116,11 +117,13 @@ public final class HomeMotorExamManager: ObservableObject {
     public init(
         submitter: ExamSubmitting? = nil,
         audio: AudioCueEngine = .shared,
-        sync: EventSyncManager = .shared
+        sync: EventSyncManager = .shared,
+        voiceMonitor: VoiceMonitor = .shared
     ) {
         self.submitter = submitter ?? URLSessionExamSubmitter(baseURL: "http://localhost:8000")
         self.audio = audio
         self.sync = sync
+        self.voiceMonitor = voiceMonitor
     }
 
     public var isRunning: Bool {
@@ -148,6 +151,7 @@ public final class HomeMotorExamManager: ObservableObject {
         currentStep = .task1PromptedVoice
         lastResult = nil
         lastResultSummary = nil
+        voiceMonitor.startVowelPhonationRecording()
         audio.speakPrompt(
             "Step 1: Take a deep breath and say Ahhh steadily for 5 seconds, then read today's sentence.",
             priority: 2
@@ -156,6 +160,11 @@ public final class HomeMotorExamManager: ObservableObject {
 
     public func advanceToHandwriting() {
         currentStep = .task2PromptedHandwriting
+        let (meanDbfs, stabilityDb) = voiceMonitor.stopVowelPhonationRecording()
+        if stabilityDb > 0.0 {
+            measurements.voiceMeanDbfs = meanDbfs
+            measurements.voiceStabilityDb = stabilityDb
+        }
         audio.speakPrompt(
             "Step 2: Write the test sentence on your pad, then look down at the line.",
             priority: 2

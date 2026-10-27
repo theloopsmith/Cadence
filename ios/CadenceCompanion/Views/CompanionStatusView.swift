@@ -187,6 +187,7 @@ public struct CompanionStatusView: View {
         }
         .onAppear {
             AudioCueEngine.shared.configureLaunchAudioSession()
+            LiveLocationProvider.shared.requestAuthorization()
         }
     }
 

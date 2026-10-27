@@ -179,6 +179,11 @@ public final class EventSyncManager {
         }
     }
 
+    /// Peeks at the next pending event without marking it synced.
+    public func peekNext(now: Date = Date()) -> PendingEvent? {
+        return dueEvents(now: now).first
+    }
+
     /// Returns queued events whose backoff has elapsed, oldest first.
     public func dueEvents(now: Date = Date()) -> [PendingEvent] {
         dbQueue.sync {

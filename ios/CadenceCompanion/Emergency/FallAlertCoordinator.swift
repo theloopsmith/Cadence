@@ -133,6 +133,8 @@ public final class FallAlertCoordinator: ObservableObject {
     private let screen: ScreenController
     private let dialer: PhoneDialer
     private let sync: EventSyncManager
+    private let locationProvider: LocationProvider
+    public let speechListener: SpeechCheckInListenerProtocol
     private let checkInWindow: TimeInterval
     private var checkInTask: Task<Void, Never>?
 
@@ -142,12 +144,34 @@ public final class FallAlertCoordinator: ObservableObject {
         screen: ScreenController? = nil,
         dialer: PhoneDialer? = nil,
         sync: EventSyncManager = .shared,
+        locationProvider: LocationProvider? = nil,
+        speechListener: SpeechCheckInListenerProtocol? = nil,
         checkInWindow: TimeInterval = FallAlertCoordinator.checkInWindowSec
     ) {
         self.detector = detector
         self.audio = audio
         self.sync = sync
         self.checkInWindow = checkInWindow
+
+        let isRunningInTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
+
+        if let loc = locationProvider {
+            self.locationProvider = loc
+        } else if isRunningInTest {
+            self.locationProvider = MockLocationProvider()
+        } else {
+            self.locationProvider = LiveLocationProvider.shared
+        }
+
+        if let speech = speechListener {
+            self.speechListener = speech
+        } else if isRunningInTest {
+            self.speechListener = MockSpeechCheckInListener()
+        } else {
+            self.speechListener = LiveSpeechCheckInListener.shared
+        }
+
         #if canImport(UIKit)
         self.screen = screen ?? UIKitScreenController()
         self.dialer = dialer ?? UIKitPhoneDialer()
@@ -186,29 +210,50 @@ public final class FallAlertCoordinator: ObservableObject {
             eventUUID: eventUUID,
             deadline: now.addingTimeInterval(checkInWindow)
         )
+        // Request fresh location as soon as impact is confirmed
+        locationProvider.requestFreshLocation()
+
         // The screen comes up immediately, bright and awake, so a wearer on the
         // floor can find the cancel button without hunting for the phone.
         screen.engageEmergencyBrightness()
         screen.setIdleTimerDisabled(true)
+
+        speechListener.startListening(
+            onTranscriptUpdate: { _, _ in },
+            onEarlyResolution: { [weak self] earlyOutcome in
+                guard let self = self else { return }
+                if earlyOutcome == "canceled_false_alarm" {
+                    let (transcript, _) = self.speechListener.stopListening()
+                    self.cancelByUser(reason: "canceled_false_alarm", transcript: transcript)
+                } else {
+                    _ = self.speechListener.stopListening()
+                    self.escalate(status: earlyOutcome)
+                }
+            }
+        )
 
         let window = checkInWindow
         checkInTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(window * 1_000_000_000))
             guard !Task.isCancelled, let self,
                   case let .checkIn(active, _) = self.phase, active == eventUUID else { return }
-            self.resolveSilentTimeout()
+            let (transcript, maxDbfs) = self.speechListener.stopListening()
+            self.resolveSilentTimeout(
+                transcript: transcript.isEmpty ? nil : transcript,
+                maxVocalLevelDbfs: maxDbfs
+            )
         }
     }
 
     /// The window closed with no transcript and no voice.
-    private func resolveSilentTimeout() {
+    private func resolveSilentTimeout(transcript: String? = nil, maxVocalLevelDbfs: Double = -160.0) {
         // Wear state and pre-impact metrics are not plumbed into the
         // coordinator yet, so the device is treated as worn and silence always
         // escalates, which is the specified default while unworn-drop
         // suppression is uncalibrated.
         resolveFromSpeech(
-            transcript: nil,
-            maxVocalLevelDbfs: -160.0,
+            transcript: transcript,
+            maxVocalLevelDbfs: maxVocalLevelDbfs,
             hardwareWearStateWorn: true,
             preImpactWearRmsG: 0.0,
             preImpactRespPower: 0.0,
@@ -233,6 +278,15 @@ public final class FallAlertCoordinator: ObservableObject {
         lastOutcome = status
         audio.activateBystanderSiren()
 
+        var resolvedLat = latitude
+        var resolvedLon = longitude
+        var resolvedAcc = horizontalAccuracyM
+        if resolvedLat == nil, let loc = locationProvider.currentLocation {
+            resolvedLat = loc.latitude
+            resolvedLon = loc.longitude
+            resolvedAcc = loc.horizontalAccuracyM
+        }
+
         var payload: [String: Any] = [
             "event_uuid": uuid,
             "timestamp_utc": ISO8601DateFormatter().string(from: Date()),
@@ -242,11 +296,11 @@ public final class FallAlertCoordinator: ObservableObject {
             "status": status,
             "local_siren_activated": true,
         ]
-        if let lat = latitude, let lon = longitude {
+        if let lat = resolvedLat, let lon = resolvedLon {
             payload["latitude"] = lat
             payload["longitude"] = lon
         }
-        if let acc = horizontalAccuracyM { payload["horizontal_accuracy_m"] = acc }
+        if let acc = resolvedAcc { payload["horizontal_accuracy_m"] = acc }
         sync.saveLocalImmediate(
             eventUUID: uuid, endpoint: "/api/v1/events/fall", payload: payload
         )
@@ -329,6 +383,7 @@ public final class FallAlertCoordinator: ObservableObject {
     private func standDown(outcome: String) {
         checkInTask?.cancel()
         checkInTask = nil
+        _ = speechListener.stopListening()
         phase = .idle
         lastOutcome = outcome
         audio.deactivateBystanderSiren()

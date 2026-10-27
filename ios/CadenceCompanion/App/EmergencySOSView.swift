@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Full-screen high-contrast SOS beacon with one-tap caregiver / emergency

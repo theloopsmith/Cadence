@@ -222,4 +222,25 @@ final class HomeMotorExamTests: XCTestCase {
         XCTAssertEqual(mgr.currentStep, .completed)
         XCTAssertTrue(summary.contains("76.4"), "summary should carry the composite: \(summary)")
     }
+
+    /// Task 1 vowel phonation recording via VoiceMonitor populates voice measurements
+    /// upon advancing to Task 2 handwriting.
+    func testVoiceMonitorPhonationRecordingPopulatesTask1Measurements() {
+        let voiceMonitor = VoiceMonitor()
+        let mgr = HomeMotorExamManager(submitter: StubExamSubmitter(result: scoredResult), audio: .shared, sync: sync, voiceMonitor: voiceMonitor)
+
+        mgr.startExam()
+        XCTAssertEqual(mgr.currentStep, .task1PromptedVoice)
+
+        // Feed steady sustained vowel samples
+        voiceMonitor.updateSampleLevel(dbfs: -22.0)
+        voiceMonitor.updateSampleLevel(dbfs: -23.0)
+        voiceMonitor.updateSampleLevel(dbfs: -21.0)
+        voiceMonitor.updateSampleLevel(dbfs: -22.0)
+
+        mgr.advanceToHandwriting()
+        XCTAssertEqual(mgr.currentStep, .task2PromptedHandwriting)
+        XCTAssertEqual(mgr.measurements.voiceMeanDbfs, -22.0, accuracy: 0.01)
+        XCTAssertEqual(mgr.measurements.voiceStabilityDb, sqrt(0.5), accuracy: 0.01)
+    }
 }
