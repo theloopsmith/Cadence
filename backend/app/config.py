@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     secondary_escalation_delay_sec: float = 90.0
     retry_interval_sec: float = 60.0
     max_retry_attempts: int = 15
+    # Hard wall-clock cap on caregiver call-out, measured from dispatch. The
+    # 90s secondary delay is inside this window, so the loop cannot overrun it.
+    retry_window_sec: float = 900.0
 
     # Safety Calibration Gate (Disabled by default until Day-2 supine-vs-table verification)
     enable_unworn_drop_suppression: bool = False

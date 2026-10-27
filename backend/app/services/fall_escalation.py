@@ -171,8 +171,17 @@ class FallEscalationManager:
 
         secondary_phone = settings.caregiver_secondary_phone.strip()
         if secondary_phone:
-            role = "secondary"
-            target_phone = secondary_phone
+            # Alternate secondary / primary across retries so a caregiver who
+            # was briefly unreachable on the first pass is tried again rather
+            # than being dropped for the rest of the 15-minute window. The
+            # first retry always goes to the secondary contact, as the spec's
+            # "escalate to secondary at T+90s" rule requires.
+            if retry_count % 2 == 1:
+                role = "secondary"
+                target_phone = secondary_phone
+            else:
+                role = "primary"
+                target_phone = settings.caregiver_primary_phone or "+15550001111"
         else:
             role = "primary"
             target_phone = settings.caregiver_primary_phone or "+15550001111"
@@ -211,23 +220,42 @@ class FallEscalationManager:
         event_uuid: str,
         digits: str,
     ) -> Dict[str, Any]:
-        """Handles caregiver pressing '1' on Twilio <Gather> webhook."""
-        if digits.strip() == "1":
-            now_iso = datetime.now(timezone.utc).isoformat()
-            await execute_write(
-                """
-                UPDATE caregiver_alerts
-                SET delivery_status = 'acknowledged_by_caregiver',
-                    acknowledged_at_utc = ?
-                WHERE fall_event_uuid = ?
-                """,
-                (now_iso, event_uuid),
-            )
-            task = self._active_tasks.pop(event_uuid, None)
-            if task:
-                task.cancel()
-            return {"acknowledged": True, "event_uuid": event_uuid}
-        return {"acknowledged": False, "event_uuid": event_uuid}
+        """
+        Handles a caregiver pressing '1' on the Twilio <Gather> webhook.
+
+        The webhook is public (authenticated only by X-Twilio-Signature), so an
+        event_uuid that does not name a real fall is never reported as
+        acknowledged: a forged or stale callback must not look like a caregiver
+        responded.
+        """
+        if digits.strip() != "1":
+            return {"acknowledged": False, "event_uuid": event_uuid}
+
+        fall_row = await fetch_one(
+            "SELECT event_uuid FROM fall_events WHERE event_uuid = ?", (event_uuid,)
+        )
+        if not fall_row:
+            return {
+                "acknowledged": False,
+                "event_uuid": event_uuid,
+                "reason": "unknown_event",
+            }
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await execute_write(
+            """
+            UPDATE caregiver_alerts
+            SET delivery_status = 'acknowledged_by_caregiver',
+                acknowledged_at_utc = ?
+            WHERE fall_event_uuid = ?
+              AND delivery_status != 'canceled_by_user'
+            """,
+            (now_iso, event_uuid),
+        )
+        task = self._active_tasks.pop(event_uuid, None)
+        if task:
+            task.cancel()
+        return {"acknowledged": True, "event_uuid": event_uuid}
 
     async def handle_status_webhook(
         self,
@@ -328,6 +356,18 @@ class FallEscalationManager:
             "all_clear_sms_sent": all_clear_sent,
         }
 
+    async def _is_resolved(self, event_uuid: str) -> bool:
+        """True once any contact acknowledged the alert or the wearer canceled it."""
+        resolved = await fetch_one(
+            """
+            SELECT id FROM caregiver_alerts
+            WHERE fall_event_uuid = ?
+              AND delivery_status IN ('acknowledged_by_caregiver', 'canceled_by_user')
+            """,
+            (event_uuid,),
+        )
+        return resolved is not None
+
     async def _run_escalation_loop(
         self,
         patient_id: str,
@@ -335,30 +375,43 @@ class FallEscalationManager:
     ) -> None:
         """
         Waits 90s for Primary keypress '1'; if unacknowledged, escalates to Secondary
-        (or retries Primary) and repeats every 60s up to 15 attempts (15m cap).
-        After 15m exhaustion, marks 'exhausted_15m' while local iPhone speaker siren persists.
+        (or retries Primary) and repeats every 60s until the alert is resolved.
+
+        The loop is bounded by RETRY_WINDOW_SEC of wall-clock time measured from
+        the moment of dispatch, not by a raw attempt count: the 90s secondary
+        delay is part of the 15-minute window, so counting 15 separate 60s
+        attempts after it would run the window ~90s long. MAX_RETRY_ATTEMPTS
+        remains a hard ceiling so a misconfigured interval cannot spin.
+
+        On exhaustion the backend stops calling out and marks 'exhausted_15m';
+        the local iPhone .speaker siren and SOS beacon keep running until a
+        human cancels on the device.
         """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + settings.retry_window_sec
         try:
             await asyncio.sleep(settings.secondary_escalation_delay_sec)
-            for attempt in range(1, settings.max_retry_attempts + 1):
-                resolved = await fetch_one(
-                    """
-                    SELECT id FROM caregiver_alerts
-                    WHERE fall_event_uuid = ?
-                      AND delivery_status IN ('acknowledged_by_caregiver', 'canceled_by_user')
-                    """,
-                    (payload.event_uuid,),
-                )
-                if resolved:
+
+            attempt = 0
+            while attempt < settings.max_retry_attempts and loop.time() < deadline:
+                if await self._is_resolved(payload.event_uuid):
                     return
+                attempt += 1
                 await self.escalate_to_secondary_or_retry_primary(
                     patient_id=patient_id,
                     event_uuid=payload.event_uuid,
                     retry_count=attempt,
                 )
-                await asyncio.sleep(settings.retry_interval_sec)
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+                await asyncio.sleep(min(settings.retry_interval_sec, remaining))
 
-            # 15m cap reached: mark exhausted_15m; local iPhone speaker siren continues
+            # A caregiver may answer during the final interval, so re-check
+            # before declaring the window exhausted.
+            if await self._is_resolved(payload.event_uuid):
+                return
+
             await execute_write(
                 """
                 UPDATE caregiver_alerts

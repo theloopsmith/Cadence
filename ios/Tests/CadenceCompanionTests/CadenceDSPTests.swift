@@ -124,3 +124,122 @@ final class CadenceDSPTests: XCTestCase {
         XCTAssertEqual(sigma, sqrt(0.5), accuracy: 1e-6)
     }
 }
+
+// MARK: - Transcript matching regressions (code review, Oct 26)
+
+final class FallTranscriptMatchingTests: XCTestCase {
+    private func outcome(_ transcript: String) -> String {
+        let detector = FallDetector()
+        return detector.evaluateCheckInOutcome(
+            transcript: transcript,
+            maxVocalLevelDbfs: -50.0,   // silent: isolates transcript logic
+            hardwareWearStateWorn: true,
+            preImpactWearRmsG: 0.08,
+            preImpactRespPower: 2.0e-5,
+            preImpactPitchDeg: 5.0
+        )
+    }
+
+    /// "no" must match as a whole word. Matching it as a bare substring made
+    /// "now", "know" and "nothing" escalate, so an alert could not be
+    /// cancelled by the most natural phrasings a wearer actually uses.
+    func testShortNegationKeywordDoesNotMatchInsideOtherWords() {
+        XCTAssertEqual(outcome("I'm fine now"), "canceled_false_alarm")
+        XCTAssertEqual(outcome("I know I'm okay"), "canceled_false_alarm")
+        XCTAssertEqual(outcome("nothing is wrong, I'm fine"), "canceled_false_alarm")
+        XCTAssertEqual(outcome("I'm okay, no need to call anyone"), "confirmed_waiting_dispatch")
+        AudioCueEngine.shared.deactivateBystanderSiren()
+    }
+
+    /// Inflected distress words must still escalate: "my knee hurts" is exactly
+    /// the kind of utterance that must never be read as a cancellation, and
+    /// whole-word matching alone would have missed it.
+    func testInflectedDistressWordsStillEscalate() {
+        XCTAssertEqual(outcome("my knee hurts"), "confirmed_waiting_dispatch")
+        XCTAssertEqual(outcome("my hip is hurting"), "confirmed_waiting_dispatch")
+        XCTAssertEqual(outcome("I have fallen"), "confirmed_waiting_dispatch")
+        XCTAssertEqual(outcome("it pains me to move"), "confirmed_waiting_dispatch")
+        AudioCueEngine.shared.deactivateBystanderSiren()
+    }
+
+    /// Inflection matching must not become a loose prefix match: unrelated
+    /// words that merely start with a keyword are not distress signals.
+    func testInflectionMatchingDoesNotFireOnUnrelatedWords() {
+        // "helping", "nos" etc. are inflections and may fire; these are words
+        // that share a prefix but are not inflections of the keyword.
+        XCTAssertEqual(outcome("I'm fine, the helmet took it"), "canceled_false_alarm")
+        XCTAssertEqual(outcome("I'm okay, nothing painted on it"), "canceled_false_alarm")
+        AudioCueEngine.shared.deactivateBystanderSiren()
+    }
+
+    /// A standalone "no" is still a negation and must escalate.
+    func testStandaloneNegationStillEscalates() {
+        XCTAssertEqual(outcome("no"), "confirmed_waiting_dispatch")
+        XCTAssertEqual(outcome("No. I'm okay"), "confirmed_waiting_dispatch")
+        XCTAssertEqual(outcome("I'm not okay"), "confirmed_waiting_dispatch")
+        XCTAssertEqual(outcome("I'm okay but my knee hurts"), "confirmed_waiting_dispatch")
+        AudioCueEngine.shared.deactivateBystanderSiren()
+    }
+
+    /// Apostrophes survive normalization, including the typographic apostrophe
+    /// that SFSpeechRecognizer emits, so contracted phrases still match.
+    func testContractedPhrasesMatchWithEitherApostrophe() {
+        XCTAssertEqual(outcome("I'm okay"), "canceled_false_alarm")
+        XCTAssertEqual(outcome("I\u{2019}m okay"), "canceled_false_alarm")
+        XCTAssertEqual(outcome("don't call anyone"), "canceled_false_alarm")
+        XCTAssertEqual(outcome("I can't get up"), "confirmed_waiting_dispatch")
+        XCTAssertEqual(outcome("I can\u{2019}t get up"), "confirmed_waiting_dispatch")
+        XCTAssertEqual(outcome("I cannot get up"), "confirmed_waiting_dispatch")
+        AudioCueEngine.shared.deactivateBystanderSiren()
+    }
+
+    /// Bare "okay" must never cancel: that is the rule the whole phrase list exists for.
+    func testBareOkayNeverCancels() {
+        XCTAssertEqual(outcome("okay"), "confirmed_waiting_dispatch")
+        XCTAssertEqual(outcome("okay okay okay"), "confirmed_waiting_dispatch")
+        AudioCueEngine.shared.deactivateBystanderSiren()
+    }
+
+    /// A groan above -28 dBFS escalates even with no words and no wear signal.
+    func testGroanOverridesSilenceAndWearState() {
+        let detector = FallDetector()
+        let res = detector.evaluateCheckInOutcome(
+            transcript: nil,
+            maxVocalLevelDbfs: -20.0,
+            hardwareWearStateWorn: false,
+            preImpactWearRmsG: 0.001,
+            preImpactRespPower: 0.0,
+            preImpactPitchDeg: 0.0
+        )
+        XCTAssertEqual(res, "confirmed_waiting_dispatch")
+        AudioCueEngine.shared.deactivateBystanderSiren()
+    }
+
+    /// Suppression stays off by default, so a silent unworn drop still escalates
+    /// until the Day-2 supine-vs-table calibration enables the gate.
+    func testUnwornDropSuppressionIsOffByDefault() {
+        let detector = FallDetector()
+        XCTAssertFalse(detector.enableUnwornDropSuppression)
+        let res = detector.evaluateCheckInOutcome(
+            transcript: nil,
+            maxVocalLevelDbfs: -60.0,
+            hardwareWearStateWorn: false,
+            preImpactWearRmsG: 0.001,
+            preImpactRespPower: 0.0,
+            preImpactPitchDeg: 0.0
+        )
+        XCTAssertEqual(res, "confirmed_waiting_dispatch")
+
+        detector.enableUnwornDropSuppression = true
+        let suppressed = detector.evaluateCheckInOutcome(
+            transcript: nil,
+            maxVocalLevelDbfs: -60.0,
+            hardwareWearStateWorn: false,
+            preImpactWearRmsG: 0.001,
+            preImpactRespPower: 0.0,
+            preImpactPitchDeg: 0.0
+        )
+        XCTAssertEqual(suppressed, "suppressed_unworn_drop")
+        AudioCueEngine.shared.deactivateBystanderSiren()
+    }
+}

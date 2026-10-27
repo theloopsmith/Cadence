@@ -240,10 +240,21 @@ def build_24h_diary_timeline(
 
     total_b = max(1, len(buckets))
     # Compute ON vs. OFF Motor Exam comparison delta if exams exist in both states
+    # Prefer a true OFF exam as the comparison baseline. A WEARING_OFF exam is
+    # only a partial trough, so using the most recent one of either kind would
+    # let a late wearing-off reading mask a much worse morning OFF baseline and
+    # understate the patient's real medication response.
     on_exams = [ex for ex in exam_rows if ex.get("medication_state_label") == "ON"]
-    off_exams = [ex for ex in exam_rows if ex.get("medication_state_label") in {"OFF", "WEARING_OFF"}]
-    exam_delta: Optional[Dict[str, float]] = None
+    strict_off_exams = [
+        ex for ex in exam_rows if ex.get("medication_state_label") == "OFF"
+    ]
+    wearing_off_exams = [
+        ex for ex in exam_rows if ex.get("medication_state_label") == "WEARING_OFF"
+    ]
+    off_exams = strict_off_exams or wearing_off_exams
+    exam_delta: Optional[Dict[str, Any]] = None
     if on_exams and off_exams:
+        # Rows arrive newest-first; within a kind, compare the most recent.
         on_latest = on_exams[0]
         off_latest = off_exams[0]
         exam_delta = {
@@ -262,6 +273,9 @@ def build_24h_diary_timeline(
                 float(on_latest["gait_score"]) - float(off_latest["gait_score"]), 1
             ),
         }
+        exam_delta["off_baseline_state"] = str(
+            off_latest.get("medication_state_label", "OFF")
+        )
 
     return {
         "buckets": buckets,

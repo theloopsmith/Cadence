@@ -35,9 +35,51 @@ public final class FallDetector {
         "hurt",
         "fell",
         "can't get up",
+        "cannot get up",
         "pain",
         "emergency"
     ]
+
+    /// Normalizes a transcript for keyword matching: lowercases, folds the
+    /// typographic apostrophe that `SFSpeechRecognizer` emits onto the ASCII
+    /// one the keyword lists use, and reduces every other non-letter to a
+    /// single space so matching can be done on whole words.
+    public static func normalizeTranscript(_ raw: String) -> String {
+        let lowered = raw.lowercased()
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "\u{02BC}", with: "'")
+        let collapsed = lowered.map { ch -> Character in
+            (ch.isLetter || ch == "'") ? ch : " "
+        }
+        return " " + String(collapsed).split(separator: " ").joined(separator: " ") + " "
+    }
+
+    /// Whole-word containment test.
+    ///
+    /// A bare `contains` is wrong for short keywords: "no" occurs inside
+    /// "now", "know" and "nothing", so "I'm fine now" and "I know I'm okay"
+    /// were both escalating as if the wearer had said "no". That fails safe
+    /// but makes the spoken cancel unusable in practice, which pushes people
+    /// toward ignoring the prompt entirely.
+    public static func containsPhrase(_ haystack: String, _ phrase: String) -> Bool {
+        let padded = " " + phrase.lowercased() + " "
+        return haystack.contains(padded)
+    }
+
+    /// Whole-word match that also accepts common English inflections of the
+    /// final word ("hurt" matching "hurts"/"hurting", "fell" matching "fallen").
+    ///
+    /// Used for distress keywords only. Whole-word matching alone would miss
+    /// "my knee hurts", which is exactly the kind of utterance that must
+    /// escalate; matching inflections here keeps the fail-safe direction while
+    /// still refusing to fire on unrelated words that merely share a prefix.
+    public static func containsDistressPhrase(_ haystack: String, _ phrase: String) -> Bool {
+        if containsPhrase(haystack, phrase) { return true }
+        for suffix in ["s", "es", "ing", "en"] {
+            if containsPhrase(haystack, phrase + suffix) { return true }
+        }
+        return false
+    }
 
     /// Disabled by default until Day-2 supine-vs-table calibration verifies noise-floor margin.
     public var enableUnwornDropSuppression: Bool = false
@@ -164,11 +206,12 @@ public final class FallDetector {
         preImpactPitchDeg: Double
     ) -> String {
         stage = .monitoring
-        let normalized = (transcript ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = Self.normalizeTranscript(transcript ?? "")
 
-        // 1. Check distress or negation keywords first -> immediate escalation
+        // 1. Check distress or negation keywords first -> immediate escalation.
+        //    Matched on whole words so "now"/"know"/"nothing" are not read as "no".
         for kw in Self.distressAndNegationKeywords {
-            if normalized.contains(kw) {
+            if Self.containsDistressPhrase(normalized, kw) {
                 AudioCueEngine.shared.activateBystanderSiren()
                 return "confirmed_waiting_dispatch"
             }
@@ -176,7 +219,7 @@ public final class FallDetector {
 
         // 2. Check explicit multi-word affirmative phrase (bare "okay" is never accepted)
         for phrase in Self.affirmativeCancelPhrases {
-            if normalized.contains(phrase) {
+            if Self.containsPhrase(normalized, phrase) {
                 return "canceled_false_alarm"
             }
         }

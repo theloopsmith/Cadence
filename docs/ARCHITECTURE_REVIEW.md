@@ -536,3 +536,243 @@ This round was done as targeted edits, not a regeneration: every heading is unch
 ## Recommendation
 
 Eight passes. The design has been stable since pass four; passes five through seven found regressions from regeneration, and this pass, done as edits, found none. Fix the Day 1 row, commit the three documents to version control, and treat them as frozen. From here the review surface is code. The first files worth a reviewer's time are `FoGDetector.swift` and `FallDetector.swift` against sections 3.3 and 3.4, and the Day 2 spike measurements against the assumptions in section 3.1.
+
+---
+
+# Ninth Pass — First Code Review (Oct 26)
+
+The review surface changed. Eight passes reviewed a specification; this pass
+reviewed the implementation that now exists: a FastAPI backend (8 modules, 7
+services, 4 clients), a Swift package (10 sources), a neurologist dashboard,
+and a test suite. Both suites were executed, not merely read.
+
+## Verdict
+
+The implementation is faithful to the spec on the hard parts. Every scoring
+formula, the ordered diary classifier, the circuit breaker, the RBAC split and
+the 3-stage fall state machine match the specification arithmetic, and the
+worked numerical examples pass as written.
+
+The defects are not in the clinical math. They are in the seams: where one
+component hands data to another, where the demo feeds the pipelines, and where
+a string is matched instead of parsed. Four of the eight defects below would
+have been visible only during the live demo.
+
+## Environment findings (fixed)
+
+- **E1. The backend virtualenv was unusable.** It was built against a
+  `/Library/Frameworks` Python 3.13 that no longer exists on this machine, and
+  every interpreter symlink dangled. Rebuilt against Python 3.12.11.
+- **E2. `scripts/test_ios.sh` could not run.** XCTest ships with Xcode, not the
+  Command Line Tools, and `xcode-select` points at the latter. The script now
+  locates a full Xcode and sets `DEVELOPER_DIR` for its own invocation, with no
+  sudo and no change to the machine's global toolchain selection.
+
+## Defects found and fixed
+
+| # | Severity | Defect |
+| :-- | :-- | :--- |
+| D1 | **High** | Plate normalization silently skipped whenever masks reported `area_ratio` |
+| D2 | **High** | Demo reality-check label fell outside the closed vocabulary |
+| D3 | **High** | Fall-check-in keyword matching fired on substrings inside ordinary words |
+| D4 | Medium | Seeded demo timeline stopped at 14:00 and contained no fall |
+| D5 | Medium | ON/OFF exam delta used a late WEARING_OFF trough as the OFF baseline |
+| D6 | Medium | Retry loop ran ~90 s past the documented 15-minute cap |
+| D7 | Low | Gather webhook reported unknown `event_uuid`s as acknowledged |
+| D8 | Low | Clinical narrative omitted resolved falls and the measured drug response |
+| D9 | **High** | Offline event queue never retried, so a fall queued without network was never delivered |
+
+### D1 — Plate normalization silently skipped (High)
+
+`estimate_meal_protein` read `area_px`, matching Appendix D. Every caller fed it
+`area_ratio`: the demo seed, both dashboard simulators, and the test fixtures.
+The lookup missed, `plate_area` stayed 0.0, and the function took its no-plate
+`scale = 1.0` branch. The result was a plausible-looking number produced by the
+fallback path, so nothing looked broken: the steak logged 28.0 g instead of
+37.8 g, and `plate_detected` was persisted as 0 on every row.
+
+This is the defect most likely to have survived to the demo, because the output
+is wrong only in the way a judge would have to already know the right answer to
+catch. The centerpiece of Pipeline 3 was never once exercised end to end.
+
+Fixed by giving the estimator a `mask_area` helper that accepts either key.
+Only the food-to-plate quotient is used downstream, so pixel area and frame
+coverage normalize identically as long as one frame is self-consistent. The
+demo seed and dashboard now send pixel areas for realism.
+
+### D2 — Demo reality-check label outside the vocabulary (High)
+
+The seed and the dashboard both ask "Is someone standing by the coat rack?" and
+pass a mask labeled `coat rack`, which was not in `INANIMATE_VOCAB`. The mask
+was filtered out, `L_inanimate,sam` came back empty, and the pipeline rendered
+`REASSURE_EMPTY_SPACE`: *"Everything looks clear and safe. No one is in that
+area."*
+
+That is a correct, safe sentence, which is why it would not have looked like a
+failure on stage. But it is the ungrounded fallback. The entire argument for
+the verifiable-agent pattern is that the spoken answer names the specific
+object SAM actually verified, and the demo never showed it doing so.
+
+Fixed by adding `coat rack` to the vocabulary and introducing
+`UPRIGHT_FIXTURE_LABELS`, so a coat rack, lamp or curtain is described as
+standing in the area rather than resting on a seat. The demo now says: *"No one
+is there—I only see a coat rack in that area."*
+
+### D3 — Substring keyword matching in the fall check-in (High)
+
+`evaluateCheckInOutcome` tested each distress keyword with a bare `contains`.
+The keyword `"no"` therefore matched inside `now`, `know` and `nothing`:
+
+| Wearer says | Old outcome |
+| :--- | :--- |
+| "I'm fine now" | escalates |
+| "I know I'm okay" | escalates |
+| "nothing is wrong, I'm fine" | escalates |
+
+The error direction is safe — it escalates rather than cancels — so it would
+never have shown up as an alarming test failure. The practical effect is worse
+than it looks: three of the most natural ways to say "I'm fine" summoned a
+caregiver anyway. A cancel feature that ignores the wearer teaches the wearer
+to ignore the prompt, which is precisely how real fall-alert systems lose their
+users.
+
+The first fix, whole-word matching, introduced a second error in the dangerous
+direction: `"hurt"` no longer matched `"my knee hurts"`. Matching now accepts
+common inflections (`-s`, `-es`, `-ing`, `-en`) for distress keywords only, so
+"my knee hurts", "my hip is hurting" and "I have fallen" all escalate while
+"now" and "know" do not. Normalization also folds the typographic apostrophe
+`SFSpeechRecognizer` emits, so "I’m okay" matches the same as "I'm okay" —
+previously it did not.
+
+### D4 — Incomplete demo timeline (Medium)
+
+The seed's own docstring promised events through "17:45 Resolved Fall Check-In".
+The function stopped after the 16:15 reality check. No fall was ever created, so
+`fall_events` was empty, `fall_count` was 0, and Pipeline 2 — the most
+demonstrable thing the product does — left no trace in the report a judge reads.
+
+The timeline now runs 07:30 to 19:30 and includes a hypophonia voice nudge, an
+evening dose, a fall resolved on check-in, and an end-of-day OFF exam. The fall
+is seeded already `canceled_false_alarm` so replaying the demo never places a
+live Twilio call or starts a retry loop.
+
+### D5 — Wrong OFF baseline in the medication-response delta (Medium)
+
+`build_24h_diary_timeline` selected the OFF baseline with
+`label in {"OFF", "WEARING_OFF"}` against newest-first rows. Once the timeline
+included an evening WEARING_OFF exam, that exam (59.1) shadowed the genuine
+morning OFF exam (42.1) and the reported levodopa response fell from +57.2 to
++40.2 points.
+
+A WEARING_OFF exam is a partial trough, not a baseline. The selection now
+prefers a true OFF exam and falls back to WEARING_OFF only when no OFF exam
+exists, reporting which baseline it used in `off_baseline_state`.
+
+### D6 — Retry loop overran the 15-minute cap (Medium)
+
+The loop slept 90 s, then ran up to `max_retry_attempts` (15) iterations of
+60 s: 990 s, about 16.5 minutes. The 90 s secondary delay belongs inside the
+window, not before it. The loop is now bounded by `retry_window_sec` of
+wall-clock time measured from dispatch, with the attempt count retained as a
+ceiling so a misconfigured interval cannot spin. It also re-checks for
+acknowledgment after the final interval before declaring exhaustion, closing a
+window where a caregiver who answered on the last call was still recorded as
+unreachable.
+
+Separately, the spec describes an *alternating* retry loop, but every retry
+after the first went to the secondary contact; a primary caregiver who was
+briefly busy was dropped for the remaining 15 minutes. Retries now alternate,
+with the first still going to the secondary as the T+90 s rule requires.
+
+### D7 — Gather webhook acknowledged unknown events (Low)
+
+The webhook is public, authenticated only by `X-Twilio-Signature`. Given any
+`event_uuid` and digit `1` it returned `acknowledged: true` without checking
+that the fall existed. It now verifies the event and refuses unknown ones, and
+will not overwrite a `canceled_by_user` status.
+
+### D8 — Narrative omitted the strongest clinical findings (Low)
+
+The generated summary reported only confirmed falls, so the demo's resolved fall
+disappeared from the clinician's one-paragraph summary — a detected impact the
+patient waved off is still clinically meaningful. The narrative now reports
+resolved impacts separately and states the measured levodopa response.
+
+### D9 — Offline queue never drained (High)
+
+`EventSyncManager` is the offline fail-safe for falls: a fall recorded with no
+network must still reach the caregiver pipeline once connectivity returns. The
+table had `retry_count` and `synced` columns and the class was documented as an
+"exponential-backoff" queue, but nothing implemented either. A single
+fire-and-forget `URLSession` task marked the row synced on success and did
+nothing at all on failure. No code ever re-read an unsynced row, and
+`retry_count` was never incremented from its default of 0.
+
+So the airplane-mode drill in the Day 7 plan would have failed: the fall would
+be written to local SQLite, the dispatch would fail silently, and the event
+would sit in the queue forever. The local siren and SOS beacon would still
+fire, so the wearer is protected, but the caregiver is never called once the
+phone is back on a network.
+
+Rewritten with a real drain: due events are selected by `next_attempt_at`,
+successes are marked synced, failures increment `retry_count` and push the next
+attempt along a 0/5/15/60/120/300-second backoff capped at five minutes so an
+overnight queue keeps trying. A 4xx other than 429 is treated as delivered,
+since replaying a payload the backend rejected will never succeed and would
+otherwise block the queue behind a poison row. The drain runs on a 15-second
+timer as well as opportunistically on each save.
+
+The transport is now injected behind an `EventTransport` protocol, so the retry
+policy is tested without a network. Two further latent bugs surfaced during the
+rewrite: every `sqlite3_bind_text` call passed a `nil` destructor for a Swift
+temporary (SQLite requires `SQLITE_TRANSIENT` to copy the buffer, otherwise it
+reads freed memory), and database access had no serialization despite being
+reachable from both the DSP callbacks and the dispatch completion handler.
+
+## Verification
+
+All fixes are covered by tests that were confirmed to fail before the fix and
+pass after. Suite sizes before and after this pass:
+
+| Suite | Before | After |
+| :--- | ---: | ---: |
+| Backend (`pytest`) | 13 | 27 |
+| iOS (`swift test`) | 3 | 17 |
+
+The 14 new backend tests live in `tests/test_demo_integrity_regressions.py`,
+grouped by defect so a regression names itself in the failure output. The 14 new
+Swift tests cover transcript matching, inflection boundaries, the groan
+override, the default-off unworn-drop gate, and the offline queue, including an
+end-to-end airplane-mode drill that queues a fall, fails two delivery attempts,
+and confirms it is delivered when the network returns.
+
+## What is not yet verified
+
+- **No hardware has been exercised.** Every IMU figure still rests on the Day-2
+  assumptions. `SensorStreamManager` estimates the sample rate from inter-sample
+  deltas and resamples correctly in principle, but has never seen a real Meta
+  Glasses stream.
+- **No cloud provider has been called.** Meta Model API, Baseten and Twilio all
+  run through simulated paths; the circuit breakers and the 4.0 s deadline have
+  never opened against a real timeout.
+- **`FoGDetector.computeSpectralMetrics` uses an O(N²) DFT**, not vDSP's FFT,
+  despite the comment and the `<50 ms` budget. At N=128 this is around 16k
+  operations per hop and fine; at N=256 (f_s = 100 Hz) it is 65k. Worth
+  measuring on device during the Day-2 spike before deciding whether to
+  convert it to a real FFT.
+- *(Closed in this pass.)* `EventSyncManager` had no retry: it was documented
+  as an "exponential-backoff" queue, but a failed dispatch left the row at
+  `synced = 0` and nothing ever retried it, so the offline fall queue never
+  drained when connectivity returned. See D9 below.
+
+## Recommendation
+
+The clinical core is sound and now demonstrably exercised end to end. Priorities
+from here, in order:
+
+1. Run the Day-2 hardware spike and replace the assumed IMU rate, wear
+   thresholds and DFT timing with measurements.
+2. Drive one live call through each provider so the breakers and the shared
+   deadline are exercised against real latency.
+3. Run the airplane-mode fall drill on a real device now that the queue drains,
+   to confirm the end-to-end path the unit tests only simulate.

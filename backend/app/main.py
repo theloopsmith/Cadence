@@ -556,12 +556,22 @@ async def get_neurologist_report(
         "off_pct": timeline["off_pct"],
         "no_dose_pct": timeline["no_dose_pct"],
         "fog_count": len(fog_rows),
+        # Confirmed falls drive the clinical headline; cancelled and suppressed
+        # candidates are reported separately so a neurologist can still see that
+        # the detector fired and the patient resolved it, rather than the event
+        # vanishing from the report entirely.
         "fall_count": len(
             [
                 f
                 for f in fall_rows
                 if f.get("status") not in {"canceled_false_alarm", "suppressed_unworn_drop"}
             ]
+        ),
+        "fall_candidate_resolved_count": len(
+            [f for f in fall_rows if f.get("status") == "canceled_false_alarm"]
+        ),
+        "fall_suppressed_count": len(
+            [f for f in fall_rows if f.get("status") == "suppressed_unworn_drop"]
         ),
         "latest_exam_score": exam_rows[0]["composite_motor_score"] if exam_rows else None,
         "exam_on_vs_off_delta": timeline["exam_on_vs_off_delta"],
@@ -599,10 +609,18 @@ async def seed_demo_patient_timeline(
     auth: AuthContext = Depends(require_any_authenticated_role),
 ) -> Dict[str, Any]:
     """
-    Populates a complete, clinically realistic 24-hour Parkinson's patient timeline
-    (Morning OFF Home Motor Exam -> 08:00 Levodopa Dose -> 09:15 ON Home Motor Exam ->
-    11:30 WEARING-OFF FoG -> 12:30 Dose + 12:50 Steak Protein Conflict ->
-    14:00 Post-Meal FoG & Micrographia -> 16:15 Reality Check -> 17:45 Resolved Fall Check-In).
+    Populates a complete, clinically realistic 24-hour Parkinson's patient timeline:
+
+      07:30 Morning OFF Home Motor Exam    12:50 Steak high-protein conflict
+      08:00 Morning Levodopa dose          14:00 Post-meal FoG + micrographia
+      09:15 Peak ON Home Motor Exam        16:15 Hallucination reality check
+      11:30 Wearing-off FoG episode        16:20 Hypophonia voice nudge
+      12:30 Midday Levodopa dose           17:30 Evening Levodopa dose
+                                           17:45 Fall, resolved on check-in
+                                           19:30 End-of-day OFF Home Motor Exam
+
+    The 17:45 fall is seeded already resolved ('canceled_false_alarm') so
+    re-running the demo never places a live Twilio call.
     """
     pid = auth.patient_id
     # 1. Morning OFF Home Motor Exam (07:30 UTC)
@@ -676,8 +694,8 @@ async def seed_demo_patient_timeline(
             event_uuid="demo-meal-steak-1250",
             timestamp_utc="2026-10-26T12:50:00Z",
             simulated_masks=[
-                {"label": "steak", "area_ratio": 0.34, "confidence": 0.94},
-                {"label": "plate", "area_ratio": 0.72, "confidence": 0.98},
+                {"label": "steak", "area_px": 34000.0, "confidence": 0.94},
+                {"label": "plate", "area_px": 72000.0, "confidence": 0.98},
             ],
         ),
         AuthContext(role="device_writer", patient_id=pid),
@@ -721,6 +739,68 @@ async def seed_demo_patient_timeline(
             ],
         ),
         AuthContext(role="device_writer", patient_id=pid),
+    )
+
+    # 8. 16:20 UTC Evening Hypophonia Nudge (quiet speech below the -24 dBFS baseline)
+    await log_voice_event(
+        VoiceLogCreate(
+            event_uuid="demo-voice-1620",
+            timestamp_utc="2026-10-26T16:20:00Z",
+            window_mean_dbfs=-34.5,
+            baseline_dbfs=-24.0,
+            nudge_triggered=True,
+        ),
+        AuthContext(role="device_writer", patient_id=pid),
+    )
+
+    # 9. 17:30 UTC Evening Levodopa Dose
+    await log_medication_dose(
+        DoseLogCreate(
+            event_uuid="demo-med-dose-1730",
+            timestamp_utc="2026-10-26T17:30:00Z",
+        ),
+        AuthContext(role="device_writer", patient_id=pid),
+    )
+
+    # 10. 17:45 UTC Fall with a resolved voice check-in.
+    # Seeded directly as 'canceled_false_alarm' so replaying the demo never
+    # places a real Twilio call or starts a 15-minute retry loop; the row still
+    # exercises the fall table, the GPS columns and the dashboard's fall panel.
+    await fall_escalation_manager.ingest_fall_event(
+        patient_id=pid,
+        payload=FallEventCreate(
+            event_uuid="demo-fall-1745",
+            timestamp_utc="2026-10-26T17:45:00Z",
+            peak_impact_g=3.4,
+            peak_jerk_gs=41.0,
+            post_impact_tilt_deg=68.0,
+            pre_impact_wear_rms_g=0.07,
+            pre_impact_resp_power=2.1e-5,
+            worn_pre_impact=True,
+            latitude=37.774900,
+            longitude=-122.419400,
+            horizontal_accuracy_m=5.0,
+            status="canceled_false_alarm",
+            cancel_transcript="i'm okay, i just sat down hard",
+            local_siren_activated=False,
+        ),
+        start_background_retry=False,
+    )
+
+    # 11. 19:30 UTC End-of-Day OFF Home Motor Exam (120 min after the evening dose)
+    evening_exam = HomeMotorExamCreate(
+        exam_uuid="demo-exam-evening-off-003",
+        timestamp_utc="2026-10-26T19:30:00Z",
+        voice_mean_dbfs=-27.0,
+        voice_stability_db=3.1,
+        handwriting_opencv_decay_pct=-24.0,
+        handwriting_sam_decay_pct=-22.5,
+        walk_cadence_spm=81.0,
+        walk_mean_fi=1.95,
+        walk_fog_count=1,
+    )
+    await complete_home_motor_exam(
+        evening_exam, AuthContext(role="device_writer", patient_id=pid)
     )
 
     return {"status": "seeded", "patient_id": pid}

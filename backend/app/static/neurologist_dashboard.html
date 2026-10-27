@@ -216,6 +216,16 @@
       </table>
     </div>
 
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="metric-label" style="margin-bottom: 10px;">Objective Medication Response (ON vs. OFF Home Motor Exam Delta)</div>
+      <div id="examDelta" style="font-size:13px; color:var(--muted);">Not enough exams yet — record one ON and one OFF exam.</div>
+    </div>
+
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="metric-label" style="margin-bottom: 10px;">Fall Detection &amp; Caregiver Escalation Audit</div>
+      <div id="fallList" style="font-size:13px; color:var(--muted);">No fall events recorded.</div>
+    </div>
+
     <div class="grid">
       <div class="card">
         <div class="metric-label" style="margin-bottom: 10px;">Recent Reality Checks (SAM 3.1 Grounded Slot Lock)</div>
@@ -302,8 +312,50 @@
       document.getElementById("onPct").textContent = data.summary_stats.on_pct + "%";
       document.getElementById("wearingOffPct").textContent = data.summary_stats.wearing_off_pct + "%";
       document.getElementById("offPct").textContent = data.summary_stats.off_pct + "%";
+      const st = data.summary_stats;
+      const resolvedFalls = st.fall_candidate_resolved_count || 0;
       document.getElementById("incidentsCount").textContent =
-        data.summary_stats.fog_count + " FoG / " + data.summary_stats.fall_count + " Falls";
+        st.fog_count + " FoG / " + st.fall_count + " Falls" +
+        (resolvedFalls ? " (+" + resolvedFalls + " resolved)" : "");
+
+      const dEl = document.getElementById("examDelta");
+      const d = st.exam_on_vs_off_delta;
+      if (!d) {
+        dEl.textContent = "Not enough exams yet — record one ON and one OFF exam.";
+      } else {
+        const sign = (v) => (v >= 0 ? "+" : "") + v.toFixed(1);
+        dEl.innerHTML = `
+          <div style="margin-bottom:8px;">
+            Baseline: <strong>${d.off_baseline_state || "OFF"}</strong> exam
+            ${d.off_composite.toFixed(1)}/100 &nbsp;➔&nbsp;
+            <strong>ON</strong> exam ${d.on_composite.toFixed(1)}/100
+          </div>
+          <div>
+            Composite <strong>${sign(d.composite_improvement_pts)} pts</strong> &nbsp;•&nbsp;
+            Voice ${sign(d.voice_delta_pts)} &nbsp;•&nbsp;
+            Writing ${sign(d.writing_delta_pts)} &nbsp;•&nbsp;
+            Gait ${sign(d.gait_delta_pts)}
+          </div>`;
+      }
+
+      const fList = document.getElementById("fallList");
+      if (!data.fall_events || data.fall_events.length === 0) {
+        fList.textContent = "No fall events recorded.";
+      } else {
+        fList.innerHTML = data.fall_events.slice(0, 6).map(f => {
+          const gps = (f.latitude != null && f.longitude != null)
+            ? ` • <a href="https://maps.google.com/?q=${f.latitude},${f.longitude}" target="_blank" rel="noopener noreferrer">GPS</a>`
+            : "";
+          const resolved = f.status === "canceled_false_alarm";
+          const badge = resolved ? "badge-ON" : "badge-OFF";
+          return `<div style="margin-bottom:8px;">
+            <span class="badge ${badge}">${f.status}</span>
+            ${f.timestamp_utc} • impact ${Number(f.peak_impact_g).toFixed(1)}g
+            • tilt ${Number(f.post_impact_tilt_deg).toFixed(0)}°${gps}
+            ${f.cancel_transcript ? `<br/><span style="color:var(--muted);">check-in: &ldquo;${f.cancel_transcript}&rdquo;</span>` : ""}
+          </div>`;
+        }).join("");
+      }
 
       const ribbon = document.getElementById("timelineRibbon");
       ribbon.innerHTML = "";
@@ -398,8 +450,8 @@
         event_uuid: "sim-meal-" + Date.now(),
         timestamp_utc: now,
         simulated_masks: [
-          { label: "steak", area_ratio: 0.35, confidence: 0.95 },
-          { label: "plate", area_ratio: 0.70, confidence: 0.98 }
+          { label: "steak", area_px: 35000, confidence: 0.95 },
+          { label: "plate", area_px: 70000, confidence: 0.98 }
         ]
       });
       if (res && res.spoken_response) setGlassesBanner(res.spoken_response);

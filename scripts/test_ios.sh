@@ -14,4 +14,17 @@ cd "$ROOT_DIR/ios"
 # Remove any in-iCloud build dir left over from a plain `swift test`.
 rm -rf .build
 
+# XCTest ships with Xcode, not with the Command Line Tools. If xcode-select
+# points at CommandLineTools, `swift test` fails with "no such module 'XCTest'",
+# so point this one invocation at a full Xcode without needing sudo.
+if [ -z "${DEVELOPER_DIR:-}" ] && ! xcrun --find xctest >/dev/null 2>&1; then
+  for candidate in /Applications/Xcode.app /Applications/Xcode-beta.app; do
+    if [ -d "$candidate/Contents/Developer" ]; then
+      export DEVELOPER_DIR="$candidate/Contents/Developer"
+      echo "Using Xcode toolchain at $DEVELOPER_DIR (XCTest is not in the Command Line Tools)."
+      break
+    fi
+  done
+fi
+
 swift test --scratch-path "$SCRATCH" "$@"

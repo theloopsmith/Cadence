@@ -21,6 +21,24 @@ PLATE_LABELS = {"plate", "bowl", "platter", "dish"}
 FOOD_CANDIDATE_VOCAB = list(PROTEIN_LOOKUP_TABLE.keys()) + list(PLATE_LABELS)
 
 
+def mask_area(mask: Dict[str, Any]) -> float:
+    """
+    Returns a mask's area on whatever scale the provider reported it.
+
+    SAM 3.1 returns absolute pixel area (``area_px``); replay fixtures and the
+    dashboard's simulated masks report fractional frame coverage
+    (``area_ratio``). Only the food-to-plate *quotient* is used downstream, so
+    either unit yields the same normalized ratio as long as every mask in one
+    frame uses the same one. Accepting both keys keeps a frame that reports
+    coverage from silently degrading to the no-plate ``scale = 1.0`` fallback.
+    """
+    if "area_px" in mask:
+        return float(mask.get("area_px") or 0.0)
+    if "area_ratio" in mask:
+        return float(mask.get("area_ratio") or 0.0)
+    return 0.0
+
+
 def estimate_meal_protein(masks: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Computes plate-normalized protein grams from SAM 3.1 masks.
@@ -28,7 +46,7 @@ def estimate_meal_protein(masks: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     plate_area = max(
         (
-            float(m.get("area_px", 0.0))
+            mask_area(m)
             for m in masks
             if str(m.get("label", "")).lower() in PLATE_LABELS
             and float(m.get("confidence", 0.0)) >= 0.60
@@ -42,12 +60,12 @@ def estimate_meal_protein(masks: List[Dict[str, Any]]) -> Dict[str, Any]:
     for m in masks:
         label = str(m.get("label", "")).lower()
         conf = float(m.get("confidence", 0.0))
-        area_px = float(m.get("area_px", 0.0))
+        area = mask_area(m)
         if label not in PROTEIN_LOOKUP_TABLE or conf < 0.60:
             continue
         spec = PROTEIN_LOOKUP_TABLE[label]
         if plate_area > 0.0:
-            item_plate_ratio = area_px / plate_area
+            item_plate_ratio = area / plate_area
             ratios.append(item_plate_ratio)
             scale = max(0.5, min(2.0, item_plate_ratio / spec["r_ref"]))
         else:

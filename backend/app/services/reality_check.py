@@ -11,6 +11,7 @@ INANIMATE_VOCAB = {
     "armchair",
     "sofa",
     "coat",
+    "coat rack",
     "jacket",
     "blanket",
     "pillow",
@@ -21,6 +22,12 @@ INANIMATE_VOCAB = {
     "curtain",
     "plant",
 }
+
+# Inanimate labels that stand upright in a room rather than resting on a seat.
+# A coat rack in low light is one of the most common Parkinson's hallucination
+# triggers, so it gets its own reassurance template instead of being described
+# as something "on the seat".
+UPRIGHT_FIXTURE_LABELS = {"coat rack", "lamp", "curtain", "plant", "shadow"}
 CLOSED_REALITY_VOCAB = sorted(LIVING_VOCAB | INANIMATE_VOCAB)
 
 LIVING_DENY_WORDS = {
@@ -149,7 +156,7 @@ async def run_reality_check_pipeline(
                 chosen_label = allowed_inanimate[0]
                 template_id = (
                     "REASSURE_SHADOW_OR_LIGHT"
-                    if chosen_label in {"shadow", "lamp", "curtain"}
+                    if chosen_label in UPRIGHT_FIXTURE_LABELS
                     else "REASSURE_OBJECT_ON_SEAT"
                 )
             spoken = render_grounded_template(template_id, chosen_label)

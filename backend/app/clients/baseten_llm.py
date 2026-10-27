@@ -62,9 +62,13 @@ class BasetenLLMClient:
                 circuit_breakers.record_success(self.PROVIDER, model_id)
                 for candidate in allowed_inanimate_labels:
                     if candidate.lower() in content:
+                        from app.services.reality_check import (
+                            UPRIGHT_FIXTURE_LABELS,
+                        )
+
                         tpl = (
                             "REASSURE_SHADOW_OR_LIGHT"
-                            if candidate.lower() in {"shadow", "lamp", "curtain"}
+                            if candidate.lower() in UPRIGHT_FIXTURE_LABELS
                             else "REASSURE_OBJECT_ON_SEAT"
                         )
                         return {"template_id": tpl, "chosen_label": candidate.lower()}
@@ -87,16 +91,33 @@ class BasetenLLMClient:
         off_pct = summary_stats.get("off_pct", 0.0)
         fog_total = summary_stats.get("fog_count", 0)
         fall_total = summary_stats.get("fall_count", 0)
+        resolved_falls = summary_stats.get("fall_candidate_resolved_count", 0)
         latest_exam = summary_stats.get("latest_exam_score")
+        delta = summary_stats.get("exam_on_vs_off_delta")
 
         deterministic_summary = (
             f"Objective 24h Motor Summary: ON {on_pct:.0f}%, WEARING_OFF {wearing_off_pct:.0f}%, "
             f"OFF {off_pct:.0f}%. Recorded {fog_total} freezing-of-gait episode(s) and "
-            f"{fall_total} fall event(s)."
+            f"{fall_total} confirmed fall event(s)."
         )
+        if resolved_falls:
+            # A detected impact the patient waved off is still clinically
+            # relevant; omitting it would hide a near-fall from the neurologist.
+            deterministic_summary += (
+                f" {resolved_falls} additional impact(s) were detected and resolved "
+                "by the patient during the voice check-in."
+            )
         if latest_exam is not None:
             deterministic_summary += (
                 f" Latest Guided Home Motor Exam composite score: {latest_exam:.1f}/100."
+            )
+        if delta:
+            deterministic_summary += (
+                f" Measured levodopa response: composite "
+                f"{float(delta['off_composite']):.1f} "
+                f"({delta.get('off_baseline_state', 'OFF')}) to "
+                f"{float(delta['on_composite']):.1f} (ON), a change of "
+                f"{float(delta['composite_improvement_pts']):+.1f} points."
             )
         return deterministic_summary
 
