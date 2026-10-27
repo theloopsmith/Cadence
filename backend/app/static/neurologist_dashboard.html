@@ -73,6 +73,25 @@
     .badge-WEARING_OFF { background: var(--wearing-off); }
     .badge-OFF { background: var(--off); }
     .badge-NO_DOSE { background: var(--nodose); }
+    .timeline-ribbon {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 8px 0;
+    }
+    .bucket-pill {
+      min-width: 78px;
+      padding: 8px;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .bucket-ON { background: var(--on); }
+    .bucket-WEARING_OFF { background: var(--wearing-off); }
+    .bucket-OFF { background: var(--off); }
+    .bucket-NO_DOSE { background: var(--nodose); }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
@@ -99,7 +118,8 @@
         <h1>CADENCE — Neurologist Objective ON/OFF Diary &amp; Home Motor Exam Report</h1>
         <p>Meta Gen 3 AI Glasses Companion • Method-Invariant Motor Scoring &amp; Pure Motor S(t_k) Classification</p>
       </div>
-      <div class="no-print">
+      <div class="no-print" style="display:flex; gap:10px;">
+        <button class="btn" style="background:#0f172a;" onclick="seedDemoTimeline()">Seed Realistic 24h Demo Patient</button>
         <button class="btn" onclick="window.print()">Export / Print PDF</button>
       </div>
     </header>
@@ -128,6 +148,11 @@
         <div class="metric-label">FoG Episodes / Falls</div>
         <div class="metric-value" id="incidentsCount">—</div>
       </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="metric-label" style="margin-bottom: 8px;">30-Minute Pure Motor S(t_k) Clinical Diary Timeline (OFF ➔ NO_DOSE ➔ WEARING_OFF ➔ ON)</div>
+      <div id="timelineRibbon" class="timeline-ribbon"></div>
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
@@ -196,6 +221,15 @@
       document.getElementById("incidentsCount").textContent =
         data.summary_stats.fog_count + " FoG / " + data.summary_stats.fall_count + " Falls";
 
+      const ribbon = document.getElementById("timelineRibbon");
+      ribbon.innerHTML = "";
+      for (const b of (data.buckets_24h || [])) {
+        const div = document.createElement("div");
+        div.className = `bucket-pill bucket-${b.clinical_state}`;
+        div.innerHTML = `<div>${b.label_hhmm}</div><div>${b.clinical_state}</div><div>S=${b.symptom_burden_score.toFixed(0)}</div>`;
+        ribbon.appendChild(div);
+      }
+
       const tbody = document.getElementById("examTableBody");
       tbody.innerHTML = "";
       if (!data.motor_exams || data.motor_exams.length === 0) {
@@ -216,6 +250,19 @@
         `;
         tbody.appendChild(tr);
       }
+    }
+
+    async function seedDemoTimeline() {
+      const token = sessionStorage.getItem(STORAGE_KEY);
+      if (!token) {
+        document.getElementById("authModal").style.display = "flex";
+        return;
+      }
+      await fetch("/api/v1/demo/seed", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + token }
+      });
+      await loadReport();
     }
 
     window.addEventListener("DOMContentLoaded", loadReport);

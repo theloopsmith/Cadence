@@ -35,7 +35,11 @@ from app.security import (
     require_device_writer,
     verify_twilio_signature,
 )
-from app.services.diary_engine import DiaryBucketMetrics, classify_diary_bucket
+from app.services.diary_engine import (
+    DiaryBucketMetrics,
+    build_24h_diary_timeline,
+    classify_diary_bucket,
+)
 from app.services.fall_escalation import fall_escalation_manager
 from app.services.handwriting import analyze_handwriting_opencv
 from app.services.motor_exam import MotorExamInput, score_home_motor_exam
@@ -528,32 +532,46 @@ async def get_neurologist_report(
         "SELECT * FROM handwriting_logs WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 50",
         (pid,),
     )
+    voice_rows = await fetch_all(
+        "SELECT * FROM voice_logs WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 100",
+        (pid,),
+    )
     exam_rows = await fetch_all(
         "SELECT * FROM motor_exams WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 50",
         (pid,),
     )
 
-    state_counts = {"ON": 0, "WEARING_OFF": 0, "OFF": 0, "NO_DOSE": 0}
-    for ex in exam_rows:
-        lbl = ex.get("medication_state_label", "NO_DOSE")
-        if lbl in state_counts:
-            state_counts[lbl] += 1
+    timeline = build_24h_diary_timeline(
+        fog_rows=fog_rows,
+        fall_rows=fall_rows,
+        med_rows=med_rows,
+        writing_rows=writing_rows,
+        voice_rows=voice_rows,
+        exam_rows=exam_rows,
+    )
 
-    total_classified = max(1, sum(state_counts.values()))
     summary_stats = {
-        "on_pct": round(100.0 * state_counts["ON"] / total_classified, 1),
-        "wearing_off_pct": round(100.0 * state_counts["WEARING_OFF"] / total_classified, 1),
-        "off_pct": round(100.0 * state_counts["OFF"] / total_classified, 1),
-        "no_dose_pct": round(100.0 * state_counts["NO_DOSE"] / total_classified, 1),
+        "on_pct": timeline["on_pct"],
+        "wearing_off_pct": timeline["wearing_off_pct"],
+        "off_pct": timeline["off_pct"],
+        "no_dose_pct": timeline["no_dose_pct"],
         "fog_count": len(fog_rows),
-        "fall_count": len([f for f in fall_rows if f.get("status") != "canceled_false_alarm"]),
+        "fall_count": len(
+            [
+                f
+                for f in fall_rows
+                if f.get("status") not in {"canceled_false_alarm", "suppressed_unworn_drop"}
+            ]
+        ),
         "latest_exam_score": exam_rows[0]["composite_motor_score"] if exam_rows else None,
+        "exam_on_vs_off_delta": timeline["exam_on_vs_off_delta"],
     }
     narrative = await baseten_client.summarize_clinical_diary(summary_stats)
 
     return {
         "patient_id": pid,
         "summary_stats": summary_stats,
+        "buckets_24h": timeline["buckets"],
         "clinical_narrative": narrative,
         "motor_exams": exam_rows,
         "fog_events": fog_rows,
@@ -574,3 +592,135 @@ async def delete_patient_data(
         "patient_id": auth.patient_id,
         "deleted_rows": deleted_counts,
     }
+
+
+@app.post("/api/v1/demo/seed")
+async def seed_demo_patient_timeline(
+    auth: AuthContext = Depends(require_any_authenticated_role),
+) -> Dict[str, Any]:
+    """
+    Populates a complete, clinically realistic 24-hour Parkinson's patient timeline
+    (Morning OFF Home Motor Exam -> 08:00 Levodopa Dose -> 09:15 ON Home Motor Exam ->
+    11:30 WEARING-OFF FoG -> 12:30 Dose + 12:50 Steak Protein Conflict ->
+    14:00 Post-Meal FoG & Micrographia -> 16:15 Reality Check -> 17:45 Resolved Fall Check-In).
+    """
+    pid = auth.patient_id
+    # 1. Morning OFF Home Motor Exam (07:30 UTC)
+    off_exam = HomeMotorExamCreate(
+        exam_uuid="demo-exam-morning-off-001",
+        timestamp_utc="2026-10-26T07:30:00Z",
+        voice_mean_dbfs=-25.5,
+        voice_stability_db=3.8,
+        handwriting_opencv_decay_pct=-31.0,
+        handwriting_sam_decay_pct=-29.5,
+        walk_cadence_spm=68.0,
+        walk_mean_fi=2.95,
+        walk_fog_count=2,
+    )
+    await complete_home_motor_exam(
+        off_exam, AuthContext(role="device_writer", patient_id=pid)
+    )
+
+    # 2. 08:00 UTC Morning Levodopa Dose
+    await log_medication_dose(
+        DoseLogCreate(
+            event_uuid="demo-med-dose-0800",
+            timestamp_utc="2026-10-26T08:00:00Z",
+        ),
+        AuthContext(role="device_writer", patient_id=pid),
+    )
+
+    # 3. 09:15 UTC Peak ON Home Motor Exam (75 min post-dose)
+    on_exam = HomeMotorExamCreate(
+        exam_uuid="demo-exam-morning-on-002",
+        timestamp_utc="2026-10-26T09:15:00Z",
+        voice_mean_dbfs=-15.2,
+        voice_stability_db=1.1,
+        handwriting_opencv_decay_pct=-6.4,
+        handwriting_sam_decay_pct=-5.8,
+        walk_cadence_spm=106.0,
+        walk_mean_fi=0.72,
+        walk_fog_count=0,
+    )
+    await complete_home_motor_exam(
+        on_exam, AuthContext(role="device_writer", patient_id=pid)
+    )
+
+    # 4. 11:30 UTC End-of-Dose WEARING-OFF FoG Episode
+    await log_fog_event(
+        FoGEventCreate(
+            event_uuid="demo-fog-1130",
+            timestamp_utc="2026-10-26T11:30:00Z",
+            duration_sec=5.5,
+            peak_freeze_index=2.45,
+            locomotor_band_power=0.12,
+            freeze_band_power=0.294,
+            sampled_hz=100.0,
+            arming_mode="turning_upright",
+            cue_bpm=98,
+            recovery_latency_sec=3.2,
+        ),
+        AuthContext(role="device_writer", patient_id=pid),
+    )
+
+    # 5. 12:30 UTC Midday Levodopa Dose + 12:50 UTC High-Protein Steak Meal (Conflict)
+    await log_medication_dose(
+        DoseLogCreate(
+            event_uuid="demo-med-dose-1230",
+            timestamp_utc="2026-10-26T12:30:00Z",
+        ),
+        AuthContext(role="device_writer", patient_id=pid),
+    )
+    await analyze_meal_protein(
+        MealProteinAnalyzeRequest(
+            event_uuid="demo-meal-steak-1250",
+            timestamp_utc="2026-10-26T12:50:00Z",
+            simulated_masks=[
+                {"label": "steak", "area_ratio": 0.34, "confidence": 0.94},
+                {"label": "plate", "area_ratio": 0.72, "confidence": 0.98},
+            ],
+        ),
+        AuthContext(role="device_writer", patient_id=pid),
+    )
+
+    # 6. 14:00 UTC Delayed-Absorption OFF Episode (FoG + Micrographia)
+    await log_fog_event(
+        FoGEventCreate(
+            event_uuid="demo-fog-1400",
+            timestamp_utc="2026-10-26T14:00:00Z",
+            duration_sec=7.0,
+            peak_freeze_index=3.25,
+            locomotor_band_power=0.10,
+            freeze_band_power=0.325,
+            sampled_hz=100.0,
+            arming_mode="sit_to_stand",
+            cue_bpm=100,
+            recovery_latency_sec=4.1,
+        ),
+        AuthContext(role="device_writer", patient_id=pid),
+    )
+    await analyze_handwriting_endpoint(
+        HandwritingAnalyzeRequest(
+            event_uuid="demo-writing-1405",
+            timestamp_utc="2026-10-26T14:05:00Z",
+            simulated_letter_heights_px=[42.0, 40.0, 38.0, 33.0, 29.0, 27.0],
+            simulated_sam_decay_pct=-27.8,
+            source_context="ambient",
+        ),
+        AuthContext(role="device_writer", patient_id=pid),
+    )
+
+    # 7. 16:15 UTC Hallucination Reality Check
+    await reality_check_endpoint(
+        RealityCheckRequest(
+            event_uuid="demo-reality-1615",
+            timestamp_utc="2026-10-26T16:15:00Z",
+            user_query="Is someone standing by the coat rack?",
+            simulated_sam_masks=[
+                {"label": "coat rack", "confidence": 0.93, "area_ratio": 0.24}
+            ],
+        ),
+        AuthContext(role="device_writer", patient_id=pid),
+    )
+
+    return {"status": "seeded", "patient_id": pid}

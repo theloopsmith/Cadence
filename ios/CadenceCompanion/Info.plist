@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Cadence Companion</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>ai.meta.hackathon.cadence.companion</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>CadenceCompanion</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>bluetooth-central</string>
+		<string>location</string>
+		<string>processing</string>
+	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cadence uses the Meta AI Glasses and iPhone microphone for voice check-ins after a suspected fall, vocal volume tracking, and the Guided Home Motor Exam.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Cadence uses on-device Apple Speech recognition to listen for "I'm okay" or "Help" during the 12-second post-fall safety check-in even when offline.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Cadence maintains a continuous Bluetooth connection to your Meta Gen 3 AI Glasses for Freeze-of-Gait rhythmic auditory cueing and fall detection.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Cadence attaches your GPS coordinates to caregiver SOS alerts only when a fall is confirmed.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Cadence attaches your GPS coordinates to caregiver SOS alerts if a fall occurs while the app is running in the background.</string>
+</dict>
+</plist>
