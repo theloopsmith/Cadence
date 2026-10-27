@@ -10,6 +10,28 @@ public struct IMUSample {
     public let gz: Double
     public let pitchDeg: Double
     public let rollDeg: Double
+
+    public init(
+        timestamp: TimeInterval,
+        ax: Double,
+        ay: Double,
+        az: Double,
+        gx: Double,
+        gy: Double,
+        gz: Double,
+        pitchDeg: Double = 0.0,
+        rollDeg: Double = 0.0
+    ) {
+        self.timestamp = timestamp
+        self.ax = ax
+        self.ay = ay
+        self.az = az
+        self.gx = gx
+        self.gy = gy
+        self.gz = gz
+        self.pitchDeg = pitchDeg
+        self.rollDeg = rollDeg
+    }
 }
 
 /// Estimates real-time IMU sample rate f_s and linearly interpolates onto a uniform time grid

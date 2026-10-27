@@ -20,10 +20,12 @@ public final class EventSyncManager {
         }
         let dbURL = docDir.appendingPathComponent("cadence_local_queue.sqlite")
         if sqlite3_open(dbURL.path, &db) == SQLITE_OK {
+            #if os(iOS)
             try? (dbURL as NSURL).setResourceValue(
                 URLFileProtection.completeUnlessOpen,
                 forKey: .fileProtectionKey
             )
+            #endif
             let createSQL = """
             CREATE TABLE IF NOT EXISTS pending_events (
                 event_uuid TEXT PRIMARY KEY,

@@ -17,11 +17,15 @@ Cadence is an audio-first, privacy-preserving clinical companion for **Meta Gen 
   6. **Pipeline 6 (`P0`) — Guided 3-Step Home Motor Exam**: Prompted 5s sustained vowel phonation (`"Ahhh"`), prompted handwriting line, and prompted 10s timed walk scored 0–100.
   7. **Pipeline 7 (`P0`) — Pure Motor $S(t_k)$ ON/OFF Diary & Web Neurologist Report**: Ordered, exhaustive 4-state classifier (`OFF` -> `NO_DOSE` -> `WEARING_OFF` -> `ON`) and print-ready clinician report at `GET /dashboard`.
 
-## Quick Start (Backend & Tests)
+## Quick Start (One-Command Demo, Backend & Swift Edge DSP Tests)
 
 ```bash
-cd backend
-pip3 install -r requirements.txt
-pytest -v
-uvicorn app.main:app --reload --port 8000
+# 1. Run the FastAPI Clinical Orchestrator & open http://127.0.0.1:8000/dashboard
+./scripts/run_demo.sh
+
+# 2. Run the Python backend test suite (13 tests across all 7 pipelines)
+cd backend && .venv/bin/pytest -v
+
+# 3. Compile & test the Swift Edge DSP & Audio Engine (FoG FFT, 3-Stage Fall Detector, VoiceMonitor)
+cd ../ios && swift test
 ```

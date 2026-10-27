@@ -36,3 +36,7 @@ DerivedData/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Swift Package Manager build artifacts
+.build/
+.swiftpm/
