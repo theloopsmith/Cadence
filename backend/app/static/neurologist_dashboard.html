@@ -25,11 +25,13 @@
       color: var(--ink);
       padding: 24px;
     }
-    .container { max-width: 1120px; margin: 0 auto; }
+    .container { max-width: 1160px; margin: 0 auto; }
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
       background: #0f172a;
       color: #fff;
       padding: 20px 24px;
@@ -42,16 +44,36 @@
       background: var(--brand);
       color: #fff;
       border: none;
-      padding: 10px 16px;
+      padding: 9px 14px;
       border-radius: 8px;
       font-weight: 600;
+      font-size: 13px;
       cursor: pointer;
     }
+    .btn:hover { opacity: 0.92; }
+    .btn-sim {
+      background: #f1f5f9;
+      color: #0f172a;
+      border: 1px solid #cbd5e1;
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .btn-sim:hover { background: #e2e8f0; }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 16px;
       margin-bottom: 20px;
+    }
+    .sim-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
     }
     .card {
       background: var(--card);
@@ -100,7 +122,7 @@
       display: none; align-items: center; justify-content: center;
     }
     .modal-box {
-      background: #fff; padding: 24px; border-radius: 12px; width: 400px; max-width: 92vw;
+      background: #fff; padding: 24px; border-radius: 12px; width: 420px; max-width: 92vw;
     }
     .modal-box input {
       width: 100%; padding: 10px; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px;
@@ -118,16 +140,35 @@
         <h1>CADENCE — Neurologist Objective ON/OFF Diary &amp; Home Motor Exam Report</h1>
         <p>Meta Gen 3 AI Glasses Companion • Method-Invariant Motor Scoring &amp; Pure Motor S(t_k) Classification</p>
       </div>
-      <div class="no-print" style="display:flex; gap:10px;">
-        <button class="btn" style="background:#0f172a;" onclick="seedDemoTimeline()">Seed Realistic 24h Demo Patient</button>
+      <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" style="background:#16a34a;" onclick="seedDemoTimeline()">⚡ Seed 24h Demo Patient</button>
+        <button class="btn" style="background:#dc2626;" onclick="wipePatientData()">Reset Patient Data</button>
         <button class="btn" onclick="window.print()">Export / Print PDF</button>
       </div>
     </header>
 
+    <!-- Interactive 7-Pipeline Simulator (Hidden on PDF Print) -->
+    <div class="card no-print" style="margin-bottom: 20px; border-left: 4px solid var(--brand);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <div class="metric-label" style="color:var(--brand);">Interactive Meta Gen 3 AI Glasses Pipeline Simulator (Live API Triggers)</div>
+        <span id="glassesAudioBanner" style="font-size:13px; font-weight:600; color:#0f172a; background:#dbeafe; padding:4px 10px; border-radius:6px;">
+          🔊 Glasses Open-Ear Audio: Ready
+        </span>
+      </div>
+      <div class="sim-grid">
+        <button class="btn-sim" onclick="simFoG()">1. 🦶 Trigger Freeze of Gait (FI=3.10 ➔ 100 BPM RAS Cue)</button>
+        <button class="btn-sim" onclick="simDoseAndSteak()">2. 🥩 Log Levodopa + Steak Meal (SAM 3.1 Protein Conflict)</button>
+        <button class="btn-sim" onclick="simRealityCheck()">3. 👁️ Hallucination Check ("Is someone by the coat rack?")</button>
+        <button class="btn-sim" onclick="simMicrographia()">4. ✍️ Handwriting Check (-31% Stroke Decay Micrographia)</button>
+        <button class="btn-sim" onclick="simHomeMotorExam()">5. 🩺 Run Guided 3-Step Home Motor Exam (Voice+Writing+Walk)</button>
+        <button class="btn-sim" onclick="simFallAndCancel()">6. 🚨 Trigger 3-Stage Fall Alert + Caregiver All-Clear Cancel</button>
+      </div>
+    </div>
+
     <div class="card" style="margin-bottom: 20px;">
       <div class="metric-label">Baseten Clinical Narrative (muse-spark-open-1026)</div>
       <p id="narrativeText" style="margin: 8px 0 0; font-size: 15px; line-height: 1.5;">
-        Authenticate with your Clinician or Device Bearer token to load patient report data.
+        Click "Seed 24h Demo Patient" above to populate a full 24-hour Parkinson's patient timeline, or trigger individual pipelines in real time.
       </p>
     </div>
 
@@ -170,9 +211,20 @@
           </tr>
         </thead>
         <tbody id="examTableBody">
-          <tr><td colspan="7">No exam rows loaded yet.</td></tr>
+          <tr><td colspan="7">No exam rows loaded yet. Click "⚡ Seed 24h Demo Patient" above!</td></tr>
         </tbody>
       </table>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="metric-label" style="margin-bottom: 10px;">Recent Reality Checks (SAM 3.1 Grounded Slot Lock)</div>
+        <div id="realityList" style="font-size:13px; color:var(--muted);">None recorded yet.</div>
+      </div>
+      <div class="card">
+        <div class="metric-label" style="margin-bottom: 10px;">Medication &amp; Plate-Normalized Protein Logs</div>
+        <div id="medList" style="font-size:13px; color:var(--muted);">None recorded yet.</div>
+      </div>
     </div>
   </div>
 
@@ -181,15 +233,30 @@
     <div class="modal-box">
       <h3 style="margin-top:0;">Clinician / Device Bearer Token</h3>
       <p style="font-size:13px; color:var(--muted);">
-        Enter your read-only Clinician token (or Device token) to fetch the report via <code>Authorization: Bearer</code> header.
+        Pre-filled with the default local development token so you can click <strong>Load Report</strong> immediately.
       </p>
-      <input type="password" id="tokenInput" placeholder="cadence-dev-clinician-reader-token-2026" />
+      <input type="text" id="tokenInput" value="cadence-dev-device-writer-token-2026" />
       <button class="btn" style="width:100%;" onclick="saveTokenAndLoad()">Load Report</button>
     </div>
   </div>
 
   <script>
     const STORAGE_KEY = "cadence_bearer_token";
+
+    function getToken() {
+      return sessionStorage.getItem(STORAGE_KEY);
+    }
+
+    function setGlassesBanner(msg) {
+      const el = document.getElementById("glassesAudioBanner");
+      el.textContent = "🔊 Glasses Audio: " + msg;
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(msg);
+        u.rate = 0.95;
+        window.speechSynthesis.speak(u);
+      }
+    }
 
     function saveTokenAndLoad() {
       const val = document.getElementById("tokenInput").value.trim();
@@ -199,8 +266,25 @@
       loadReport();
     }
 
+    async function apiPost(path, bodyObj) {
+      const token = getToken();
+      if (!token) {
+        document.getElementById("authModal").style.display = "flex";
+        return null;
+      }
+      const res = await fetch(path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token
+        },
+        body: bodyObj ? JSON.stringify(bodyObj) : undefined
+      });
+      return await res.json();
+    }
+
     async function loadReport() {
-      const token = sessionStorage.getItem(STORAGE_KEY);
+      const token = getToken();
       if (!token) {
         document.getElementById("authModal").style.display = "flex";
         return;
@@ -233,35 +317,151 @@
       const tbody = document.getElementById("examTableBody");
       tbody.innerHTML = "";
       if (!data.motor_exams || data.motor_exams.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7">No Guided Home Motor Exams recorded yet.</td></tr>';
-        return;
+        tbody.innerHTML = '<tr><td colspan="7">No Guided Home Motor Exams recorded yet. Click "⚡ Seed 24h Demo Patient" above!</td></tr>';
+      } else {
+        for (const ex of data.motor_exams) {
+          const tr = document.createElement("tr");
+          const samCol = ex.handwriting_sam_decay_pct != null ? ex.handwriting_sam_decay_pct.toFixed(1) + "%" : "—";
+          tr.innerHTML = `
+            <td>${ex.timestamp_utc}</td>
+            <td><span class="badge badge-${ex.medication_state_label}">${ex.medication_state_label}</span></td>
+            <td>${ex.voice_score.toFixed(1)}</td>
+            <td>${ex.handwriting_score.toFixed(1)} (${ex.handwriting_opencv_decay_pct.toFixed(1)}%)</td>
+            <td>${samCol}</td>
+            <td>${ex.gait_score.toFixed(1)}</td>
+            <td><strong>${ex.composite_motor_score.toFixed(1)}</strong></td>
+          `;
+          tbody.appendChild(tr);
+        }
       }
-      for (const ex of data.motor_exams) {
-        const tr = document.createElement("tr");
-        const samCol = ex.handwriting_sam_decay_pct != null ? ex.handwriting_sam_decay_pct.toFixed(1) + "%" : "—";
-        tr.innerHTML = `
-          <td>${ex.timestamp_utc}</td>
-          <td><span class="badge badge-${ex.medication_state_label}">${ex.medication_state_label}</span></td>
-          <td>${ex.voice_score.toFixed(1)}</td>
-          <td>${ex.handwriting_score.toFixed(1)} (${ex.handwriting_opencv_decay_pct.toFixed(1)}%)</td>
-          <td>${samCol}</td>
-          <td>${ex.gait_score.toFixed(1)}</td>
-          <td><strong>${ex.composite_motor_score.toFixed(1)}</strong></td>
-        `;
-        tbody.appendChild(tr);
+
+      const rList = document.getElementById("realityList");
+      if (!data.reality_checks || data.reality_checks.length === 0) {
+        rList.textContent = "None recorded yet.";
+      } else {
+        rList.innerHTML = data.reality_checks.slice(0, 4).map(r =>
+          `<div style="margin-bottom:8px;"><strong>"${r.user_query}"</strong><br/><span style="color:#0f172a;">➔ ${r.spoken_response}</span></div>`
+        ).join("");
+      }
+
+      const mList = document.getElementById("medList");
+      if (!data.medication_logs || data.medication_logs.length === 0) {
+        mList.textContent = "None recorded yet.";
+      } else {
+        mList.innerHTML = data.medication_logs.slice(0, 5).map(m =>
+          `<div style="margin-bottom:6px;">• <strong>${m.event_type}</strong> (${m.timestamp_utc}) ${m.estimated_protein_grams ? '— ' + m.estimated_protein_grams.toFixed(0) + 'g protein' : ''} ${m.conflict_detected ? '<span class="badge badge-OFF">CONFLICT</span>' : ''}</div>`
+        ).join("");
       }
     }
 
     async function seedDemoTimeline() {
-      const token = sessionStorage.getItem(STORAGE_KEY);
-      if (!token) {
-        document.getElementById("authModal").style.display = "flex";
-        return;
-      }
-      await fetch("/api/v1/demo/seed", {
-        method: "POST",
+      await apiPost("/api/v1/demo/seed");
+      setGlassesBanner("24-hour Parkinson's patient timeline seeded.");
+      await loadReport();
+    }
+
+    async function wipePatientData() {
+      const token = getToken();
+      if (!token) return;
+      await fetch("/api/v1/patient/data", {
+        method: "DELETE",
         headers: { "Authorization": "Bearer " + token }
       });
+      setGlassesBanner("Patient telemetry wiped.");
+      await loadReport();
+    }
+
+    async function simFoG() {
+      await apiPost("/api/v1/events/fog", {
+        event_uuid: "sim-fog-" + Date.now(),
+        timestamp_utc: new Date().toISOString(),
+        duration_sec: 5.5,
+        peak_freeze_index: 3.10,
+        locomotor_band_power: 0.09,
+        freeze_band_power: 0.28,
+        sampled_hz: 100.0,
+        arming_mode: "turning_upright",
+        cue_bpm: 100,
+        recovery_latency_sec: 3.0
+      });
+      setGlassesBanner("Step, step, step. 100 BPM Rhythmic Auditory Cueing active.");
+      await loadReport();
+    }
+
+    async function simDoseAndSteak() {
+      const now = new Date().toISOString();
+      await apiPost("/api/v1/medication/dose", {
+        event_uuid: "sim-dose-" + Date.now(),
+        timestamp_utc: now
+      });
+      const res = await apiPost("/api/v1/medication/meal-protein", {
+        event_uuid: "sim-meal-" + Date.now(),
+        timestamp_utc: now,
+        simulated_masks: [
+          { label: "steak", area_ratio: 0.35, confidence: 0.95 },
+          { label: "plate", area_ratio: 0.70, confidence: 0.98 }
+        ]
+      });
+      if (res && res.spoken_response) setGlassesBanner(res.spoken_response);
+      await loadReport();
+    }
+
+    async function simRealityCheck() {
+      const res = await apiPost("/api/v1/reality-check", {
+        event_uuid: "sim-rc-" + Date.now(),
+        timestamp_utc: new Date().toISOString(),
+        user_query: "Is someone standing by the coat rack?",
+        simulated_sam_masks: [
+          { label: "coat rack", confidence: 0.94, area_ratio: 0.24 }
+        ]
+      });
+      if (res && res.spoken_response) setGlassesBanner(res.spoken_response);
+      await loadReport();
+    }
+
+    async function simMicrographia() {
+      const res = await apiPost("/api/v1/handwriting/analyze", {
+        event_uuid: "sim-hw-" + Date.now(),
+        timestamp_utc: new Date().toISOString(),
+        simulated_letter_heights_px: [44, 41, 38, 34, 30, 28],
+        simulated_sam_decay_pct: -29.5,
+        source_context: "ambient"
+      });
+      if (res && res.spoken_response) setGlassesBanner(res.spoken_response);
+      await loadReport();
+    }
+
+    async function simHomeMotorExam() {
+      const res = await apiPost("/api/v1/exam/complete", {
+        exam_uuid: "sim-exam-" + Date.now(),
+        timestamp_utc: new Date().toISOString(),
+        voice_mean_dbfs: -16.5,
+        voice_stability_db: 1.2,
+        handwriting_opencv_decay_pct: -7.5,
+        handwriting_sam_decay_pct: -6.9,
+        walk_cadence_spm: 105.0,
+        walk_mean_fi: 0.80,
+        walk_fog_count: 0
+      });
+      if (res && res.clinical_summary) setGlassesBanner(res.clinical_summary);
+      await loadReport();
+    }
+
+    async function simFallAndCancel() {
+      const uuid = "sim-fall-" + Date.now();
+      await apiPost("/api/v1/events/fall", {
+        event_uuid: uuid,
+        timestamp_utc: new Date().toISOString(),
+        peak_impact_g: 3.9,
+        peak_jerk_gs: 48.0,
+        post_impact_tilt_deg: 74.0,
+        latitude: 37.7749,
+        longitude: -122.4194,
+        horizontal_accuracy_m: 5.0,
+        status: "confirmed_waiting_dispatch"
+      });
+      await apiPost(`/api/v1/events/fall/${uuid}/cancel`);
+      setGlassesBanner("Fall alert dispatched and then canceled via All-Clear SMS.");
       await loadReport();
     }
 
