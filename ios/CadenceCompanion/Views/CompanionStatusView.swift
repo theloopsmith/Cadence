@@ -4,6 +4,8 @@ public struct CompanionStatusView: View {
     @State private var fogDetector = FoGDetector()
     @StateObject private var fallAlert = FallAlertCoordinator()
     @StateObject private var motorExam = HomeMotorExamManager()
+    @ObservedObject private var scenarioReplayer = IMUScenarioReplayer.shared
+    @State private var liveWindow: [IMUSample] = []
     @State private var lastFreezeIndex: Double = 0.0
     @State private var isFoGActive: Bool = false
     @State private var lastActionBanner: String = "Ready — All 7 Pipelines Active"
@@ -79,62 +81,112 @@ public struct CompanionStatusView: View {
 
                 // Interactive Hackathon Demo Scenario Replay Controls
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Interactive Demo Scenario Replay")
+                    Text("Interactive Demo Scenarios & 50 Hz Replay")
                         .font(.headline)
 
-                    Button(action: triggerSimulatedFoG) {
-                        Label("1. Simulate Freeze of Gait (5.5 Hz Tremor Burst -> RAS Cue)", systemImage: "metronome.fill")
+                    if scenarioReplayer.isPlaying, let scenario = scenarioReplayer.activeScenario {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                ProgressView()
+                                    .padding(.trailing, 4)
+                                Text("Replaying: \(scenario.rawValue)")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.blue)
+                                Spacer()
+                                Text("\(Int(scenarioReplayer.progress * 100))%")
+                                    .font(.caption.monospacedDigit())
+                            }
+                            ProgressView(value: scenarioReplayer.progress)
+                                .tint(.blue)
+
+                            Button(action: {
+                                scenarioReplayer.stop()
+                                AudioCueEngine.shared.stopRASMetronome()
+                                lastActionBanner = "Scenario playback canceled."
+                            }) {
+                                Text("Stop Kinematic Playback")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.red)
+                            }
+                            .padding(.top, 2)
+                        }
+                        .padding()
+                        .background(Color.blue.opacity(0.08))
+                        .cornerRadius(8)
+                    }
+
+                    // 1. FoG Kinematic Replay
+                    Button(action: {
+                        startKinematicReplay(.freezeOfGaitWithRecovery)
+                    }) {
+                        Label("▶ Live Replay: FoG Walk -> Freeze -> RAS Cue -> Recovery", systemImage: "play.circle.fill")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(scenarioReplayer.isPlaying)
 
-                    Button(action: triggerSimulatedFallCheckIn) {
-                        Label("2. Simulate Hard Fall (3.8g Impact + 78° Posture -> 12s Check-In)", systemImage: "exclamationmark.triangle.fill")
+                    // 2. Hard Fall Kinematic Replay
+                    Button(action: {
+                        startKinematicReplay(.hardFallWithImpact)
+                    }) {
+                        Label("▶ Live Replay: Hard Fall (Impact + Stillness -> 12s SOS)", systemImage: "play.circle.fill")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
+                    .disabled(scenarioReplayer.isPlaying)
 
+                    // 3. Bed Roll False-Alarm Suppression Replay
                     Button(action: {
-                        let status = fallAlert.resolveFromSpeech(
-                            transcript: "I'm okay, just dropped my keys",
-                            maxVocalLevelDbfs: -22.0,
-                            hardwareWearStateWorn: true,
-                            preImpactWearRmsG: 0.08,
-                            preImpactRespPower: 2.0e-5,
-                            preImpactPitchDeg: 8.0
-                        )
-                        lastActionBanner = "Spoken check-in resolved: \(status)"
+                        startKinematicReplay(.bedRollSuppression)
                     }) {
-                        Label("   ↳ Spoken Check-In: “I'm okay” (cancels)", systemImage: "checkmark.shield.fill")
+                        Label("▶ Live Replay: Bed Roll (Pitch >65° Disarmed Guard)", systemImage: "bed.double.fill")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.bordered)
+                    .disabled(scenarioReplayer.isPlaying)
 
-                    Button(action: {
-                        // Silence for 12s with no affirmative phrase: the
-                        // detector escalates and the beacon starts flashing.
-                        let status = fallAlert.resolveFromSpeech(
-                            transcript: nil,
-                            maxVocalLevelDbfs: -52.0,
-                            hardwareWearStateWorn: true,
-                            preImpactWearRmsG: 0.08,
-                            preImpactRespPower: 2.0e-5,
-                            preImpactPitchDeg: 8.0
-                        )
-                        lastActionBanner = "No response in 12s — escalated: \(status)"
-                    }) {
-                        Label("   ↳ Silent Timeout (escalates to siren + SOS beacon)", systemImage: "speaker.wave.3.fill")
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    // Instant Fall Check-In Simulators
+                    HStack(spacing: 8) {
+                        Button(action: {
+                            let status = fallAlert.resolveFromSpeech(
+                                transcript: "I'm okay, just dropped my keys",
+                                maxVocalLevelDbfs: -22.0,
+                                hardwareWearStateWorn: true,
+                                preImpactWearRmsG: 0.08,
+                                preImpactRespPower: 2.0e-5,
+                                preImpactPitchDeg: 8.0
+                            )
+                            lastActionBanner = "Spoken check-in resolved: \(status)"
+                        }) {
+                            Label("“I'm okay” (cancel)", systemImage: "checkmark.shield.fill")
+                                .font(.caption.bold())
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button(action: {
+                            let status = fallAlert.resolveFromSpeech(
+                                transcript: nil,
+                                maxVocalLevelDbfs: -52.0,
+                                hardwareWearStateWorn: true,
+                                preImpactWearRmsG: 0.08,
+                                preImpactRespPower: 2.0e-5,
+                                preImpactPitchDeg: 8.0
+                            )
+                            lastActionBanner = "Silent timeout escalated: \(status)"
+                        }) {
+                            Label("Timeout (siren)", systemImage: "speaker.wave.3.fill")
+                                .font(.caption.bold())
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
 
+                    // Guided Motor Exam
                     Button(action: {
                         Task {
-                            // Mid-range "wearing off" measurements, so the demo
-                            // shows a clinically interesting score rather than
-                            // a perfect one from empty defaults.
                             var m = HomeMotorExamMeasurements()
                             m.voiceMeanDbfs = -26.5
                             m.voiceStabilityDb = 2.9
@@ -147,12 +199,12 @@ public struct CompanionStatusView: View {
                             lastActionBanner = summary
                         }
                     }) {
-                        Label("3. Run Guided 3-Step Home Motor Exam (Voice -> Writing -> Walk)", systemImage: "waveform.path.ecg")
+                        Label("3. Run Guided 3-Step Home Motor Exam (Voice -> Line -> Walk)", systemImage: "waveform.path.ecg")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.indigo)
-                    .disabled(motorExam.isRunning)
+                    .disabled(motorExam.isRunning || scenarioReplayer.isPlaying)
                 }
                 .padding()
                 .background(Color.secondary.opacity(0.10))
@@ -252,5 +304,75 @@ public struct CompanionStatusView: View {
         )
         fallAlert.beginCheckIn(eventUUID: eventUUID ?? UUID().uuidString)
         lastActionBanner = "Stage 3 fall confirmed. Local row saved; 12s voice check-in open."
+    }
+
+    private func startKinematicReplay(_ scenario: IMUScenario) {
+        liveWindow.removeAll()
+        lastActionBanner = "Playing \(scenario.rawValue)..."
+        var sampleCount = 0
+
+        scenarioReplayer.playScenario(scenario, sampleRateHz: 50.0, onSample: { sample in
+            sampleCount += 1
+            liveWindow.append(sample)
+            if liveWindow.count > 128 {
+                liveWindow.removeFirst()
+            }
+
+            switch scenario {
+            case .freezeOfGaitWithRecovery:
+                if liveWindow.count == 128 && sampleCount % 25 == 0 {
+                    let spectral = fogDetector.computeSpectralMetrics(window: liveWindow, sampledHz: 50.0)
+                    let active = fogDetector.evaluateHop(
+                        locomotorBandPower: spectral.locomotorBandPower,
+                        freezeBandPower: spectral.freezeBandPower,
+                        integratedYaw15sDeg: 0.0,
+                        pitchDeg: sample.pitchDeg,
+                        rollDeg: sample.rollDeg,
+                        sitToStandDetected: false,
+                        isUserSpeaking: false,
+                        sampledHz: 50.0
+                    )
+                    DispatchQueue.main.async {
+                        self.isFoGActive = active
+                        self.lastFreezeIndex = spectral.freezeIndex
+                    }
+                }
+
+            case .hardFallWithImpact:
+                if let eventUUID = fallAlert.detector.processIMUSample(
+                    sample,
+                    latitude: 37.7749,
+                    longitude: -122.4194,
+                    horizontalAccuracyM: 5.0
+                ) {
+                    DispatchQueue.main.async {
+                        self.fallAlert.beginCheckIn(eventUUID: eventUUID)
+                        self.lastActionBanner = "Stage 3 fall detected via replay. 12s voice check-in open."
+                    }
+                }
+
+            case .bedRollSuppression:
+                if liveWindow.count == 128 && sampleCount % 25 == 0 {
+                    let spectral = fogDetector.computeSpectralMetrics(window: liveWindow, sampledHz: 50.0)
+                    _ = fogDetector.evaluateHop(
+                        locomotorBandPower: spectral.locomotorBandPower,
+                        freezeBandPower: spectral.freezeBandPower,
+                        integratedYaw15sDeg: 55.0,
+                        pitchDeg: sample.pitchDeg,
+                        rollDeg: sample.rollDeg,
+                        sitToStandDetected: false,
+                        isUserSpeaking: false,
+                        sampledHz: 50.0
+                    )
+                }
+
+            case .sitToStandInitiation:
+                break
+            }
+        }, onCompletion: {
+            DispatchQueue.main.async {
+                self.lastActionBanner = "Scenario \(scenario.rawValue) finished."
+            }
+        })
     }
 }

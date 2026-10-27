@@ -279,14 +279,12 @@ public final class FoGDetector {
         recentWalkingRemainingSec = max(0.0, recentWalkingRemainingSec - hopDurationSec)
 
         // Track seated stillness (>= 5.0s = 10 hops) for Mode B Sit-to-Stand
-        if totalEnergy <= 0.02 {
+        if sitToStandDetected {
+            initiationArmedRemainingSec = 10.0
+            consecutiveSeatedStillHops = 0
+        } else if totalEnergy <= 0.02 {
             consecutiveSeatedStillHops += 1
         } else {
-            if sitToStandDetected && consecutiveSeatedStillHops >= 10 {
-                initiationArmedRemainingSec = 10.0
-            } else if sitToStandDetected {
-                initiationArmedRemainingSec = 10.0
-            }
             consecutiveSeatedStillHops = 0
         }
 
@@ -307,7 +305,7 @@ public final class FoGDetector {
         }
 
         // Resolve active FoGArmingMode
-        if locomotorBandPower > 0.08 {
+        if locomotorBandPower > 0.08 || recentWalkingRemainingSec > 0.0 {
             armingMode = .walking
         } else if initiationArmedRemainingSec > 0.0 {
             armingMode = .sitToStand
