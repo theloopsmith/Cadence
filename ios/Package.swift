@@ -16,11 +16,7 @@ let package = Package(
     targets: [
         .target(
             name: "CadenceCompanion",
-            path: "CadenceCompanion",
-            exclude: [
-                "App/CadenceApp.swift",
-                "Info.plist"
-            ]
+            path: "CadenceCompanion"
         ),
         .testTarget(
             name: "CadenceCompanionTests",

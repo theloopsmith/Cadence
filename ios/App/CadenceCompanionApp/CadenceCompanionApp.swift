@@ -1,13 +1,14 @@
+import CadenceCompanion
 import SwiftUI
 
 @main
-public struct CadenceApp: App {
-    public init() {
+struct CadenceCompanionApp: App {
+    init() {
         // Initializes launch-configured .playAndRecord AVAudioSession once at startup
         _ = AudioCueEngine.shared
     }
 
-    public var body: some Scene {
+    var body: some Scene {
         WindowGroup {
             CompanionStatusView()
         }
