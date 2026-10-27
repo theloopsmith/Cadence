@@ -27,5 +27,11 @@ Cadence is an audio-first, privacy-preserving clinical companion for **Meta Gen 
 cd backend && .venv/bin/pytest -v
 
 # 3. Compile & test the Swift Edge DSP & Audio Engine (FoG FFT, 3-Stage Fall Detector, VoiceMonitor)
-cd ../ios && swift test
+cd .. && ./scripts/test_ios.sh
 ```
+
+> **Note (iCloud Drive):** If the repo is inside iCloud Drive, a plain `swift test` can fail with
+> `resource fork, Finder information, or similar detritus not allowed` because iCloud adds extended
+> attributes that `codesign` rejects. `scripts/test_ios.sh` avoids this by building in
+> `~/Library/Caches/CadenceBuild` instead. In Xcode, do the same by setting
+> **Settings → Locations → Derived Data** to a folder outside iCloud.
