@@ -1,0 +1,225 @@
+<mxfile host="app.diagrams.net" modified="2026-10-27T02:58:00.000Z" agent="Antigravity" version="24.7.0" type="device">
+  <diagram id="cadence-high-level-v1" name="1. High-Level Architecture (v1)">
+    <mxGraphModel dx="1850" dy="1180" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1180" math="0" shadow="1">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ==================== TITLE BANNER ==================== -->
+        <mxCell id="title" value="CADENCE — High-Level Animated System Architecture (v1 • &quot;Build for Your World&quot;)&#xa;Zero-Overlap Flow  •  On-Device Metronome Cueing  •  Signed Twilio Escalation + Phone Speaker Siren  •  Guided Home Motor Exam &amp; ON/OFF Diary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#334155;fontColor=#F8FAFC;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1800" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== STAGE HEADERS (5 COLUMNS) ==================== -->
+        <mxCell id="h_col1" value="STAGE 1: WEARABLE &amp; BODY INPUTS&#xa;Meta Gen 3 Glasses + Simulator / Phone IMU" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#14532D;strokeColor=#16A34A;fontColor=#FFFFFF;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="95" width="260" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="h_col2" value="STAGE 2: ON-DEVICE SWIFT EDGE&#xa;Resampled DSP, Dual STT &amp; Stage-3 P0 Queue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1E3A8A;strokeColor=#2563EB;fontColor=#FFFFFF;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="95" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="h_col3" value="STAGE 3: EDGE ACTION / FASTAPI GATEWAY&#xa;Local Cueing or Sync SQLite + 4.0s Deadline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#334155;strokeColor=#64748B;fontColor=#FFFFFF;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="95" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="h_col4" value="STAGE 4: CLOUD SYNC &amp; META AI STACK&#xa;Per-Model Breakers • Twilio • SAM 3.1 • Baseten" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4C1D95;strokeColor=#7C3AED;fontColor=#FFFFFF;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="95" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="h_col5" value="STAGE 5: TERMINAL OUTPUTS &amp; DIARY&#xa;Audio Cues, Bystander Beacon &amp; Clinical Log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#7C2D12;strokeColor=#EA580C;fontColor=#FFFFFF;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="95" width="240" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== ROW 1 (Y=160): FREEZING OF GAIT ==================== -->
+        <mxCell id="r1_c1" value="🦿 6-Axis IMU (Uniform Resampled)&#xa;Linearly resampled at f_s; N &gt;= 2.56*f_s&#xa;(Gen 3 IMU / Phone / Synthetic Injector)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#16A34A;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="160" width="260" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r1_c2" value="⚡ Armed FoG FFT Detector (Edge)&#xa;Walk (3s), Sit-to-Stand, or Yaw-Turn Arm&#xa;Hz-Derived Bins; Speech = +0.8 FI Mod" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="420" y="160" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r1_c3" value="🔊 On-Device 100 BPM Metronome&#xa;Triggered DIRECTLY by Detector (&lt;50ms)&#xa;Auto-stops when FI &lt; 1.3 for 3.0s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#EA580C;fontColor=#7C2D12;fontSize=11;fontStyle=1;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="820" y="160" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r1_c4" value="📥 Sync FoG SQLite Commit (&lt;5ms)&#xa;POST /api/v1/events/fog after episode&#xa;ON CONFLICT(event_uuid) DO NOTHING" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="160" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r1_c5" value="📊 Terminal Diary &amp; Baseten Node&#xa;Sync S(t_k) bucket update + async&#xa;muse-spark-open-1026 episode brief" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAF5FF;strokeColor=#7C3AED;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="160" width="240" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_r1_1" value="Resampled Grid" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#16A34A;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r1_c1" target="r1_c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r1_2" value="&lt;50ms Edge Trigger" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#EA580C;strokeWidth=3;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r1_c2" target="r1_c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r1_3" value="Post-Episode POST" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#2563EB;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r1_c3" target="r1_c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r1_4" value="Sync DB ➔ Async LLM" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#7C3AED;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r1_c4" target="r1_c5"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+
+        <!-- ==================== ROW 2 (Y=280): FALL DETECTION & SIGNED WEBHOOK ESCALATION ==================== -->
+        <mxCell id="r2_c1" value="🚨 Impact + Hardware wearState Primary&#xa;Free-Fall (&lt;0.45g) → Impact (&gt;2.8g)&#xa;Toolkit wearState + gated 10s buffer + GPS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF2F2;strokeColor=#DC2626;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="280" width="260" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r2_c2" value="🛑 12s Check-In (Distress/Groans Override)&#xa;Requires full &quot;I am okay&quot; (no bare &quot;okay&quot;)&#xa;(Distress/negation/groans ALWAYS escalate)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="420" y="280" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r2_c3" value="🆘 Sync Fall Insert &amp; Signed Webhooks&#xa;POST /api/v1/events/fall (Sync DB + GPS)&#xa;Validates X-Twilio-Signature header" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="820" y="280" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r2_c4" value="📲 Twilio GPS SMS + Keypress Gather Call&#xa;Primary 90s/terminal no-ack ➔ Secondary&#xa;➔ 60s Alternating Retry (15m Cap)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#DC2626;fontColor=#7F1D1D;fontSize=11;fontStyle=1;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="280" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r2_c5" value="🔊 Phone Speaker Siren (.speaker)&#xa;• Dispatched/Acked: Glasses status audio&#xa;• Offline/Unacked: Launch-configured&#xa;  .speaker Hot Siren + SOS Screen Beacon" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF2F2;strokeColor=#DC2626;fontColor=#7F1D1D;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="280" width="240" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_r2_1" value="Stage-3 P0 Saved" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#DC2626;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r2_c1" target="r2_c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r2_2" value="Timeout / Distress" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#DC2626;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r2_c2" target="r2_c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r2_3" value="Immediate Twilio" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#DC2626;strokeWidth=3;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r2_c3" target="r2_c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r2_4" value="Signed Ack / Siren" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#DC2626;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r2_c4" target="r2_c5"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+
+        <!-- ==================== ROW 3 (Y=400): MEDICATION & MEAL TIMING LOGGER ==================== -->
+        <mxCell id="r3_c1" value="💊 POV Camera + Voice Note&#xa;Captures Pill Bottle or Meal Plate&#xa;(Ephemeral RAM-Only Image Bytes)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#16A34A;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="400" width="260" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r3_c2" value="📸 Device-Token Media Client&#xa;Sends JPEG + Device Bearer Token&#xa;(Server binds token ➔ patient_id)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="420" y="400" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r3_c3" value="🥩 Plate-Normalized Protein Lookup&#xa;r_i,plate = A_mask / A_plate vs. r_ref[l_i]&#xa;Checks [Dose - 45m, Dose + 60m] log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="820" y="400" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r3_c4" value="🟣 SAM 3.1 (Portion/Bottle Masks)&#xa;+ Per-Model Circuit Breaker&#xa;(LLM never invents protein grams!)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAF5FF;strokeColor=#7C3AED;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="400" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r3_c5" value="🔊 Whitelisted Template Audio&#xa;Confirms dose &amp; logs protein overlap&#xa;(Neutral template fallback on block)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#EA580C;fontColor=#7C2D12;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="400" width="240" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_r3_1" value="Ephemeral JPEG" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#16A34A;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r3_c1" target="r3_c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r3_2" value="TLS + Device Token" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#2563EB;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r3_c2" target="r3_c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r3_3" value="4.0s Shared Budget" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#475569;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r3_c3" target="r3_c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r3_4" value="Verified Template" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#7C3AED;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r3_c4" target="r3_c5"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+
+        <!-- ==================== ROW 4 (Y=520): HALLUCINATION REALITY CHECK ==================== -->
+        <mxCell id="r4_c1" value="🪑 POV Camera + Quiet Query&#xa;Wearer whispers:&#xa;&quot;Is someone in that chair?&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#16A34A;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="260" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r4_c2" value="🎙️ Whisper Capture + STT&#xa;On-device STT + ephemeral POV frame&#xa;(Fails safe to &quot;Unable to verify&quot; offline)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="420" y="520" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r4_c3" value="🔍 Verifiable Scene Grounding Gate&#xa;Hard Gate: conf &gt;= 0.65 &amp; area &gt;= 1.5%&#xa;Slot Restricted to Detected SAM Labels!" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="820" y="520" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r4_c4" value="🟣 Meta API: SAM 3.1 + Muse Transcribe&#xa;+ Baseten: muse-spark-open-1026&#xa;Selects from SAM's returned mask labels" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAF5FF;strokeColor=#7C3AED;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="520" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r4_c5" value="🔊 Calm Open-Ear Grounding&#xa;&quot;The armchair is empty—there's just&#xa;a dark coat draped over the back.&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#EA580C;fontColor=#7C2D12;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="520" width="240" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_r4_1" value="Frame + Whisper" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#16A34A;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r4_c1" target="r4_c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r4_2" value="TLS + Device Token" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#2563EB;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r4_c2" target="r4_c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r4_3" value="4.0s Shared Budget" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#475569;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r4_c3" target="r4_c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r4_4" value="SAM-Locked Slot" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#7C3AED;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r4_c4" target="r4_c5"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+
+        <!-- ==================== ROW 5 (Y=640): VOICE & HANDWRITING (DUAL BOX SOURCE TRACKING) ==================== -->
+        <mxCell id="r5_c1" value="✍️ Ambient Voice &amp; Writing&#xa;POV camera views notebook line;&#xa;Mic tracks conversational loudness" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#16A34A;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="260" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r5_c2" value="📏 Hypophonia RMS Monitor&#xa;Detects soft speech (&lt;-32 dBFS, 4s)&#xa;&amp; sends handwriting frame to API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="420" y="640" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r5_c3" value="📐 CPU OpenCV Deskew (&lt;8ms)&#xa;Scores writing ALWAYS from&#xa;opencv_cc_decay_pct for parity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#475569;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="820" y="640" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r5_c4" value="🟣 SAM 3.1 Visual Refinement&#xa;Computes sam_3_1_decay_pct &amp; boxes&#xa;for report display (never skews score)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAF5FF;strokeColor=#7C3AED;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="640" width="280" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r5_c5" value="🔊 Discreet Open-Ear Nudges&#xa;Prompts louder speech or taller&#xa;strokes when shrinkage &gt;= 25%" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#EA580C;fontColor=#7C2D12;fontSize=11;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="640" width="240" height="88" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_r5_1" value="Frame + Voice dB" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#16A34A;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r5_c1" target="r5_c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r5_2" value="TLS + Device Token" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#2563EB;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r5_c2" target="r5_c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r5_3" value="Consistent Score" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#475569;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r5_c3" target="r5_c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r5_4" value="Score + SAM Boxes" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#EA580C;strokeWidth=2.5;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r5_c4" target="r5_c5"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+
+        <!-- ==================== ROW 6 (Y=760): GUIDED HOME MOTOR EXAM & NEUROLOGIST ON/OFF DIARY ==================== -->
+        <mxCell id="r6_c1" value="🩺 Guided Home Motor Exam&#xa;1. Voice Sample (5s phonation σ_dB)&#xa;2. Handwriting Sample (POV)&#xa;3. Short Timed Walk (10s IMU)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontColor=#14532D;fontSize=11;fontStyle=1;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="40" y="760" width="260" height="92" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r6_c2" value="🧭 HomeMotorExamManager.swift&#xa;Glasses-led audio prompts stitching&#xa;Voice RMS + POV Frame + 10s Walk" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#1D4ED8;fontColor=#1E3A8A;fontSize=11;fontStyle=1;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="420" y="760" width="280" height="92" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r6_c3" value="📊 Exhaustive S(t_k) &amp; Exam Scorer&#xa;Ordered OFF ➔ NO_DOSE ➔ WEARING_OFF&#xa;➔ ON classification + 0–100 Score" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#334155;fontColor=#0F172A;fontSize=11;fontStyle=1;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="820" y="760" width="280" height="92" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r6_c4" value="⚡ SAM 3.1 + Baseten 2M-TPM&#xa;muse-spark-open-1026 narrates&#xa;invariant scores + SAM refinement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#6D28D9;fontColor=#4C1D95;fontSize=11;fontStyle=1;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="760" width="280" height="92" as="geometry" />
+        </mxCell>
+
+        <mxCell id="r6_c5" value="📈 Canonical Web Neurologist Report&#xa;(Public HTML + Bearer API Gate)&#xa;0–100 Exam Radar + 24h ON/OFF Diary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontColor=#14532D;fontSize=11;fontStyle=1;strokeWidth=2.5;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="760" width="240" height="92" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_r6_1" value="3-Step Samples" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#15803D;strokeWidth=3;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r6_c1" target="r6_c2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r6_2" value="Exam Bundle" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#1D4ED8;strokeWidth=3;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r6_c2" target="r6_c3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r6_3" value="Deterministic S(t)" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#334155;strokeWidth=3;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r6_c3" target="r6_c4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_r6_4" value="Scored Exam + Report" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=classic;strokeColor=#16A34A;strokeWidth=3;flowAnimation=1;fontSize=10;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r6_c4" target="r6_c5"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+
+        <!-- ==================== DEDICATED BOTTOM AUDIO FEEDBACK LOOP (NO OVERLAPS) ==================== -->
+        <mxCell id="feedback_bus" value="🔄 CLOSED-LOOP OPEN-EAR AUDIO &amp; ENCRYPTED SQLITE BUS: Ack-Gated P0–P3 Audio + ThreadPool SQLCipher / Disk-Encrypted Store (ON CONFLICT(event_uuid) DO NOTHING)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=12;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="380" y="905" width="1160" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_fb_in" value="Open-Ear Audio Cues" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;entryX=1;entryY=0.5;endArrow=classic;strokeColor=#D97706;strokeWidth=3;flowAnimation=1;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="r6_c5" target="feedback_bus">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1720" y="930" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_fb_out" value="Back to Wearer's Ears" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.5;entryX=0.5;entryY=1;endArrow=classic;strokeColor=#D97706;strokeWidth=3;flowAnimation=1;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="feedback_bus" target="r6_c1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="170" y="930" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== FOOTER ARCHITECTURE SUMMARY BADGE ==================== -->
+        <mxCell id="footer_badge" value="🛡️ Cadence v1 Core Guarantees: On-Device &lt;50ms FoG Metronome | Stage-3 Local P0 Fall Save + Signed Twilio Webhooks + Launch-Configured .speaker Siren &amp; 60s Alternating Retry | Plate-Normalized Protein Lookup | SAM-Locked Hallucination Slot | Method-Invariant Writing Score | Ordered Exhaustive OFF / NO_DOSE / WEARING_OFF / ON Diary Engine." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F172A;strokeColor=#334155;fontColor=#E2E8F0;fontSize=10.5;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="980" width="1800" height="55" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

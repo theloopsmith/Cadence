@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cadence — Objective ON/OFF Diary &amp; Home Motor Exam Report</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --ink: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --on: #16a34a;
+      --wearing-off: #d97706;
+      --off: #dc2626;
+      --nodose: #64748b;
+      --brand: #2563eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      padding: 24px;
+    }
+    .container { max-width: 1120px; margin: 0 auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f172a;
+      color: #fff;
+      padding: 20px 24px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+    header h1 { margin: 0; font-size: 20px; }
+    header p { margin: 4px 0 0; font-size: 13px; color: #cbd5e1; }
+    .btn {
+      background: var(--brand);
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+    .metric-label { font-size: 12px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .metric-value { font-size: 28px; font-weight: 800; margin-top: 6px; }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .badge-ON { background: var(--on); }
+    .badge-WEARING_OFF { background: var(--wearing-off); }
+    .badge-OFF { background: var(--off); }
+    .badge-NO_DOSE { background: var(--nodose); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+    #authModal {
+      position: fixed; inset: 0; background: rgba(15,23,42,0.65);
+      display: none; align-items: center; justify-content: center;
+    }
+    .modal-box {
+      background: #fff; padding: 24px; border-radius: 12px; width: 400px; max-width: 92vw;
+    }
+    .modal-box input {
+      width: 100%; padding: 10px; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0; background: #fff; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>CADENCE — Neurologist Objective ON/OFF Diary &amp; Home Motor Exam Report</h1>
+        <p>Meta Gen 3 AI Glasses Companion • Method-Invariant Motor Scoring &amp; Pure Motor S(t_k) Classification</p>
+      </div>
+      <div class="no-print">
+        <button class="btn" onclick="window.print()">Export / Print PDF</button>
+      </div>
+    </header>
+
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="metric-label">Baseten Clinical Narrative (muse-spark-open-1026)</div>
+      <p id="narrativeText" style="margin: 8px 0 0; font-size: 15px; line-height: 1.5;">
+        Authenticate with your Clinician or Device Bearer token to load patient report data.
+      </p>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="metric-label">ON State Share</div>
+        <div class="metric-value" id="onPct" style="color: var(--on);">—</div>
+      </div>
+      <div class="card">
+        <div class="metric-label">WEARING-OFF Share</div>
+        <div class="metric-value" id="wearingOffPct" style="color: var(--wearing-off);">—</div>
+      </div>
+      <div class="card">
+        <div class="metric-label">OFF State Share</div>
+        <div class="metric-value" id="offPct" style="color: var(--off);">—</div>
+      </div>
+      <div class="card">
+        <div class="metric-label">FoG Episodes / Falls</div>
+        <div class="metric-value" id="incidentsCount">—</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="metric-label" style="margin-bottom: 12px;">Guided 3-Step Home Motor Exams (ON vs. OFF Objective Comparison)</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp (UTC)</th>
+            <th>State</th>
+            <th>Voice Score (0–100)</th>
+            <th>Writing Score (opencv_cc)</th>
+            <th>SAM 3.1 Refinement</th>
+            <th>Gait Score (0–100)</th>
+            <th>Composite Score</th>
+          </tr>
+        </thead>
+        <tbody id="examTableBody">
+          <tr><td colspan="7">No exam rows loaded yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- In-Page Modal Only (Token stored in sessionStorage, NEVER in URL query string) -->
+  <div id="authModal" class="no-print">
+    <div class="modal-box">
+      <h3 style="margin-top:0;">Clinician / Device Bearer Token</h3>
+      <p style="font-size:13px; color:var(--muted);">
+        Enter your read-only Clinician token (or Device token) to fetch the report via <code>Authorization: Bearer</code> header.
+      </p>
+      <input type="password" id="tokenInput" placeholder="cadence-dev-clinician-reader-token-2026" />
+      <button class="btn" style="width:100%;" onclick="saveTokenAndLoad()">Load Report</button>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "cadence_bearer_token";
+
+    function saveTokenAndLoad() {
+      const val = document.getElementById("tokenInput").value.trim();
+      if (!val) return;
+      sessionStorage.setItem(STORAGE_KEY, val);
+      document.getElementById("authModal").style.display = "none";
+      loadReport();
+    }
+
+    async function loadReport() {
+      const token = sessionStorage.getItem(STORAGE_KEY);
+      if (!token) {
+        document.getElementById("authModal").style.display = "flex";
+        return;
+      }
+      const res = await fetch("/api/v1/report/neurologist", {
+        headers: { "Authorization": "Bearer " + token }
+      });
+      if (res.status === 401 || res.status === 403) {
+        sessionStorage.removeItem(STORAGE_KEY);
+        document.getElementById("authModal").style.display = "flex";
+        return;
+      }
+      const data = await res.json();
+      document.getElementById("narrativeText").textContent = data.clinical_narrative;
+      document.getElementById("onPct").textContent = data.summary_stats.on_pct + "%";
+      document.getElementById("wearingOffPct").textContent = data.summary_stats.wearing_off_pct + "%";
+      document.getElementById("offPct").textContent = data.summary_stats.off_pct + "%";
+      document.getElementById("incidentsCount").textContent =
+        data.summary_stats.fog_count + " FoG / " + data.summary_stats.fall_count + " Falls";
+
+      const tbody = document.getElementById("examTableBody");
+      tbody.innerHTML = "";
+      if (!data.motor_exams || data.motor_exams.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7">No Guided Home Motor Exams recorded yet.</td></tr>';
+        return;
+      }
+      for (const ex of data.motor_exams) {
+        const tr = document.createElement("tr");
+        const samCol = ex.handwriting_sam_decay_pct != null ? ex.handwriting_sam_decay_pct.toFixed(1) + "%" : "—";
+        tr.innerHTML = `
+          <td>${ex.timestamp_utc}</td>
+          <td><span class="badge badge-${ex.medication_state_label}">${ex.medication_state_label}</span></td>
+          <td>${ex.voice_score.toFixed(1)}</td>
+          <td>${ex.handwriting_score.toFixed(1)} (${ex.handwriting_opencv_decay_pct.toFixed(1)}%)</td>
+          <td>${samCol}</td>
+          <td>${ex.gait_score.toFixed(1)}</td>
+          <td><strong>${ex.composite_motor_score.toFixed(1)}</strong></td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", loadReport);
+  </script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables & secrets (NEVER commit)
+.env
+*.env.local
+
+# SQLite databases & journals
+*.db
+*.sqlite
+*.sqlite3
+*-journal
+*-wal
+*-shm
+
+# macOS & IDE
+.DS_Store
+.AppleDouble
+.LSOverride
+xcuserdata/
+DerivedData/
+*.moved-aside
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# Pytest & coverage
+.pytest_cache/
+.coverage
+htmlcov/
