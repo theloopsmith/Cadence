@@ -755,11 +755,9 @@ and confirms it is delivered when the network returns.
 - **No cloud provider has been called.** Meta Model API, Baseten and Twilio all
   run through simulated paths; the circuit breakers and the 4.0 s deadline have
   never opened against a real timeout.
-- **`FoGDetector.computeSpectralMetrics` uses an O(N²) DFT**, not vDSP's FFT,
-  despite the comment and the `<50 ms` budget. At N=128 this is around 16k
-  operations per hop and fine; at N=256 (f_s = 100 Hz) it is 65k. Worth
-  measuring on device during the Day-2 spike before deciding whether to
-  convert it to a real FFT.
+- *(Closed in the tenth pass.)* `FoGDetector.computeSpectralMetrics` evaluated
+  a direct transform rather than vDSP's FFT, despite the comment and the
+  `<50 ms` budget.
 - *(Closed in this pass.)* `EventSyncManager` had no retry: it was documented
   as an "exponential-backoff" queue, but a failed dispatch left the row at
   `synced = 0` and nothing ever retried it, so the offline fall queue never
@@ -776,3 +774,253 @@ from here, in order:
    deadline are exercised against real latency.
 3. Run the airplane-mode fall drill on a real device now that the queue drains,
    to confirm the end-to-end path the unit tests only simulate.
+
+---
+
+# Tenth Pass — FoG Spectral Path: vDSP FFT & Budget Measurement (Oct 27)
+
+Scope: replace the direct Fourier transform in
+`FoGDetector.computeSpectralMetrics` with an Accelerate FFT and measure both
+against the `50 ms` DSP budget.
+
+## Correction to the ninth pass
+
+The ninth pass described the transform as **O(N²)** and estimated "65k
+operations at N=256". That overstated it, and the correction matters for
+judging how urgent this was.
+
+The loop never evaluated all `N/2` bins. It skipped every bin outside
+`[0.5, 8.0 Hz]`, and because the window length is derived from the sample rate
+(`N = 2^ceil(log2(2.56 · f_s))`), the bin spacing stays fixed at about
+`0.39 Hz` at every rate. Exactly **19 bins** fall in band regardless of `f_s`,
+so the real cost was **O(19 · N)** — linear, not quadratic:
+
+| `f_s` | `N` | `df` | Bins in band | Multiplications |
+| ---: | ---: | ---: | ---: | ---: |
+| 50 Hz | 128 | 0.39 Hz | 19 | 2,432 |
+| 100 Hz | 256 | 0.39 Hz | 19 | 4,864 |
+| 200 Hz | 512 | 0.39 Hz | 19 | 9,728 |
+
+So the earlier figure was about 13x too high, and the growth was linear. The
+change was still worth making — the measurements below show why — but the
+original note's reasoning was wrong and is corrected here rather than quietly
+dropped.
+
+## What changed
+
+- **`acceleratePSD`** computes the one-sided PSD with `vDSP_DFT_zrop` (real to
+  complex, split form).
+- **`FFTSetupCache`** caches `vDSP_DFT_Setup` objects by window length behind a
+  lock. Creating a setup precomputes twiddle factors and costs far more than a
+  transform; the detector sees one window length per session, so the setup is
+  built once and reused across every `0.50 s` hop.
+- **`referencePSD`** keeps the original direct transform as a correctness
+  oracle and as the fallback when vDSP cannot serve a window length (it needs
+  `n = f · 2^k` for `f` in 1, 3, 5, 15). An unsupported `N` now degrades in
+  speed instead of silently returning no spectrum and disarming detection.
+- **`prepareWindowedSignal`** and **`integrateBands`** are shared by both
+  paths, so the band edges and the Hann windowing cannot drift apart between
+  them.
+
+## The scaling bug the equivalence test caught
+
+The first implementation was wrong, and wrong in a way that would not have
+crashed anything. `vDSP_DFT_zrop` output carries an implicit factor of two
+relative to the textbook transform, and packs DC in `real[0]` with Nyquist in
+`imag[0]`. I halved each term to undo the factor of two **and** multiplied the
+squared result by four, so every bin came out exactly `4x` too large.
+
+Both band powers scaled together, so the Freeze Index — a ratio — stayed nearly
+right, and a casual check of the demo would have looked fine. But
+`totalDynamicEnergy` is compared against the absolute `0.02` arming gate, so a
+`4x` inflation would have armed the detector on noise far below walking
+intensity. The equivalence test reported a relative deviation of exactly `0.75`
+on the first run, which is the signature of a `4x` error, and named the
+constant immediately.
+
+This is the argument for keeping the direct transform in the codebase rather
+than deleting it: a hand-derived scaling constant needs an oracle, and
+"the demo still looks right" is not one.
+
+## Verification
+
+`testAccelerateMatchesReferenceTransform` compares both paths across 30 cases —
+six signal shapes (pure freeze, pure locomotor, mixed, three-component, a pair
+straddling the 3.0 Hz edge, and noise alone) at five `(f_s, N)` combinations.
+
+**Worst relative deviation: 9.1 x 10^-14**, which is floating-point noise.
+
+## Benchmark
+
+Measured on this machine (Apple silicon, release-mode Accelerate, 200
+iterations per configuration after warming the setup cache).
+
+Transform only:
+
+| `f_s` | `N` | FFT | Direct | Speedup |
+| ---: | ---: | ---: | ---: | ---: |
+| 50 Hz | 128 | 0.031 ms | 0.90 ms | 29x |
+| 100 Hz | 256 | 0.061 ms | 3.41 ms | 56x |
+| 200 Hz | 512 | 0.128 ms | 13.38 ms | 104x |
+
+Full hop (jittery-stream resample, transform, and the arming state machine) —
+this is what the `50 ms` budget actually governs:
+
+| `f_s` | `N` | Per hop | Budget used |
+| ---: | ---: | ---: | ---: |
+| 50 Hz | 128 | 0.059 ms | 0.1% |
+| 100 Hz | 256 | 0.116 ms | 0.2% |
+| 200 Hz | 512 | 0.409 ms | 0.8% |
+
+The headline is the `200 Hz` row of the first table. The direct transform took
+**13.4 ms of the 50 ms budget** on a development Mac. A phone's efficiency
+cores are several times slower, so that configuration was plausibly near or
+over budget on real hardware — and `200 Hz` is not exotic for an IMU. The
+50 Hz and 100 Hz rows were never in danger. The change converts a configuration
+that might have failed on device into one using under 1% of its budget.
+
+These are Mac figures and are not a substitute for an on-device measurement.
+What they establish is headroom: at 0.8% of budget, the spectral path is no
+longer a candidate explanation for a missed hop on hardware.
+
+## Tests added
+
+Nine, in `Tests/CadenceCompanionTests/FoGSpectralTests.swift`:
+
+- FFT matches the direct transform across 30 signal and size combinations
+- Freeze Index separates a 5.5 Hz freeze from 1.8 Hz walking
+- 200 repeated hops stay bit-stable, catching a setup leak or mutation
+- Undersized windows return zeros rather than arming on noise
+- Transform and full-hop benchmarks assert against the budget
+- An unsupported length (`N = 124`) falls back and still detects the freeze
+- Band edges apply consistently either side of 3.0 Hz
+- Out-of-band content at 18 Hz is excluded from both bands
+
+iOS suite: **17 to 26 tests**, all passing, no warnings. Backend unchanged at 27.
+
+## Environment
+
+iCloud Drive restored the old, broken Python 3.13 virtualenv over the 3.12 one
+built in the ninth pass, breaking the backend suite again mid-session. A venv
+inside an iCloud-synced folder will keep being clobbered, so it now lives in
+`~/Library/Caches/CadenceBuild/venv` with a symlink at `backend/.venv`.
+`scripts/run_demo.sh` builds it there and relinks whenever the interpreter will
+not run. Verified end to end: the script runs the suite, starts the server, and
+serves the dashboard at HTTP 200.
+
+---
+
+# Eleventh Pass — SOS Beacon Wiring & Exam Submission (Oct 27)
+
+Scope: wire `EmergencySOSView`'s flashing beacon, `tel://` buttons and screen
+brightness into the fall flow, and connect `HomeMotorExamManager` to
+`POST /api/v1/exam/complete`.
+
+## What was missing
+
+Both pieces existed as shells. `EmergencySOSView` was a static red rectangle
+with one cancel button: no flashing, no brightness control, no way to call
+anyone. `HomeMotorExamManager` spoke three prompts and advanced an enum; it
+collected no measurements and posted nothing, so Pipeline 6 produced data only
+when the demo seed wrote it server-side.
+
+A subtler problem sat between them. `CompanionStatusView` owned the alert state
+in a `@State` boolean and, whenever the cancel button was tapped, synthesized a
+fake `"I'm okay"` transcript and ran it through `evaluateCheckInOutcome`. That
+conflates two cancellation routes the specification keeps apart: a recognized
+spoken phrase, and an explicit button press. A tap is unambiguous and should
+never be routed through the phrase matcher that exists to judge speech —
+especially now that the matcher has inflection rules, where a future keyword
+edit could make a button press escalate.
+
+## What changed
+
+**`FallAlertCoordinator`** (new) owns the alert from Stage 3 confirmation to
+resolution, keeping the detector, audio engine, screen and backend in one
+state. Phases are `idle`, `checkIn(eventUUID:deadline:)` and
+`dispatched(eventUUID:)`.
+
+- **Check-in is calm.** Brightness goes to full and the idle timer is disabled
+  so a wearer on the floor can find the button, but the beacon does not flash
+  and the siren does not sound. The wearer is being asked a question.
+- **Escalation is loud.** Siren on, beacon flashing red/white, event queued
+  through `EventSyncManager` with GPS.
+- **Cancellation is routed by origin.** A spoken cancel goes through the
+  detector's phrase rules. A button press is recorded as
+  `canceled_by_user_button` directly. Cancelling *after* dispatch posts to
+  `/api/v1/events/fall/{uuid}/cancel` so the backend halts its retry loop and
+  sends the All-Clear SMS; cancelling *during* check-in records a resolved
+  false alarm, because no caregiver was ever contacted.
+- **Brightness is restored, not pinned.** The wearer's previous level is saved
+  and put back on stand-down.
+
+`ScreenController` and `PhoneDialer` are protocols, so the alert logic is
+testable on macOS while `UIKitScreenController` and `UIKitPhoneDialer` carry
+the real `UIScreen.main.brightness` and `tel://` behaviour.
+
+**`EmergencySOSView`** now flashes on a timer rather than a repeating
+animation, so the cadence survives recomposition mid-alert. It shows a live
+countdown during check-in, and reveals the caregiver and emergency call buttons
+only after escalation. iOS cannot auto-dial, so these open the system dialer
+pre-filled and the wearer confirms — the view says so rather than implying the
+phone places the call. With no caregiver number configured the button offers
+the emergency number instead of dialing nothing. VoiceOver gets one composed
+announcement rather than a per-flash barrage.
+
+**`HomeMotorExamManager`** gained `HomeMotorExamMeasurements`, a typed
+`HomeMotorExamResult`, and submission through an injectable `ExamSubmitting`.
+
+The scores are deliberately **not** computed on device. The diary classifier
+and the ON/OFF comparison must agree with them exactly, so there is one
+implementation of the formulas and it lives in `app/services/motor_exam.py`.
+When the backend is unreachable the exam is queued through `EventSyncManager`
+and the wearer is told the score will appear in their report — rather than
+being read a number the device invented.
+
+## A bug the tests caught
+
+The first submission built its payload with
+`"handwriting_sam_decay_pct": measurements.handwritingSamDecayPct as Any`.
+Bridging a nil Optional through `as Any` serializes a JSON `null` rather than
+omitting the key, so an exam with no SAM refinement sent an explicit null.
+
+Checked against the running backend: it accepts both the null and the omitted
+form, so this would not have failed. It is fixed anyway, and the test pins the
+cleaner contract rather than claiming to guard against a crash.
+
+While verifying, one real constraint did surface: `exam_uuid` has a 4-character
+minimum and a shorter value returns `422`. A test now pins the generated
+identifiers above that floor.
+
+## Verification
+
+- **Live HTTP round trip.** A real `URLSession` POST from Swift to a running
+  uvicorn instance, decoded by the production `Codable` type: HTTP 200, clean
+  decode, composite 76.4 from voice 86.5 / writing 72.8 / gait 71.5. This is
+  the contract verified end to end rather than against a stub.
+- **iOS SDK typecheck.** All sources typecheck against the iphonesimulator SDK
+  at `arm64-apple-ios16.0-simulator`, which exercises the UIKit brightness and
+  dialer paths that the macOS test run never compiles. A pre-existing
+  deprecation warning (`allowBluetooth` to `allowBluetoothHFP`) was cleared
+  while there.
+- **Suites.** iOS **26 to 47 tests**, backend unchanged at 27. All passing, no
+  warnings.
+
+## Not verified
+
+**The UI has not been seen running.** `xcode-select` points at the Command Line
+Tools, so the Simulator could not be launched; switching it needs a password I
+cannot supply:
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
+Everything above is logic and contract verification. The flash cadence, the
+countdown, the colour contrast at full brightness and the real `tel://` hand-off
+are all unobserved. `EndToEndFlowTests` drives the same call sequence the view
+drives, which covers the sequencing but not the appearance. Worth ten minutes in
+the Simulator before filming the pitch video.
+
+Still outstanding from earlier passes: no hardware IMU, no live cloud provider
+call, and the Day-2 spike measurements.

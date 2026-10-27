@@ -25,7 +25,10 @@ public final class AudioCueEngine {
             try session.setCategory(
                 .playAndRecord,
                 mode: .default,
-                options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+                // .allowBluetoothHFP is the current spelling of the option
+                // formerly called .allowBluetooth. HFP carries the glasses'
+                // microphone; A2DP carries high-quality playback to them.
+                options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
             )
             try session.setActive(true)
         } catch {

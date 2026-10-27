@@ -27,8 +27,8 @@ class FallEscalationManager:
         - Distress keywords or vocal groans (vocal_activity_detected) ALWAYS escalate!
         - Unworn drop suppression is DISABLED by default (settings.enable_unworn_drop_suppression == False).
         """
-        if payload.status == "canceled_false_alarm":
-            return "canceled_false_alarm"
+        if payload.status in {"canceled_false_alarm", "candidate_check_in_pending"}:
+            return payload.status
 
         if payload.distress_keyword_detected or payload.vocal_activity_detected:
             return "confirmed_waiting_dispatch"
@@ -53,8 +53,24 @@ class FallEscalationManager:
         1. Evaluates fail-safe wear/groan gate.
         2. Performs synchronous SQLite commit BEFORE calling Twilio API.
         3. Dispatches Primary SMS (with GPS Maps link) + Voice Call (<Gather numDigits='1'>).
+
+        The device posts the same event_uuid more than once: the Stage 3
+        candidate, then the check-in outcome, plus any queue retries. Only a
+        candidate row may be overwritten, and only the request that moves the
+        row out of 'confirmed_waiting_dispatch' contacts caregivers.
         """
         effective_status = self.evaluate_suppression_gate(payload)
+
+        existing = await fetch_one(
+            "SELECT status FROM fall_events WHERE event_uuid = ? AND patient_id = ?",
+            (payload.event_uuid, patient_id),
+        )
+        if (
+            existing
+            and existing["status"] == "escalated_twilio"
+            and effective_status == "canceled_false_alarm"
+        ):
+            return await self.cancel_dispatched_fall(patient_id, payload.event_uuid)
 
         await execute_write(
             """
@@ -67,6 +83,7 @@ class FallEscalationManager:
             ON CONFLICT(event_uuid) DO UPDATE SET
                 status = excluded.status,
                 cancel_transcript = excluded.cancel_transcript
+            WHERE fall_events.status = 'candidate_check_in_pending'
             """,
             (
                 patient_id,
@@ -87,7 +104,11 @@ class FallEscalationManager:
             ),
         )
 
-        if effective_status in {"canceled_false_alarm", "suppressed_unworn_drop"}:
+        if effective_status in {
+            "canceled_false_alarm",
+            "suppressed_unworn_drop",
+            "candidate_check_in_pending",
+        }:
             return {
                 "event_uuid": payload.event_uuid,
                 "status": effective_status,
@@ -95,22 +116,42 @@ class FallEscalationManager:
                 "local_siren_active": False,
             }
 
-        # Synchronous audit row BEFORE external Twilio call
+        claimed = await execute_write(
+            """
+            UPDATE fall_events SET status = 'escalated_twilio'
+            WHERE event_uuid = ? AND status = 'confirmed_waiting_dispatch'
+            """,
+            (payload.event_uuid,),
+        )
+        fall_row = await fetch_one(
+            "SELECT * FROM fall_events WHERE event_uuid = ?", (payload.event_uuid,)
+        )
+        if not claimed:
+            return {
+                "event_uuid": payload.event_uuid,
+                "status": fall_row["status"],
+                "twilio_dispatched": False,
+                "duplicate": True,
+                "local_siren_active": fall_row["status"] == "escalated_twilio",
+            }
+
+        # Dispatch from the stored row: the escalation posted after the
+        # check-in may carry zeroed impact figures, while the Stage 3
+        # candidate recorded the real ones.
         primary_phone = settings.caregiver_primary_phone or "+15550001111"
         dispatch_res = await twilio_client.dispatch_sms_and_call(
             to_phone=primary_phone,
             event_uuid=payload.event_uuid,
-            peak_impact_g=payload.peak_impact_g,
-            timestamp_utc=payload.timestamp_utc,
-            latitude=payload.latitude,
-            longitude=payload.longitude,
+            peak_impact_g=float(fall_row["peak_impact_g"]),
+            timestamp_utc=str(fall_row["timestamp_utc"]),
+            latitude=fall_row.get("latitude"),
+            longitude=fall_row.get("longitude"),
         )
 
         await execute_write(
             """
             UPDATE fall_events
-            SET status = 'escalated_twilio',
-                caregiver_sms_sid = ?,
+            SET caregiver_sms_sid = ?,
                 caregiver_call_sid = ?
             WHERE event_uuid = ?
             """,

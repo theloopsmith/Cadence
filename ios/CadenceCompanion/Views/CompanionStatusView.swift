@@ -2,11 +2,10 @@ import SwiftUI
 
 public struct CompanionStatusView: View {
     @State private var fogDetector = FoGDetector()
-    @State private var fallDetector = FallDetector()
-    @State private var motorExam = HomeMotorExamManager()
+    @StateObject private var fallAlert = FallAlertCoordinator()
+    @StateObject private var motorExam = HomeMotorExamManager()
     @State private var lastFreezeIndex: Double = 0.0
     @State private var isFoGActive: Bool = false
-    @State private var isFallAlertActive: Bool = false
     @State private var lastActionBanner: String = "Ready — All 7 Pipelines Active"
 
     public init() {}
@@ -97,7 +96,7 @@ public struct CompanionStatusView: View {
                     .tint(.red)
 
                     Button(action: {
-                        let status = fallDetector.evaluateCheckInOutcome(
+                        let status = fallAlert.resolveFromSpeech(
                             transcript: "I'm okay, just dropped my keys",
                             maxVocalLevelDbfs: -22.0,
                             hardwareWearStateWorn: true,
@@ -105,47 +104,83 @@ public struct CompanionStatusView: View {
                             preImpactRespPower: 2.0e-5,
                             preImpactPitchDeg: 8.0
                         )
-                        AudioCueEngine.shared.deactivateBystanderSiren()
-                        isFallAlertActive = false
-                        lastActionBanner = "Fall Check-In Resolved: \(status)"
+                        lastActionBanner = "Spoken check-in resolved: \(status)"
                     }) {
-                        Label("   ↳ Resolve Fall Check-In ('I'm okay')", systemImage: "checkmark.shield.fill")
+                        Label("   ↳ Spoken Check-In: “I'm okay” (cancels)", systemImage: "checkmark.shield.fill")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.bordered)
 
                     Button(action: {
-                        motorExam.startExam()
-                        lastActionBanner = "Guided 3-Step Home Motor Exam Started (Step 1: Voice)"
+                        // Silence for 12s with no affirmative phrase: the
+                        // detector escalates and the beacon starts flashing.
+                        let status = fallAlert.resolveFromSpeech(
+                            transcript: nil,
+                            maxVocalLevelDbfs: -52.0,
+                            hardwareWearStateWorn: true,
+                            preImpactWearRmsG: 0.08,
+                            preImpactRespPower: 2.0e-5,
+                            preImpactPitchDeg: 8.0
+                        )
+                        lastActionBanner = "No response in 12s — escalated: \(status)"
                     }) {
-                        Label("3. Start Guided 3-Step Home Motor Exam (Voice -> Writing -> Walk)", systemImage: "waveform.path.ecg")
+                        Label("   ↳ Silent Timeout (escalates to siren + SOS beacon)", systemImage: "speaker.wave.3.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+
+                    Button(action: {
+                        Task {
+                            // Mid-range "wearing off" measurements, so the demo
+                            // shows a clinically interesting score rather than
+                            // a perfect one from empty defaults.
+                            var m = HomeMotorExamMeasurements()
+                            m.voiceMeanDbfs = -26.5
+                            m.voiceStabilityDb = 2.9
+                            m.handwritingOpencvDecayPct = -22.0
+                            m.handwritingSamDecayPct = -20.5
+                            m.walkCadenceSpm = 88.0
+                            m.walkMeanFI = 1.65
+                            m.walkFogCount = 0
+                            let summary = await motorExam.runDemoExam(measurements: m)
+                            lastActionBanner = summary
+                        }
+                    }) {
+                        Label("3. Run Guided 3-Step Home Motor Exam (Voice -> Writing -> Walk)", systemImage: "waveform.path.ecg")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.indigo)
+                    .disabled(motorExam.isRunning)
                 }
                 .padding()
                 .background(Color.secondary.opacity(0.10))
                 .cornerRadius(12)
 
-                if isFallAlertActive {
-                    EmergencySOSView(
-                        onCancelAlert: {
-                            _ = fallDetector.evaluateCheckInOutcome(
-                                transcript: "I'm okay",
-                                maxVocalLevelDbfs: -20.0,
-                                hardwareWearStateWorn: true,
-                                preImpactWearRmsG: 0.08,
-                                preImpactRespPower: 2.0e-5,
-                                preImpactPitchDeg: 5.0
-                            )
-                            AudioCueEngine.shared.deactivateBystanderSiren()
-                            isFallAlertActive = false
-                            lastActionBanner = "SOS Canceled by Patient"
+                if let step = motorExam.currentPrompt {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Guided Home Motor Exam")
+                            .font(.headline)
+                        Text(step)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        if let result = motorExam.lastResultSummary {
+                            Text(result)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundColor(.indigo)
                         }
-                    )
-                    .frame(height: 260)
-                    .cornerRadius(16)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(Color.indigo.opacity(0.10))
+                    .cornerRadius(12)
+                }
+
+                if fallAlert.isAlertVisible {
+                    EmergencySOSView(coordinator: fallAlert)
+                        .frame(height: 320)
+                        .cornerRadius(16)
                 }
             }
             .padding()
@@ -198,22 +233,23 @@ public struct CompanionStatusView: View {
     }
 
     private func triggerSimulatedFallCheckIn() {
+        let detector = fallAlert.detector
         // Stage 1: Free-fall (<0.45g) at t=1.00s
-        _ = fallDetector.processIMUSample(
+        _ = detector.processIMUSample(
             IMUSample(timestamp: 1.00, ax: 0.1, ay: 0.1, az: 0.1, gx: 0, gy: 0, gz: 0, pitchDeg: 4.0, rollDeg: 2.0)
         )
         // Stage 2: Hard impact (>2.8g, jerk >35g/s) at t=1.10s
-        _ = fallDetector.processIMUSample(
+        _ = detector.processIMUSample(
             IMUSample(timestamp: 1.10, ax: 0.2, ay: 3.85, az: 0.3, gx: 3.0, gy: 2.0, gz: 1.0, pitchDeg: 25.0, rollDeg: 10.0)
         )
         // Stage 3: Post-impact horizontal stillness (pitch ~76 deg, low dynamic energy) at t=1.80s
-        _ = fallDetector.processIMUSample(
+        let eventUUID = detector.processIMUSample(
             IMUSample(timestamp: 1.80, ax: 0.98, ay: 0.15, az: 0.05, gx: 0.01, gy: 0.01, gz: 0.01, pitchDeg: 76.0, rollDeg: 4.0),
             latitude: 37.7749,
             longitude: -122.4194,
             horizontalAccuracyM: 6.5
         )
-        isFallAlertActive = true
-        lastActionBanner = "Stage 3 Fall Confirmed! P0 SQLite Saved & 12s Voice Check-In Started"
+        fallAlert.beginCheckIn(eventUUID: eventUUID ?? UUID().uuidString)
+        lastActionBanner = "Stage 3 fall confirmed. Local row saved; 12s voice check-in open."
     }
 }

@@ -194,12 +194,15 @@ def execute_write_sync(
     params: Tuple[Any, ...] = (),
     db_path: Optional[str] = None,
 ) -> int:
-    """Synchronous DB commit before returning HTTP 200 OK or calling external APIs."""
+    """
+    Synchronous DB commit before returning HTTP 200 OK or calling external APIs.
+    Returns the number of rows the statement changed.
+    """
     conn = _connect_sync(db_path)
     try:
         cur = conn.execute(query, params)
         conn.commit()
-        return cur.lastrowid or 0
+        return cur.rowcount
     finally:
         conn.close()
 
