@@ -1,8 +1,37 @@
+import base64
+from io import BytesIO
 from typing import Any, Dict, List, Optional
+
 import httpx
+from PIL import Image
 
 from app.clients.circuit_breaker import RequestDeadlineContext, circuit_breakers
 from app.config import settings
+
+
+def _frame_pixel_count(image_bytes: bytes) -> int:
+    try:
+        with Image.open(BytesIO(image_bytes)) as frame:
+            width, height = frame.size
+    except Exception:
+        return 0
+    if width <= 0 or height <= 0:
+        return 0
+    return width * height
+
+
+def masks_with_frame_fraction(
+    masks: List[Dict[str, Any]], image_bytes: bytes
+) -> List[Dict[str, Any]]:
+    """SAM reports absolute pixels. The rest of the pipeline filters on frame fraction."""
+    frame_pixels = _frame_pixel_count(image_bytes)
+    normalized: List[Dict[str, Any]] = []
+    for mask in masks:
+        copied = dict(mask)
+        if "area_ratio" not in copied and frame_pixels and copied.get("area_px") is not None:
+            copied["area_ratio"] = float(copied["area_px"]) / frame_pixels
+        normalized.append(copied)
+    return normalized
 
 
 class MetaModelClient:
@@ -46,12 +75,16 @@ class MetaModelClient:
                     json={
                         "model": model_id,
                         "candidate_labels": candidate_labels,
+                        "image_base64": base64.b64encode(image_bytes).decode("ascii"),
                     },
                 )
                 resp.raise_for_status()
                 data = resp.json()
                 circuit_breakers.record_success(self.PROVIDER, model_id)
-                return {"sam_verified": True, "masks": data.get("masks", [])}
+                return {
+                    "sam_verified": True,
+                    "masks": masks_with_frame_fraction(data.get("masks", []), image_bytes),
+                }
         except Exception as exc:
             circuit_breakers.record_failure(self.PROVIDER, model_id)
             return {"sam_verified": False, "masks": [], "reason": str(exc)}

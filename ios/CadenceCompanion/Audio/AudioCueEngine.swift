@@ -14,26 +14,45 @@ public final class AudioCueEngine {
         configureLaunchAudioSession()
         engine.attach(playerNode)
         engine.connect(playerNode, to: engine.mainMixerNode, format: pcmFormat)
-        try? engine.start()
+        engine.mainMixerNode.outputVolume = 1.0
+        playerNode.volume = 1.0
+        ensureEngineRunning()
+    }
+
+    private func ensureEngineRunning() {
+        guard !engine.isRunning else { return }
+        do {
+            try engine.start()
+        } catch {
+            print("AudioCueEngine engine.start() error: \(error)")
+        }
     }
 
     /// Configured ONCE at app launch so siren activation never changes the session category.
     public func configureLaunchAudioSession() {
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
+        #if targetEnvironment(simulator)
+        do {
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+        } catch {
+            print("Simulator audio session configuration error: \(error)")
+        }
+        #else
         do {
             try session.setCategory(
                 .playAndRecord,
                 mode: .default,
-                // .allowBluetoothHFP is the current spelling of the option
-                // formerly called .allowBluetooth. HFP carries the glasses'
-                // microphone; A2DP carries high-quality playback to them.
                 options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
             )
             try session.setActive(true)
         } catch {
-            print("AudioCueEngine launch session error: \(error)")
+            // Fallback for devices without bluetooth or microphone permissions
+            try? session.setCategory(.playback, mode: .default)
+            try? session.setActive(true)
         }
+        #endif
         #endif
     }
 
@@ -41,6 +60,7 @@ public final class AudioCueEngine {
     public func activateBystanderSiren() {
         isMetronomeActive = false
         isSirenActive = true
+        ensureEngineRunning()
         playerNode.stop()
 
         #if os(iOS)
@@ -68,18 +88,30 @@ public final class AudioCueEngine {
     public func startRASMetronome(bpm: Int = 100) {
         guard !isSirenActive else { return }
         isMetronomeActive = true
+        ensureEngineRunning()
         playerNode.stop()
 
         if let clickBuffer = buildMetronomeClickPCMBuffer(bpm: bpm) {
             playerNode.scheduleBuffer(clickBuffer, at: nil, options: .loops, completionHandler: nil)
             playerNode.play()
         }
-        speakPrompt("Step, step, step", priority: 1)
+        speakPrompt("Step to the beat", priority: 1)
     }
 
     public func stopRASMetronome() {
         isMetronomeActive = false
         playerNode.stop()
+    }
+
+    /// Test tone and spoken confirmation to verify audio pipeline is audible.
+    public func playAudioTest() {
+        ensureEngineRunning()
+        playerNode.stop()
+        if let clickBuffer = buildMetronomeClickPCMBuffer(bpm: 100) {
+            playerNode.scheduleBuffer(clickBuffer, at: nil, options: [], completionHandler: nil)
+            playerNode.play()
+        }
+        speakPrompt("Cadence Audio System Online. All cues operational.", priority: 0)
     }
 
     /// Speaks a calm open-ear prompt respecting the 4-level priority hierarchy.
@@ -89,7 +121,7 @@ public final class AudioCueEngine {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
         utterance.rate = 0.48
-        utterance.volume = (priority == 0) ? 0.90 : 0.75
+        utterance.volume = (priority == 0) ? 1.0 : 0.85
         synthesizer.speak(utterance)
     }
 
@@ -121,12 +153,13 @@ public final class AudioCueEngine {
             return nil
         }
         buffer.frameLength = frameCount
-        let clickSamples = Int(0.018 * sampleRate) // 18ms crisp acoustic click
+        let clickSamples = Int(0.025 * sampleRate) // 25ms crisp acoustic click
         for i in 0..<Int(frameCount) {
             if i < clickSamples {
-                let env = exp(-Double(i) / (0.004 * sampleRate))
-                let phase = 2.0 * Double.pi * 1000.0 * (Double(i) / sampleRate)
-                channelData[i] = Float(0.85 * env * sin(phase))
+                let env = exp(-Double(i) / (0.005 * sampleRate))
+                let s1 = sin(2.0 * Double.pi * 880.0 * (Double(i) / sampleRate))
+                let s2 = 0.5 * sin(2.0 * Double.pi * 1760.0 * (Double(i) / sampleRate))
+                channelData[i] = Float(0.95 * env * (s1 + s2))
             } else {
                 channelData[i] = 0.0
             }
