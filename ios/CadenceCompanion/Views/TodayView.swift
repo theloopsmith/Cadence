@@ -9,6 +9,10 @@ import UIKit
 struct TodayView: View {
     @ObservedObject var app: CadenceAppModel
 
+    @State private var showMotorCheck = false
+    @State private var showRealityCheck = false
+    @State private var showMealCheck = false
+
     private var walking: WalkingModel { app.walking }
     private var doses: DoseLogModel { app.doses }
     private var voice: VoiceDoseAssistant { app.voiceDose }
@@ -21,10 +25,14 @@ struct TodayView: View {
                     statusCard
                     medicationCard
                     if !simple {
+                        checksCard
                         protectionCard
                         if walking.isDemoRunning || walking.lastDemoSummary != nil {
                             demoStatus
                         }
+                    } else {
+                        // In simple mode, offer the motor check directly
+                        simpleChecksCard
                     }
                 }
                 .padding(.horizontal, 16)
@@ -32,6 +40,15 @@ struct TodayView: View {
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle(simple ? "Right now" : "Today")
+            .sheet(isPresented: $showMotorCheck) {
+                MotorExamView(app: app)
+            }
+            .sheet(isPresented: $showRealityCheck) {
+                RealityCheckView(app: app)
+            }
+            .sheet(isPresented: $showMealCheck) {
+                MealCheckView(app: app)
+            }
         }
     }
 
@@ -185,5 +202,107 @@ struct TodayView: View {
             }
         }
         .card()
+    }
+
+    // MARK: - Quick Checks
+
+    private var checksCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Quick Checks")
+                .font(.headline)
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 8) {
+                actionRow(
+                    title: "1-Minute Motor Check",
+                    subtitle: "Voice stability, handwriting size & walk rhythm",
+                    icon: "figure.walk.motion",
+                    tint: CadenceTheme.accent
+                ) {
+                    showMotorCheck = true
+                }
+
+                Divider().padding(.vertical, 2)
+
+                actionRow(
+                    title: "Check Surroundings",
+                    subtitle: "Vision AI reality check for shadows or objects",
+                    icon: "eye.fill",
+                    tint: CadenceTheme.calm
+                ) {
+                    showRealityCheck = true
+                }
+
+                Divider().padding(.vertical, 2)
+
+                actionRow(
+                    title: "Check Meal for Protein",
+                    subtitle: "Avoid Levodopa absorption delay",
+                    icon: "fork.knife",
+                    tint: CadenceTheme.caution
+                ) {
+                    showMealCheck = true
+                }
+            }
+        }
+        .card()
+    }
+
+    private var simpleChecksCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Check with Cadence")
+                .font(.headline)
+                .foregroundColor(.secondary)
+
+            actionRow(
+                title: "1-Minute Motor Check",
+                subtitle: "Voice, handwriting & walk",
+                icon: "figure.walk.motion",
+                tint: CadenceTheme.accent
+            ) {
+                showMotorCheck = true
+            }
+
+            Divider().padding(.vertical, 2)
+
+            actionRow(
+                title: "Check Surroundings",
+                subtitle: "See what is in the room",
+                icon: "eye.fill",
+                tint: CadenceTheme.calm
+            ) {
+                showRealityCheck = true
+            }
+        }
+        .card()
+    }
+
+    private func actionRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                IconBadge(systemName: icon, color: tint, size: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.primary)
+                    Text(subtitle)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(Color.secondary.opacity(0.6))
+            }
+            .contentShape(Rectangle())
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
     }
 }

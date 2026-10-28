@@ -256,3 +256,28 @@ final class CheckInWindowTests: XCTestCase {
         XCTAssertEqual(c.lastOutcome, "canceled_by_user_button")
     }
 }
+
+// MARK: - Motor Check State Machine
+
+@MainActor
+final class MotorExamInteractionTests: XCTestCase {
+    func testCancellingExamResetsStepToIdle() {
+        let manager = HomeMotorExamManager()
+        manager.startExam()
+        XCTAssertEqual(manager.currentStep, .task1PromptedVoice)
+        manager.cancelExam()
+        XCTAssertEqual(manager.currentStep, .idle)
+    }
+
+    func testAdvancingThroughTasksCollectsSteps() {
+        let manager = HomeMotorExamManager()
+        manager.startExam()
+        XCTAssertEqual(manager.currentStep, .task1PromptedVoice)
+        manager.advanceToHandwriting()
+        XCTAssertEqual(manager.currentStep, .task2PromptedHandwriting)
+        manager.advanceToTimedWalk()
+        XCTAssertEqual(manager.currentStep, .task3PromptedTimedWalk)
+        manager.cancelExam()
+        XCTAssertEqual(manager.currentStep, .idle)
+    }
+}

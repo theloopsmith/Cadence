@@ -249,6 +249,12 @@ public final class HomeMotorExamManager: ObservableObject {
         return nil
     }
 
+    public func cancelExam() {
+        currentStep = .idle
+        _ = voiceMonitor.stopVowelPhonationRecording()
+        voiceMonitor.stopLiveMonitoring()
+    }
+
     /// Runs all three prompts back to back for the demo, then submits.
     /// Returns a one-line summary for the status banner.
     @discardableResult
