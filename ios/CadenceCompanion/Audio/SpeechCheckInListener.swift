@@ -69,6 +69,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+    private var hasInstalledTap: Bool = false
     /// Opening `AVAudioEngine.inputNode` can block. Hardware setup runs here so
     /// `startListening` returns and the 12-second check-in timer stays armed.
     private let audioQueue = DispatchQueue(label: "com.cadence.speechcheckin")
@@ -116,6 +117,41 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
 
     private func openMicrophone(session: Int) {
         guard session == self.session else { return }
+
+        #if os(iOS)
+        let audioSession = AVAudioSession.sharedInstance()
+        #if targetEnvironment(simulator)
+        guard audioSession.isInputAvailable else {
+            print("[SpeechCheckInListener] No audio input hardware available on simulator.")
+            return
+        }
+        do {
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker])
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("[SpeechCheckInListener] Could not configure audio session: \(error)")
+            return
+        }
+        #else
+        do {
+            try audioSession.setCategory(
+                .playAndRecord,
+                mode: .measurement,
+                options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
+            )
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            do {
+                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            } catch {
+                print("[SpeechCheckInListener] Audio session recording setup failed: \(error)")
+                return
+            }
+        }
+        #endif
+        #endif
+
         do {
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
@@ -128,7 +164,16 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
             let inputNode = audioEngine.inputNode
             let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-            inputNode.removeTap(onBus: 0)
+            guard recordingFormat.sampleRate > 0 && recordingFormat.channelCount > 0 else {
+                print("[SpeechCheckInListener] Input node has invalid format (sampleRate=\(recordingFormat.sampleRate), channels=\(recordingFormat.channelCount)). Skipping tap.")
+                return
+            }
+
+            if hasInstalledTap {
+                inputNode.removeTap(onBus: 0)
+                hasInstalledTap = false
+            }
+
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
                 guard let self = self else { return }
                 request.append(buffer)
@@ -148,6 +193,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
                     }
                 }
             }
+            hasInstalledTap = true
 
             audioEngine.prepare()
             try audioEngine.start()
@@ -204,7 +250,10 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
     private func tearDownEngine() {
         if audioEngine.isRunning {
             audioEngine.stop()
+        }
+        if hasInstalledTap {
             audioEngine.inputNode.removeTap(onBus: 0)
+            hasInstalledTap = false
         }
         recognitionRequest?.endAudio()
         recognitionRequest = nil

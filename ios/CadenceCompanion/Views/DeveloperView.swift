@@ -31,6 +31,7 @@ struct DeveloperView: View {
                 medicationSection
                 cameraSection
                 glassesSection
+                TechnicalSetupSections(app: app)
                 signalsSection
                 diarySection
                 queueSection

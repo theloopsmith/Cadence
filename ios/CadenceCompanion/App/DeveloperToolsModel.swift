@@ -195,17 +195,20 @@ public final class DeveloperToolsModel: ObservableObject {
     // MARK: - Diary
 
     public func seedSampleDay() {
-        let now = Date()
-        func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
-        app.recordDiary(.protectionOn, detail: "", at: ago(540))
-        app.recordDiary(.doseTaken, detail: app.settings.schedule.medicationName, at: ago(500))
-        app.recordDiary(.cue, detail: "A steady beat helped you step again", at: ago(420))
-        app.recordDiary(.cue, detail: "A steady beat helped you step again", at: ago(300))
-        app.recordDiary(.environmentCheck, detail: "Everything looks clear. Only a coat on the chair.", at: ago(240))
-        app.recordDiary(.mealLogged, detail: "About 28 g protein", at: ago(200))
-        app.recordDiary(.checkInAnswered, detail: "You said you were okay", at: ago(120))
-        app.recordDiary(.helpSent, detail: "Your caregiver was contacted", at: ago(60))
-        app.recordDiary(.protectionOff, detail: "", at: ago(10))
+        let cal = Calendar.current
+        let startOfDay = cal.startOfDay(for: Date())
+        func todayAt(hour: Int, minute: Int) -> Date {
+            cal.date(bySettingHour: hour, minute: minute, second: 0, of: startOfDay) ?? startOfDay
+        }
+        app.recordDiary(.protectionOn, detail: "", at: todayAt(hour: 8, minute: 0))
+        app.recordDiary(.doseTaken, detail: app.settings.schedule.medicationName, at: todayAt(hour: 8, minute: 30))
+        app.recordDiary(.cue, detail: "A steady beat helped you step again", at: todayAt(hour: 10, minute: 0))
+        app.recordDiary(.cue, detail: "A steady beat helped you step again", at: todayAt(hour: 12, minute: 0))
+        app.recordDiary(.environmentCheck, detail: "Everything looks clear. Only a coat on the chair.", at: todayAt(hour: 13, minute: 0))
+        app.recordDiary(.mealLogged, detail: "About 28 g protein", at: todayAt(hour: 13, minute: 30))
+        app.recordDiary(.checkInAnswered, detail: "You said you were okay", at: todayAt(hour: 15, minute: 0))
+        app.recordDiary(.helpSent, detail: "Your caregiver was contacted", at: todayAt(hour: 16, minute: 0))
+        app.recordDiary(.protectionOff, detail: "", at: todayAt(hour: 17, minute: 0))
         lastMessage = "Sample day written to the diary."
     }
 

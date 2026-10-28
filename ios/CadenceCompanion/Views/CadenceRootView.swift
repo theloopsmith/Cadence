@@ -17,28 +17,25 @@ public struct CadenceRootView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $tab) {
-                TodayView(app: app)
-                    .tag(Tab.today)
-                    .tabItem { Label("Today", systemImage: "sun.max.fill") }
-                DiaryView(app: app)
-                    .tag(Tab.diary)
-                    .tabItem { Label("Diary", systemImage: "book.fill") }
-                HelpView(app: app)
-                    .tag(Tab.help)
-                    .tabItem { Label("Help", systemImage: "phone.fill") }
-                if app.settings.developerModeEnabled {
-                    DeveloperView(app: app)
-                        .tag(Tab.developer)
-                        .tabItem { Label("Developer", systemImage: "wrench.and.screwdriver.fill") }
-                }
-            }
-            .tint(CadenceTheme.accent)
-            if tab != .help && tab != .developer {
-                helpBar
+        TabView(selection: $tab) {
+            TodayView(app: app)
+                .safeAreaInset(edge: .bottom) { helpBar }
+                .tag(Tab.today)
+                .tabItem { Label("Today", systemImage: "sun.max.fill") }
+            DiaryView(app: app)
+                .safeAreaInset(edge: .bottom) { helpBar }
+                .tag(Tab.diary)
+                .tabItem { Label("Diary", systemImage: "book.fill") }
+            HelpView(app: app)
+                .tag(Tab.help)
+                .tabItem { Label("Help", systemImage: "phone.fill") }
+            if app.settings.developerModeEnabled {
+                DeveloperView(app: app)
+                    .tag(Tab.developer)
+                    .tabItem { Label("Developer", systemImage: "wrench.and.screwdriver.fill") }
             }
         }
+        .tint(CadenceTheme.accent)
         .onAppear {
             guard !didReady else { return }
             didReady = true
@@ -48,16 +45,16 @@ public struct CadenceRootView: View {
         .modifier(FallOverlay(coordinator: app.fallAlert))
     }
 
-    /// Same place on every screen, in thumb reach. Opens Help; never dials
-    /// on its own, so an accidental tap cannot send an alert.
+    /// Sits just above the tab bar on Today and Diary, in thumb reach. Opens
+    /// Help; never dials on its own, so an accidental tap cannot send an alert.
     private var helpBar: some View {
         GuardedButton(size: .giant, style: .filled(CadenceTheme.danger), action: { tab = .help }) {
             Label("I need help", systemImage: "phone.fill")
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 6)
-        .background(CadenceTheme.background)
+        .padding(.bottom, 8)
+        .background(CadenceTheme.background.opacity(0.97))
         .accessibilityHint("Opens the help screen with your caregiver's number")
     }
 }

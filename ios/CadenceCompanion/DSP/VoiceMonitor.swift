@@ -15,6 +15,7 @@ public final class VoiceMonitor {
     public private(set) var isMonitoring: Bool = false
     private var isRecordingVowel: Bool = false
     private var recordedVowelSamples: [Double] = []
+    private var hasInstalledTap: Bool = false
 
     public init() {}
 
@@ -31,11 +32,45 @@ public final class VoiceMonitor {
         guard !isMonitoring else { return }
         isMonitoring = true
 
+        #if os(iOS)
+        let audioSession = AVAudioSession.sharedInstance()
+        #if targetEnvironment(simulator)
+        guard audioSession.isInputAvailable else {
+            print("[VoiceMonitor] No audio input available on simulator.")
+            return
+        }
+        do {
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker])
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("[VoiceMonitor] Audio session error: \(error)")
+            return
+        }
+        #else
+        do {
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP])
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            try? audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try? audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        }
+        #endif
+        #endif
+
         do {
             let inputNode = audioEngine.inputNode
             let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-            inputNode.removeTap(onBus: 0)
+            guard recordingFormat.sampleRate > 0 && recordingFormat.channelCount > 0 else {
+                print("[VoiceMonitor] Invalid input format: \(recordingFormat)")
+                return
+            }
+
+            if hasInstalledTap {
+                inputNode.removeTap(onBus: 0)
+                hasInstalledTap = false
+            }
+
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
                 guard let self = self, let channelData = buffer.floatChannelData?[0] else { return }
                 let frameLength = Int(buffer.frameLength)
@@ -50,6 +85,7 @@ public final class VoiceMonitor {
                     self.updateSampleLevel(dbfs: dbfs)
                 }
             }
+            hasInstalledTap = true
 
             audioEngine.prepare()
             try audioEngine.start()
@@ -62,7 +98,10 @@ public final class VoiceMonitor {
     public func stopLiveMonitoring() {
         if audioEngine.isRunning {
             audioEngine.stop()
+        }
+        if hasInstalledTap {
             audioEngine.inputNode.removeTap(onBus: 0)
+            hasInstalledTap = false
         }
         isMonitoring = false
     }
