@@ -138,6 +138,9 @@ public final class AudioCueEngine: EchoGuarding {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = currentVoice()
         utterance.rate = 0.48
+        utterance.pitchMultiplier = 1.0
+        utterance.preUtteranceDelay = 0.05
+        utterance.postUtteranceDelay = 0.05
         utterance.volume = (priority == 0) ? 1.0 : 0.85
         synthesizer.speak(utterance)
     }
@@ -198,8 +201,10 @@ public final class AudioCueEngine: EchoGuarding {
     /// Plays a short sample in a given voice, for choosing one in setup.
     public func speakSample(voiceIdentifier: String) {
         let utterance = AVSpeechUtterance(string: "Hello. This is how Cadence will sound. Step with the beat.")
-        utterance.voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier)
+        utterance.voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) ?? currentVoice()
         utterance.rate = 0.48
+        utterance.pitchMultiplier = 1.0
+        utterance.preUtteranceDelay = 0.05
         synthesizer.stopSpeaking(at: .immediate)
         synthesizer.speak(utterance)
     }

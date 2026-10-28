@@ -97,6 +97,30 @@ final class VoiceSelectionTests: XCTestCase {
         XCTAssertTrue(VoiceSelection.betterVoiceAvailableToDownload(installed: basic))
         XCTAssertFalse(VoiceSelection.betterVoiceAvailableToDownload(installed: voices))
     }
+
+    func testNoveltyVoicesAreExcluded() {
+        let pool = voices + [
+            VoiceCandidate(identifier: "com.apple.speech.synthesis.voice.Albert", name: "Albert", language: "en-US", quality: .standard),
+            VoiceCandidate(identifier: "com.apple.speech.synthesis.voice.BadNews", name: "Bad News", language: "en-US", quality: .standard),
+            VoiceCandidate(identifier: "com.apple.eloquence.en-US.Eddy", name: "Eddy", language: "en-US", quality: .standard),
+            VoiceCandidate(identifier: "com.apple.speech.synthesis.voice.Zarvox", name: "Zarvox", language: "en-US", quality: .standard),
+        ]
+        let list = VoiceSelection.choices(from: pool)
+        XCTAssertFalse(list.contains { $0.name == "Albert" })
+        XCTAssertFalse(list.contains { $0.name == "Bad News" })
+        XCTAssertFalse(list.contains { $0.name == "Eddy" })
+        XCTAssertFalse(list.contains { $0.name == "Zarvox" })
+    }
+
+    func testAnExcludedPreferredVoiceFallsBackToNaturalVoice() {
+        let pool = [
+            VoiceCandidate(identifier: "com.apple.speech.synthesis.voice.Albert", name: "Albert", language: "en-US", quality: .standard),
+            VoiceCandidate(identifier: "compact.samantha", name: "Samantha", language: "en-US", quality: .standard),
+        ]
+        // Even if Albert was stored in user preferences, best must refuse it and pick Samantha
+        let chosen = VoiceSelection.best(from: pool, preferred: "com.apple.speech.synthesis.voice.Albert")
+        XCTAssertEqual(chosen?.identifier, "compact.samantha")
+    }
 }
 
 // MARK: - Muse Voice Transcribe as a second listener
