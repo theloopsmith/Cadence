@@ -37,6 +37,7 @@ from app.security import (
     require_device_writer,
     verify_twilio_signature,
 )
+from app.errors import install_error_handlers
 from app.services.dose_clock import dose_timestamp_at_or_before
 from app.services.diary_engine import (
     DiaryBucketMetrics,
@@ -65,10 +66,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Cadence Clinical Orchestrator API",
+    title="Cadence Companion API",
     version="1.0.0",
     lifespan=lifespan,
 )
+install_error_handlers(app)
 
 STATIC_DIR = Path(__file__).parent / "static"
 

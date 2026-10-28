@@ -44,6 +44,8 @@
 	<string>Cadence attaches your GPS coordinates to caregiver SOS alerts only when a fall is confirmed.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Cadence attaches your GPS coordinates to caregiver SOS alerts if a fall occurs while the app is running in the background.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Cadence uses the camera only when you ask it to look at your surroundings or a meal. Photos are checked and never stored.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Cadence reads iPhone motion to detect freezing of gait and falls when the glasses motion stream is not available.</string>
 </dict>

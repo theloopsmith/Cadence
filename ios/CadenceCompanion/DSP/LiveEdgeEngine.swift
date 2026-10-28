@@ -17,7 +17,7 @@ public final class LiveEdgeEngine {
     public let fallDetector: FallDetector
     private var stream: SensorStreamManager
     private var yaw = YawTurnTracker()
-    private var sitToStand = SitToStandMonitor()
+    private var sitToStand: SitToStandMonitor
     private var lastCueTimestamp: TimeInterval?
 
     public init(
@@ -28,6 +28,9 @@ public final class LiveEdgeEngine {
         self.fogDetector = fogDetector
         self.fallDetector = fallDetector
         self.stream = stream
+        self.sitToStand = SitToStandMonitor(
+            stillnessEnergyFloor: fogDetector.thresholds.dynamicEnergyFloor
+        )
     }
 
     /// Drops buffered samples so a new scenario does not inherit the last one.
@@ -35,7 +38,9 @@ public final class LiveEdgeEngine {
     public func beginSegment() {
         stream = SensorStreamManager()
         yaw = YawTurnTracker()
-        sitToStand = SitToStandMonitor()
+        sitToStand = SitToStandMonitor(
+            stillnessEnergyFloor: fogDetector.thresholds.dynamicEnergyFloor
+        )
         lastCueTimestamp = nil
     }
 

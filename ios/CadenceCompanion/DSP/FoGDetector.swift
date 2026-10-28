@@ -80,7 +80,13 @@ public final class FoGDetector {
     public let maxCueDurationSec: Double = 30.0
     public let hopDurationSec: Double = 0.50
 
-    public init() {}
+    /// Where every comparison in `evaluateHop` comes from. Defaults to the
+    /// values calibrated from the bundled labeled captures.
+    public var thresholds: FoGThresholds
+
+    public init(thresholds: FoGThresholds = .calibratedReference) {
+        self.thresholds = thresholds
+    }
 
     /// Mean-removes and Hann-windows the composite dynamic acceleration
     /// a_dyn(t) = sqrt(a_y^2 + a_z^2), the signal both spectral paths consume.
@@ -283,18 +289,20 @@ public final class FoGDetector {
         turnArmedRemainingSec = max(0.0, turnArmedRemainingSec - hopDurationSec)
         recentWalkingRemainingSec = max(0.0, recentWalkingRemainingSec - hopDurationSec)
 
+        let t = thresholds
+
         // Track seated stillness (>= 5.0s = 10 hops) for Mode B Sit-to-Stand
         if sitToStandDetected {
             initiationArmedRemainingSec = 10.0
             consecutiveSeatedStillHops = 0
-        } else if totalEnergy <= 0.02 {
+        } else if totalEnergy <= t.dynamicEnergyFloor {
             consecutiveSeatedStillHops += 1
         } else {
             consecutiveSeatedStillHops = 0
         }
 
-        // Track Mode A sustained walking (>= 3.0s = 6 hops at P_loco > 0.08 g^2)
-        if locomotorBandPower > 0.08 {
+        // Track Mode A sustained walking (>= 3.0s = 6 hops above the calibrated locomotor floor)
+        if locomotorBandPower > t.locomotorArmingPower {
             consecutiveWalkingHops += 1
             if consecutiveWalkingHops >= 6 {
                 recentWalkingRemainingSec = 15.0
@@ -310,7 +318,7 @@ public final class FoGDetector {
         }
 
         // Resolve active FoGArmingMode
-        if locomotorBandPower > 0.08 || recentWalkingRemainingSec > 0.0 {
+        if locomotorBandPower > t.locomotorArmingPower || recentWalkingRemainingSec > 0.0 {
             armingMode = .walking
         } else if initiationArmedRemainingSec > 0.0 {
             armingMode = .sitToStand
@@ -320,10 +328,10 @@ public final class FoGDetector {
             armingMode = .disarmed
         }
 
-        // Speech-Coupled Threshold Modifier (+0.8 FI when speaking)
-        let thresholdFI = isUserSpeaking ? 2.8 : 2.0
+        // Speech-coupled modifier: talking raises the trigger.
+        let thresholdFI = t.freezeIndexTrigger + (isUserSpeaking ? t.speakingTriggerBonus : 0.0)
 
-        if armingMode != .disarmed && totalEnergy > 0.02 && fi > thresholdFI {
+        if armingMode != .disarmed && totalEnergy > t.dynamicEnergyFloor && fi > thresholdFI {
             consecutiveFreezeHops += 1
             consecutiveRecoveryHops = 0
             // 3 consecutive 0.50s hops = 1.50s
@@ -345,7 +353,7 @@ public final class FoGDetector {
             }
         } else if isEpisodeActive {
             episodeDurationSec += hopDurationSec
-            if fi < 1.2 && locomotorBandPower > 0.08 {
+            if fi < t.recoveryFreezeIndex && locomotorBandPower > t.locomotorArmingPower {
                 consecutiveRecoveryHops += 1
                 if consecutiveRecoveryHops >= 6 { // 3.0s continuous locomotion recovery
                     finishEpisodeAndQueueSync(sampledHz: sampledHz, isUserSpeaking: isUserSpeaking)

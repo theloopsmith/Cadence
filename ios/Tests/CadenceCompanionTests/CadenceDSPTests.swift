@@ -29,11 +29,15 @@ final class CadenceDSPTests: XCTestCase {
         XCTAssertGreaterThan(metrics.freezeBandPower, metrics.locomotorBandPower * 3.0)
         XCTAssertGreaterThan(metrics.freezeIndex, 2.0)
 
-        // Verify 3 consecutive 0.50s hops (1.50s) armed via upright turn trigger FoG episode
+        // Verify 3 consecutive 0.50s hops (1.50s) armed via upright turn trigger FoG episode.
+        // Locomotor power sits under the calibrated walking floor so the hop
+        // cannot arm as walking; freeze power puts the index well past the trigger.
+        let loco = detector.thresholds.locomotorArmingPower * 0.5
+        let freezePower = loco * detector.thresholds.freezeIndexTrigger * 4.0
         XCTAssertFalse(
             detector.evaluateHop(
-                locomotorBandPower: 0.03,
-                freezeBandPower: 0.15,
+                locomotorBandPower: loco,
+                freezeBandPower: freezePower,
                 integratedYaw15sDeg: 52.0,
                 pitchDeg: 5.0,
                 rollDeg: 2.0,
@@ -44,8 +48,8 @@ final class CadenceDSPTests: XCTestCase {
         )
         XCTAssertFalse(
             detector.evaluateHop(
-                locomotorBandPower: 0.03,
-                freezeBandPower: 0.15,
+                locomotorBandPower: loco,
+                freezeBandPower: freezePower,
                 integratedYaw15sDeg: 52.0,
                 pitchDeg: 5.0,
                 rollDeg: 2.0,
@@ -55,8 +59,8 @@ final class CadenceDSPTests: XCTestCase {
             )
         )
         let thirdHopTriggered = detector.evaluateHop(
-            locomotorBandPower: 0.03,
-            freezeBandPower: 0.15,
+            locomotorBandPower: loco,
+            freezeBandPower: freezePower,
             integratedYaw15sDeg: 52.0,
             pitchDeg: 5.0,
             rollDeg: 2.0,

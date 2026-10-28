@@ -10,7 +10,7 @@ struct CadenceCompanionApp: App {
 
     var body: some Scene {
         WindowGroup {
-            CompanionStatusView()
+            CadenceRootView()
         }
     }
 }

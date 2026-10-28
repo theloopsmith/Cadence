@@ -69,20 +69,22 @@ final class PhoneMotionTests: XCTestCase {
 
     func testSitToStandRequiresFiveSecondsOfStillnessThenASurge() {
         var monitor = SitToStandMonitor()
+        let quiet = monitor.stillnessEnergyFloor * 0.5
+        let surge = monitor.stillnessEnergyFloor * 50.0
         for _ in 0..<9 {
-            XCTAssertFalse(monitor.update(totalEnergy: 0.01, ay: 1.0, pitchDeg: 2.0))
+            XCTAssertFalse(monitor.update(totalEnergy: quiet, ay: 1.0, pitchDeg: 2.0))
         }
         XCTAssertFalse(
-            monitor.update(totalEnergy: 0.2, ay: 1.5, pitchDeg: 20.0),
+            monitor.update(totalEnergy: surge, ay: 1.5, pitchDeg: 20.0),
             "a surge before 5 s of stillness must not arm"
         )
 
         for _ in 0..<10 {
-            XCTAssertFalse(monitor.update(totalEnergy: 0.01, ay: 0.99, pitchDeg: 2.0))
+            XCTAssertFalse(monitor.update(totalEnergy: quiet, ay: 0.99, pitchDeg: 2.0))
         }
-        XCTAssertTrue(monitor.update(totalEnergy: 0.2, ay: 1.5, pitchDeg: 20.0))
+        XCTAssertTrue(monitor.update(totalEnergy: surge, ay: 1.5, pitchDeg: 20.0))
         XCTAssertFalse(
-            monitor.update(totalEnergy: 0.2, ay: 1.5, pitchDeg: 22.0),
+            monitor.update(totalEnergy: surge, ay: 1.5, pitchDeg: 22.0),
             "the cue fires once per stillness period"
         )
     }

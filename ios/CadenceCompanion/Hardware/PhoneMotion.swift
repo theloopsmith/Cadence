@@ -119,11 +119,15 @@ public struct SitToStandMonitor {
     private var armed = false
     private var baselineAy = 0.0
     private var baselinePitch = 0.0
+    /// Energy at or below which the wearer is still. Shared with the detector.
+    public var stillnessEnergyFloor: Double
 
-    public init() {}
+    public init(stillnessEnergyFloor: Double = FoGThresholds.calibratedReference.dynamicEnergyFloor) {
+        self.stillnessEnergyFloor = stillnessEnergyFloor
+    }
 
     public mutating func update(totalEnergy: Double, ay: Double, pitchDeg: Double) -> Bool {
-        if totalEnergy <= 0.02 {
+        if totalEnergy <= stillnessEnergyFloor {
             if stillHops == 0 && !armed {
                 baselineAy = ay
                 baselinePitch = pitchDeg
