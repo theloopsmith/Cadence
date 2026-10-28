@@ -290,3 +290,14 @@ final class MotorExamInteractionTests: XCTestCase {
         cancellable.cancel()
     }
 }
+
+// MARK: - Clinical Report Presentation
+
+@MainActor
+final class ClinicalReportPresentationTests: XCTestCase {
+    func testClinicalReportViewInitializesWithApp() {
+        let app = CadenceAppModel()
+        let reportView = ClinicalReportView(app: app)
+        XCTAssertNotNil(reportView)
+    }
+}

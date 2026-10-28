@@ -7,6 +7,7 @@ struct DiaryView: View {
     @State private var day = Date()
     @State private var events: [DiaryEvent] = []
     @State private var facts: [String] = []
+    @State private var showingReport = false
 
     private var isToday: Bool { Calendar.current.isDateInToday(day) }
 
@@ -16,6 +17,7 @@ struct DiaryView: View {
                 VStack(spacing: CadenceTheme.tapGap) {
                     dayPicker
                     factsCard
+                    reportCard
                     if events.isEmpty {
                         emptyCard
                     } else {
@@ -30,6 +32,19 @@ struct DiaryView: View {
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle("Diary")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingReport = true
+                    } label: {
+                        Image(systemName: "waveform.path.ecg")
+                            .accessibilityLabel("Clinical Report")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingReport) {
+                ClinicalReportView(app: app)
+            }
             .onAppear(perform: reload)
             .onChange(of: app.diaryVersion) { _ in reload() }
             .onChange(of: day) { _ in reload() }
@@ -85,6 +100,29 @@ struct DiaryView: View {
                 .padding(.top, 4)
         }
         .card()
+    }
+
+    private var reportCard: some View {
+        Button {
+            showingReport = true
+        } label: {
+            HStack(spacing: 12) {
+                IconBadge(systemName: "waveform.path.ecg", color: CadenceTheme.accent, size: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("24-Hour Clinical Report")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Text("Objective motor summary & AI narrative for your neurologist")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.secondary)
+            }
+            .card()
+        }
+        .buttonStyle(.plain)
     }
 
     private var emptyCard: some View {
