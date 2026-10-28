@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		AA0000000000000000000012 /* CadenceCompanion in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000011 /* CadenceCompanion */; };
+		AA0000000000000000000022 /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000021 /* MWDATCore */; };
+		AA0000000000000000000024 /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000023 /* MWDATCamera */; };
+		AA0000000000000000000026 /* MWDATMotion in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000025 /* MWDATMotion */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +28,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0000000000000000000012 /* CadenceCompanion in Frameworks */,
+				AA0000000000000000000022 /* MWDATCore in Frameworks */,
+				AA0000000000000000000024 /* MWDATCamera in Frameworks */,
+				AA0000000000000000000026 /* MWDATMotion in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -69,6 +75,9 @@
 			name = CadenceCompanionApp;
 			packageProductDependencies = (
 				AA0000000000000000000011 /* CadenceCompanion */,
+				AA0000000000000000000021 /* MWDATCore */,
+				AA0000000000000000000023 /* MWDATCamera */,
+				AA0000000000000000000025 /* MWDATMotion */,
 			);
 			productName = CadenceCompanionApp;
 			productReference = AA0000000000000000000004 /* CadenceCompanionApp.app */;
@@ -100,6 +109,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AA0000000000000000000010 /* XCLocalSwiftPackageReference ".." */,
+				AA0000000000000000000020 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA0000000000000000000003 /* Products */;
@@ -231,10 +241,36 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		AA0000000000000000000020 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/facebook/meta-wearables-dat-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		AA0000000000000000000011 /* CadenceCompanion */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CadenceCompanion;
+		};
+		AA0000000000000000000021 /* MWDATCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000020 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATCore;
+		};
+		AA0000000000000000000023 /* MWDATCamera */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000020 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATCamera;
+		};
+		AA0000000000000000000025 /* MWDATMotion */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000020 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATMotion;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

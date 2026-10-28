@@ -11,6 +11,13 @@ public enum CadenceTheme {
     public static let controlRadius: CGFloat = 12
     /// Minimum touch target, per the Human Interface Guidelines.
     public static let minimumTapHeight: CGFloat = 44
+    /// What this app uses for anything the wearer taps: a trembling finger
+    /// needs a wide landing zone and dead space around it.
+    public static let bigTapHeight: CGFloat = 72
+    /// The one action a screen is for, and the help button.
+    public static let giantTapHeight: CGFloat = 88
+    /// Vertical gap between tappable things, so a miss lands on nothing.
+    public static let tapGap: CGFloat = 20
 
     public static var background: Color {
         #if canImport(UIKit)
@@ -116,6 +123,145 @@ public struct SecondaryButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: CadenceTheme.controlRadius, style: .continuous)
                     .fill(tint.opacity(configuration.isPressed ? 0.22 : 0.12))
             )
+    }
+}
+
+/// A full-width button sized for a hard hour: 72–88 pt tall, debounced so a
+/// double tap counts once, with a haptic on every accepted tap.
+struct GuardedButton<Label: View>: View {
+    enum Size { case big, giant }
+    enum Style { case filled(Color), tinted(Color) }
+
+    let size: Size
+    let style: Style
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+    @State private var guardRail = TapGuard()
+    @State private var pressed = false
+
+    init(
+        size: Size = .big,
+        style: Style = .filled(CadenceTheme.accent),
+        action: @escaping () -> Void,
+        @ViewBuilder label: @escaping () -> Label
+    ) {
+        self.size = size
+        self.style = style
+        self.action = action
+        self.label = label
+    }
+
+    private var height: CGFloat {
+        size == .giant ? CadenceTheme.giantTapHeight : CadenceTheme.bigTapHeight
+    }
+
+    private var background: Color {
+        switch style {
+        case let .filled(c): return c
+        case let .tinted(c): return c.opacity(0.14)
+        }
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .filled: return .white
+        case let .tinted(c): return c
+        }
+    }
+
+    var body: some View {
+        Button {
+            guardRail.perform {
+                Haptics.tap()
+                action()
+            }
+        } label: {
+            label()
+                .font(size == .giant ? .title2.weight(.bold) : .title3.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: height)
+                .padding(.horizontal, 16)
+                .foregroundColor(foreground)
+                .background(
+                    RoundedRectangle(cornerRadius: CadenceTheme.cardRadius, style: .continuous)
+                        .fill(background.opacity(pressed ? 0.75 : 1.0))
+                )
+                .scaleEffect(pressed ? 0.98 : 1.0)
+                .animation(.easeOut(duration: 0.12), value: pressed)
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in pressed = true }
+                .onEnded { _ in pressed = false }
+        )
+    }
+}
+
+/// Icon + word + colour, never colour alone.
+struct StatusBadge: View {
+    let systemImage: String
+    let word: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.headline)
+            Text(word)
+                .font(.headline)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .foregroundColor(color)
+        .background(
+            RoundedRectangle(cornerRadius: CadenceTheme.controlRadius, style: .continuous)
+                .fill(color.opacity(0.14))
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A big switch card: the whole row is the tap target, the state is spelled out.
+struct SwitchCard: View {
+    let title: String
+    let detail: String
+    let isOn: Bool
+    let onColor: Color
+    let action: () -> Void
+    @State private var guardRail = TapGuard()
+
+    var body: some View {
+        Button {
+            guardRail.perform {
+                Haptics.tap()
+                action()
+            }
+        } label: {
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.primary)
+                    Text(detail)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 12)
+                StatusBadge(
+                    systemImage: isOn ? "checkmark.circle.fill" : "circle",
+                    word: isOn ? "On" : "Off",
+                    color: isOn ? onColor : .secondary
+                )
+            }
+            .frame(minHeight: CadenceTheme.bigTapHeight)
+            .card(padding: 18)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(isOn ? "on" : "off")")
+        .accessibilityHint("Double tap to turn \(isOn ? "off" : "on")")
     }
 }
 

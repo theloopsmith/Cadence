@@ -12,8 +12,11 @@ public final class MotionFeed: ObservableObject {
     @Published public private(set) var fallEventUUID: String?
     @Published public private(set) var status = "Protection is off"
     @Published public private(set) var samplesSeen = 0
+    /// Which device the running stream comes from ("iPhone" or the glasses' name).
+    @Published public private(set) var activeSourceLabel: String?
 
-    private let source = PhoneMotionSource()
+    public let phoneSource = PhoneMotionSource()
+    private var source: MotionSource?
     private var engine: LiveEdgeEngine?
     private var locationLookup: (() -> LocationCoordinate?)?
 
@@ -22,7 +25,7 @@ public final class MotionFeed: ObservableObject {
 
     public init() {}
 
-    public var sourceIsAvailable: Bool { source.isAvailable }
+    public var sourceIsAvailable: Bool { phoneSource.isAvailable }
 
     public func attach(fogDetector: FoGDetector, fallDetector: FallDetector) {
         if engine == nil {
@@ -69,13 +72,26 @@ public final class MotionFeed: ObservableObject {
     /// Starts the phone's motion sensors. Returns whether the stream is running.
     @discardableResult
     public func startPhone(location: @escaping () -> LocationCoordinate?) -> Bool {
+        start(source: phoneSource, label: "iPhone", location: location)
+    }
+
+    /// Starts streaming from `source`, stopping any other stream first.
+    /// Returns whether the stream is running.
+    @discardableResult
+    public func start(
+        source newSource: MotionSource,
+        label: String,
+        location: @escaping () -> LocationCoordinate?
+    ) -> Bool {
         guard engine != nil else {
             status = "Motion engine is not ready."
             return false
         }
-        if source.isActive { return true }
+        if let source, source === newSource, source.isActive { return true }
+        source?.stop()
+        source = newSource
         locationLookup = location
-        source.start { [weak self] sample in
+        newSource.start { [weak self] sample in
             guard let self else { return }
             let loc = self.locationLookup?()
             _ = self.ingest(
@@ -85,18 +101,25 @@ public final class MotionFeed: ObservableObject {
                 horizontalAccuracyM: loc?.horizontalAccuracyM
             )
         }
-        isRunning = source.isActive
+        isRunning = newSource.isActive
+        activeSourceLabel = isRunning ? label : nil
         status = isRunning
             ? "Protection on — watching for freezes and falls"
             : "Motion sensors are not available on this device"
         return isRunning
     }
 
-    public func stopPhone() {
-        source.stop()
+    public func stopSource() {
+        source?.stop()
+        source = nil
         isRunning = false
         isFoGActive = false
+        activeSourceLabel = nil
         status = "Protection is off"
+    }
+
+    public func stopPhone() {
+        stopSource()
     }
 
     public func clearFall() {

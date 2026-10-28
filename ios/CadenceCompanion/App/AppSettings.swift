@@ -12,6 +12,31 @@ public final class AppSettings: ObservableObject {
         static let caregiverPhone = "cadence.caregiverPhone"
         static let emergencyNumber = "cadence.emergencyNumber"
         static let protectionEnabled = "cadence.protectionEnabled"
+        static let schedule = "cadence.medicationSchedule"
+    }
+
+    /// Shows the Developer tab. Not a user setting: on in debug builds, and
+    /// on in any build launched with `-cadence-developer`, so testers get it
+    /// from Xcode or a scheme without anything appearing in setup.
+    @Published public var developerModeEnabled: Bool
+
+    public nonisolated static var defaultDeveloperMode: Bool {
+        if ProcessInfo.processInfo.arguments.contains("-cadence-developer") { return true }
+        if ProcessInfo.processInfo.environment["CADENCE_DEVELOPER"] == "1" { return true }
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// Dose times set up by a care partner. Reminders only.
+    @Published public var schedule: MedicationSchedule {
+        didSet {
+            if let data = try? JSONEncoder().encode(schedule) {
+                defaults.set(data, forKey: Key.schedule)
+            }
+        }
     }
 
     @Published public var backendBaseURL: String {
@@ -35,22 +60,31 @@ public final class AppSettings: ObservableObject {
     }
 
     private let defaults: UserDefaults
-    private let sync: EventSyncManager
+    /// The offline queue every event goes through.
+    public let sync: EventSyncManager
     private weak var fallAlert: FallAlertCoordinator?
     private weak var exam: HomeMotorExamManager?
 
     public init(
         defaults: UserDefaults = .standard,
-        sync: EventSyncManager = .shared
+        sync: EventSyncManager = .shared,
+        developerMode: Bool = AppSettings.defaultDeveloperMode
     ) {
         self.defaults = defaults
         self.sync = sync
+        self.developerModeEnabled = developerMode
         backendBaseURL = defaults.string(forKey: Key.backendBaseURL) ?? "http://localhost:8000"
         deviceToken = defaults.string(forKey: Key.deviceToken) ?? "cadence-dev-device-writer-token-2026"
         caregiverName = defaults.string(forKey: Key.caregiverName) ?? ""
         caregiverPhone = defaults.string(forKey: Key.caregiverPhone) ?? ""
         emergencyNumber = defaults.string(forKey: Key.emergencyNumber) ?? "911"
         protectionEnabled = defaults.object(forKey: Key.protectionEnabled) as? Bool ?? true
+        if let data = defaults.data(forKey: Key.schedule),
+           let saved = try? JSONDecoder().decode(MedicationSchedule.self, from: data) {
+            schedule = saved
+        } else {
+            schedule = MedicationSchedule(medicationName: "Levodopa", doseTimes: [])
+        }
         apply()
     }
 
@@ -61,8 +95,11 @@ public final class AppSettings: ObservableObject {
         apply()
     }
 
+    /// Swapped by tests so no request leaves the process.
+    public var apiTransport: JSONTransporting = URLSessionJSONTransport()
+
     public var api: CadenceAPIClient {
-        CadenceAPIClient(baseURL: trimmedBaseURL, bearerToken: deviceToken)
+        CadenceAPIClient(baseURL: trimmedBaseURL, bearerToken: deviceToken, transport: apiTransport)
     }
 
     public var hasCaregiver: Bool {

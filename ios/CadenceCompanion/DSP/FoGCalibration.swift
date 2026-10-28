@@ -453,6 +453,26 @@ public enum LabeledCaptureLibrary {
         ]
     }
 
+    /// Joins clips end to end with continuous timestamps, one sample period
+    /// apart at each seam, so a replayed sequence never runs backwards.
+    public static func concatenate(_ parts: [[IMUSample]], sampleRateHz: Double) -> [IMUSample] {
+        var out: [IMUSample] = []
+        var offset = 0.0
+        for part in parts {
+            guard let first = part.first else { continue }
+            for s in part {
+                out.append(IMUSample(
+                    timestamp: s.timestamp - first.timestamp + offset, ax: s.ax, ay: s.ay, az: s.az,
+                    gx: s.gx, gy: s.gy, gz: s.gz, pitchDeg: s.pitchDeg, rollDeg: s.rollDeg
+                ))
+            }
+            if let last = out.last {
+                offset = last.timestamp + 1.0 / sampleRateHz
+            }
+        }
+        return out
+    }
+
     /// Sensor noise on each axis, in g.
     private static let noiseG = 0.015
 

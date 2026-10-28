@@ -23,6 +23,7 @@ public final class WalkingModel: ObservableObject {
     public let fogDetector: FoGDetector
     public let fallAlert: FallAlertCoordinator
     public let motion: MotionFeed
+    public let glasses: GlassesSessionManager
     private let location: LocationProvider
     private var cancellables: Set<AnyCancellable> = []
     private var demoTask: Task<Void, Never>?
@@ -31,13 +32,26 @@ public final class WalkingModel: ObservableObject {
         motion: MotionFeed,
         fallAlert: FallAlertCoordinator,
         fogDetector: FoGDetector = FoGDetector(),
-        location: LocationProvider
+        location: LocationProvider,
+        glasses: GlassesSessionManager? = nil
     ) {
         self.motion = motion
         self.fallAlert = fallAlert
         self.fogDetector = fogDetector
         self.location = location
+        self.glasses = glasses ?? GlassesSessionManager(phoneMotion: motion.phoneSource)
         motion.attach(fogDetector: fogDetector, fallDetector: fallAlert.detector)
+        fallAlert.wearStateProvider = self.glasses
+
+        // When the glasses connect or drop while protection is on, move the
+        // stream to the best available source without the wearer doing anything.
+        self.glasses.$connectionState
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self, self.motion.isRunning, !self.isDemoRunning else { return }
+                self.setProtection(enabled: true)
+            }
+            .store(in: &cancellables)
 
         motion.$isFoGActive
             .combineLatest(motion.$armingMode, motion.$isRunning)
@@ -53,12 +67,16 @@ public final class WalkingModel: ObservableObject {
 
     public func setProtection(enabled: Bool) {
         if enabled {
-            let started = motion.startPhone { [location] in location.currentLocation }
+            let source = glasses.preferredMotionSource
+            let label = glasses.preferredSourceLabel
+            let started = motion.start(source: source, label: label) { [location] in location.currentLocation }
             if !started {
-                headline = motion.sourceIsAvailable
+                headline = source.isAvailable
                     ? "Protection could not start"
                     : "Motion sensors are not available on this device"
-                detail = "Cadence listens through your iPhone's motion sensors. Keep the phone in a pocket while you walk."
+                detail = label == "iPhone"
+                    ? "Cadence listens through your iPhone's motion sensors. Keep the phone in a pocket while you walk."
+                    : "The glasses did not start their motion stream. Try reconnecting them."
             }
         } else {
             motion.stopPhone()
@@ -126,6 +144,12 @@ public final class WalkingModel: ObservableObject {
     }
 
     // MARK: - Text
+
+    /// Which device is listening right now, for the status line.
+    public var sourceSentence: String {
+        guard let label = motion.activeSourceLabel else { return "" }
+        return label == "iPhone" ? "Listening through your iPhone." : "Listening through \(label)."
+    }
 
     private func refreshText(armingMode: String, cueing: Bool, running: Bool) {
         guard running || isDemoRunning else {

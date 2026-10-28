@@ -122,9 +122,14 @@ public final class FallAlertCoordinator: ObservableObject {
     /// to the local emergency number when unset.
     public var caregiverPhoneNumber: String?
     public var emergencyNumber: String = "911"
+    /// Hardware wear state from the glasses. Nil, or an unknown answer, is
+    /// treated as worn so a missing sensor can never silence a fall.
+    public weak var wearStateProvider: WearStateProviding?
 
-    /// Seconds the wearer has to cancel before the alert escalates.
-    public nonisolated static let checkInWindowSec: TimeInterval = 12.0
+    /// Seconds the wearer has to answer before anyone is contacted. Long on
+    /// purpose: slowness after a fall is normal, and the window can be
+    /// answered by voice or by a tap at any point.
+    public nonisolated static let checkInWindowSec: TimeInterval = 30.0
 
     /// The detector whose Stage 3 opens each check-in. Resolving the check-in
     /// returns it to monitoring, so IMU samples must be fed to this instance.
@@ -248,14 +253,14 @@ public final class FallAlertCoordinator: ObservableObject {
 
     /// The window closed with no transcript and no voice.
     private func resolveSilentTimeout(transcript: String? = nil, maxVocalLevelDbfs: Double = -160.0) {
-        // Wear state and pre-impact metrics are not plumbed into the
-        // coordinator yet, so the device is treated as worn and silence always
-        // escalates, which is the specified default while unworn-drop
-        // suppression is uncalibrated.
+        // The glasses' own wear sensor is the primary signal. With no glasses,
+        // or no answer from them, the pair is treated as worn. Suppression of
+        // an unworn drop is additionally gated by the detector's calibration
+        // flag, which is off until the supine-versus-table recording is done.
         resolveFromSpeech(
             transcript: transcript,
             maxVocalLevelDbfs: maxVocalLevelDbfs,
-            hardwareWearStateWorn: true,
+            hardwareWearStateWorn: wearStateProvider?.isWorn ?? true,
             preImpactWearRmsG: 0.0,
             preImpactRespPower: 0.0,
             preImpactPitchDeg: 0.0

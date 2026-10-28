@@ -244,6 +244,20 @@ public struct CadenceAPIClient {
         )
     }
 
+    public struct Health: Decodable {
+        public let status: String
+        public let version: String
+    }
+
+    /// `GET /health`, no token required.
+    public func health() async throws -> Health {
+        guard let url = URL(string: "\(baseURL)/health") else { throw CadenceAPIError.badURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        let data = try await transport.send(request, bearerToken: bearerToken)
+        return try decoder.decode(Health.self, from: data)
+    }
+
     public func fetchReport() async throws -> NeurologistReport {
         guard let url = URL(string: "\(baseURL)/api/v1/report/neurologist") else {
             throw CadenceAPIError.badURL

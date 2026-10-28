@@ -279,6 +279,26 @@ public final class EventSyncManager {
         return (delivered, failed)
     }
 
+    /// Removes an event that has not been delivered yet. Returns true if a
+    /// pending row was withdrawn; false if it was already sent or unknown.
+    @discardableResult
+    public func withdrawPending(_ eventUUID: String) -> Bool {
+        dbQueue.sync {
+            var stmt: OpaquePointer?
+            var removed = false
+            if sqlite3_prepare_v2(
+                db, "DELETE FROM pending_events WHERE event_uuid = ? AND synced = 0;", -1, &stmt, nil
+            ) == SQLITE_OK {
+                sqlite3_bind_text(stmt, 1, eventUUID, -1, SQLITE_TRANSIENT)
+                if sqlite3_step(stmt) == SQLITE_DONE {
+                    removed = sqlite3_changes(db) > 0
+                }
+            }
+            sqlite3_finalize(stmt)
+            return removed
+        }
+    }
+
     private func markSynced(_ eventUUID: String) {
         dbQueue.sync {
             var stmt: OpaquePointer?

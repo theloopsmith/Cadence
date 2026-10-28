@@ -1,0 +1,189 @@
+import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+/// The home screen: how the day is going, the next dose with one big Taken,
+/// and a protection switch card. In a predicted off period it drops to the
+/// two things that matter and makes them bigger.
+struct TodayView: View {
+    @ObservedObject var app: CadenceAppModel
+
+    private var walking: WalkingModel { app.walking }
+    private var doses: DoseLogModel { app.doses }
+    private var voice: VoiceDoseAssistant { app.voiceDose }
+    private var simple: Bool { app.isSimpleMode }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: CadenceTheme.tapGap) {
+                    statusCard
+                    medicationCard
+                    if !simple {
+                        protectionCard
+                        if walking.isDemoRunning || walking.lastDemoSummary != nil {
+                            demoStatus
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .background(CadenceTheme.background.ignoresSafeArea())
+            .navigationTitle(simple ? "Right now" : "Today")
+        }
+    }
+
+    // MARK: - Status
+
+    private var statusColor: Color {
+        if walking.isCueing { return CadenceTheme.accent }
+        return walking.isProtectionOn ? CadenceTheme.calm : .secondary
+    }
+
+    private var statusCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            StatusBadge(
+                systemImage: walking.isCueing ? "metronome.fill" : (walking.isProtectionOn ? "shield.fill" : "shield.slash"),
+                word: walking.headline,
+                color: statusColor
+            )
+            Text(walking.detail)
+                .font(simple ? .title3 : .body)
+                .foregroundColor(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            if walking.isProtectionOn, !walking.sourceSentence.isEmpty, !simple {
+                Text(walking.sourceSentence)
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+            if simple {
+                Text("Things are kept simple for now. Everything else is a tab away.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .card()
+    }
+
+    // MARK: - Medication
+
+    @ViewBuilder
+    private var pillImage: some View {
+        #if canImport(UIKit)
+        if let data = app.pillPhoto, let image = UIImage(data: data) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: CadenceTheme.controlRadius, style: .continuous))
+                .accessibilityLabel("Photo of your \(doses.schedule.medicationName)")
+        } else {
+            IconBadge(systemName: "pills.fill", color: doses.isDoseDue ? CadenceTheme.accent : .secondary, size: 52)
+        }
+        #else
+        IconBadge(systemName: "pills.fill", color: doses.isDoseDue ? CadenceTheme.accent : .secondary, size: 52)
+        #endif
+    }
+
+    private var voiceLine: String? {
+        switch voice.state {
+        case .idle, .done, .cancelled: return nil
+        case .listening: return "Listening… say “taken” when you have had it."
+        case .confirming: return "Heard you. Say “yes” to log it, or “no”."
+        }
+    }
+
+    private var medicationCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                pillImage
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(doses.headline)
+                        .font(.title2.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(doses.detail)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if let voiceLine {
+                HStack(spacing: 10) {
+                    Image(systemName: "waveform")
+                        .foregroundColor(CadenceTheme.accent)
+                        .accessibilityHidden(true)
+                    Text(voiceLine)
+                        .font(.body)
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: CadenceTheme.controlRadius, style: .continuous)
+                        .fill(CadenceTheme.accent.opacity(0.12))
+                )
+                GuardedButton(size: .big, style: .tinted(.secondary), action: { voice.cancel() }) {
+                    Text("Stop listening")
+                }
+            } else if doses.isDoseDue {
+                GuardedButton(size: .giant, style: .filled(CadenceTheme.calm), action: {
+                    doses.markTaken()
+                    Haptics.success()
+                }) {
+                    Label("Taken", systemImage: "checkmark")
+                }
+                .accessibilityHint("Logs this dose as taken. You can undo afterwards.")
+                GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { voice.begin() }) {
+                    Label("Say it instead", systemImage: "mic.fill")
+                }
+                .accessibilityHint("Cadence asks whether you have taken it and reads your answer back")
+            } else if doses.canUndo {
+                GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { doses.undo() }) {
+                    Label("Undo — I haven't taken it yet", systemImage: "arrow.uturn.backward")
+                }
+            }
+        }
+        .card()
+    }
+
+    // MARK: - Protection
+
+    private var protectionCard: some View {
+        SwitchCard(
+            title: "Protection",
+            detail: "Listens for freezes and hard falls while the phone or glasses are with you.",
+            isOn: walking.isProtectionOn,
+            onColor: CadenceTheme.calm
+        ) {
+            let next = !walking.isProtectionOn
+            app.settings.protectionEnabled = next
+            walking.setProtection(enabled: next)
+        }
+        .disabled(walking.isDemoRunning)
+    }
+
+    private var demoStatus: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                StatusPill(text: walking.demoLabel, color: CadenceTheme.caution, filled: true)
+                Text(walking.isDemoRunning ? "Freeze demo playing" : "Freeze demo")
+                    .font(.headline)
+            }
+            if walking.isDemoRunning {
+                ProgressView(value: walking.demoProgress).tint(CadenceTheme.caution)
+                GuardedButton(size: .big, style: .tinted(CadenceTheme.caution), action: { walking.stopFreezeDemo() }) {
+                    Text("Stop demo")
+                }
+            } else if let summary = walking.lastDemoSummary {
+                Text(summary)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .card()
+    }
+}

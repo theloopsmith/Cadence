@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct SettingsView: View {
     @ObservedObject var app: CadenceAppModel
@@ -15,13 +18,14 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 caregiverSection
+                glassesSection
                 calibrationSection
                 recordingSection
                 backendSection
                 demoToolsSection
                 aboutSection
             }
-            .navigationTitle("Settings")
+            .navigationTitle("Care partner setup")
         }
     }
 
@@ -43,6 +47,67 @@ struct SettingsView: View {
             Text("Caregiver")
         } footer: {
             Text("Contacted only if you fall and do not answer the voice check-in.")
+        }
+    }
+
+    // MARK: - Glasses
+
+    private var glassesSection: some View {
+        Section {
+            if app.glasses.device == nil || app.isUsingMockGlasses {
+                InlineNotice(
+                    text: "Real glasses connect through the Meta AI app in Developer Mode. A mock pair can stand in so every glasses path can be tried without hardware.",
+                    color: CadenceTheme.accent,
+                    systemName: "info.circle.fill"
+                )
+            } else {
+                HStack {
+                    Text(app.glasses.deviceName ?? "Glasses")
+                    Spacer()
+                    Button(app.glasses.connectionState == .connected ? "Disconnect" : "Connect") {
+                        app.glasses.connectionState == .connected ? app.glasses.disconnect() : app.glasses.connect()
+                    }
+                    .frame(minHeight: CadenceTheme.minimumTapHeight)
+                }
+                Text("Motion and photo capture from the glasses are development and beta channel features of the toolkit; the iPhone's sensors are used whenever the glasses are not connected.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+            Toggle(isOn: Binding(
+                get: { app.isUsingMockGlasses },
+                set: { app.useMockGlasses($0) }
+            )) {
+                HStack {
+                    Text("Use mock glasses")
+                    StatusPill(text: "Mock", color: CadenceTheme.caution)
+                }
+            }
+            .frame(minHeight: CadenceTheme.minimumTapHeight)
+
+            if app.isUsingMockGlasses, let device = app.glasses.device as? MockGlassesDevice {
+                HStack {
+                    Text("Connection")
+                    Spacer()
+                    Button(app.glasses.connectionState == .connected ? "Disconnect" : "Connect") {
+                        app.glasses.connectionState == .connected ? device.disconnect() : device.connect()
+                    }
+                    .frame(minHeight: CadenceTheme.minimumTapHeight)
+                }
+                if app.glasses.connectionState == .connected {
+                    Picker("Wear state", selection: Binding(
+                        get: { app.glasses.wearState },
+                        set: { device.setWearState($0) }
+                    )) {
+                        Text("Worn").tag(GlassesWearState.worn)
+                        Text("Not worn").tag(GlassesWearState.notWorn)
+                        Text("Unknown").tag(GlassesWearState.unknown)
+                    }
+                }
+            }
+        } header: {
+            Text("Glasses")
+        } footer: {
+            Text("With glasses connected, motion comes from the glasses and the fall check-in knows whether they are being worn. Otherwise the iPhone is used.")
         }
     }
 
@@ -202,6 +267,7 @@ struct SettingsView: View {
 
     private var demoToolsSection: some View {
         Section {
+
             Button {
                 AudioCueEngine.shared.playAudioTest()
             } label: {

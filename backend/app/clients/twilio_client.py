@@ -28,7 +28,7 @@ class TwilioEscalationClient:
     ) -> str:
         body = (
             f"CADENCE EMERGENCY FALL ALERT: Hard impact ({peak_impact_g:.1f}g) detected "
-            f"at {timestamp_utc}. Wearer did not cancel within 12s."
+            f"at {timestamp_utc}. The wearer did not answer the check-in."
         )
         if latitude is not None and longitude is not None:
             body += f" GPS Location: https://maps.google.com/?q={latitude:.6f},{longitude:.6f}"

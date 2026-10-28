@@ -12,6 +12,40 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<!-- Meta Wearables Device Access Toolkit. The Meta AI app calls back on
+	     the URL scheme after registration. MetaAppID and ClientToken come from
+	     the project in the Wearables Developer Center; set them as build
+	     settings (META_APP_ID, CLIENT_TOKEN) or paste them here. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>cadencecompanion</string>
+			</array>
+		</dict>
+	</array>
+	<key>MWDAT</key>
+	<dict>
+		<key>AppLinkURLScheme</key>
+		<string>cadencecompanion://</string>
+		<key>MetaAppID</key>
+		<string>$(META_APP_ID)</string>
+		<key>ClientToken</key>
+		<string>$(CLIENT_TOKEN)</string>
+		<key>TeamID</key>
+		<string>$(DEVELOPMENT_TEAM)</string>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Cadence uses the local network only to receive a photo from your glasses when you ask it to look around.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_bonjour._tcp</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
