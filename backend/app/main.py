@@ -10,7 +10,9 @@ from fastapi.responses import HTMLResponse, Response
 
 from app.clients.baseten_llm import baseten_client
 from app.clients.circuit_breaker import RequestDeadlineContext
+from app.clients.fireworks_client import fireworks_client
 from app.clients.meta_models import meta_client
+from app.config import settings
 from app.db import (
     execute_write,
     fetch_all,
@@ -35,6 +37,7 @@ from app.security import (
     require_device_writer,
     verify_twilio_signature,
 )
+from app.services.dose_clock import dose_timestamp_at_or_before
 from app.services.diary_engine import (
     DiaryBucketMetrics,
     build_24h_diary_timeline,
@@ -223,15 +226,7 @@ async def analyze_meal_protein(
     masks = sam_res.get("masks", []) if sam_res.get("sam_verified") else []
     protein_est = estimate_meal_protein(masks)
 
-    latest_dose = await fetch_one(
-        """
-        SELECT timestamp_utc FROM medication_logs
-        WHERE patient_id = ? AND event_type = 'dose_taken'
-        ORDER BY timestamp_utc DESC LIMIT 1
-        """,
-        (auth.patient_id,),
-    )
-    dose_ts = latest_dose["timestamp_utc"] if latest_dose else None
+    dose_ts = await dose_timestamp_at_or_before(auth.patient_id, payload.timestamp_utc)
     conflict = check_dose_protein_conflict(
         meal_timestamp_iso=payload.timestamp_utc,
         estimated_protein_grams=protein_est["estimated_protein_grams"],
@@ -331,6 +326,16 @@ async def analyze_handwriting_endpoint(
         simulated_sam_decay_pct=payload.simulated_sam_decay_pct,
     )
 
+    if not res["measured"]:
+        return {
+            "event_uuid": payload.event_uuid,
+            **res,
+            "spoken_response": (
+                "I couldn't read enough of that line to measure it. "
+                "Try again with the whole sentence in frame."
+            ),
+        }
+
     await execute_write(
         """
         INSERT INTO handwriting_logs (
@@ -411,22 +416,13 @@ async def complete_home_motor_exam(
         )
     )
 
-    latest_dose = await fetch_one(
-        """
-        SELECT timestamp_utc FROM medication_logs
-        WHERE patient_id = ? AND event_type = 'dose_taken'
-        ORDER BY timestamp_utc DESC LIMIT 1
-        """,
-        (auth.patient_id,),
-    )
+    dose_ts = await dose_timestamp_at_or_before(auth.patient_id, payload.timestamp_utc)
     minutes_since_dose: Optional[int] = None
     has_dose = False
-    if latest_dose:
+    if dose_ts:
         try:
             t_exam = datetime.fromisoformat(payload.timestamp_utc.replace("Z", "+00:00"))
-            t_dose = datetime.fromisoformat(
-                str(latest_dose["timestamp_utc"]).replace("Z", "+00:00")
-            )
+            t_dose = datetime.fromisoformat(dose_ts.replace("Z", "+00:00"))
             diff_min = int((t_exam - t_dose).total_seconds() // 60)
             if 0 <= diff_min <= 720:
                 has_dose = True
@@ -579,7 +575,11 @@ async def get_neurologist_report(
         "latest_exam_score": exam_rows[0]["composite_motor_score"] if exam_rows else None,
         "exam_on_vs_off_delta": timeline["exam_on_vs_off_delta"],
     }
-    narrative = await baseten_client.summarize_clinical_diary(summary_stats)
+    narrative = None
+    if settings.fireworks_api_key:
+        narrative = await fireworks_client.summarize_clinical_diary(summary_stats)
+    if not narrative:
+        narrative = await baseten_client.summarize_clinical_diary(summary_stats)
 
     return {
         "patient_id": pid,

@@ -3,20 +3,29 @@ import cv2
 import numpy as np
 
 
+def unreadable_handwriting() -> Dict[str, Any]:
+    """A line with too few strokes to compare a start and an end."""
+    return {
+        "initial_stroke_height_px": None,
+        "final_stroke_height_px": None,
+        "opencv_cc_decay_pct": None,
+        "handwriting_score": None,
+        "micrographia_detected": False,
+        "measured": False,
+    }
+
+
 def compute_decay_from_heights(heights_px: List[float]) -> Dict[str, Any]:
     """
     Computes progressive stroke height change (opencv_cc_decay_pct) from ordered
     character bounding box heights [h_1, ..., h_M].
     Negative when shrinking (e.g., -35.0 means 35% shrinkage).
+
+    Fewer than four letters cannot show a start-versus-end change. Returning a
+    perfect score there made a failed photo look like healthy writing.
     """
     if len(heights_px) < 4:
-        return {
-            "initial_stroke_height_px": 0.0,
-            "final_stroke_height_px": 0.0,
-            "opencv_cc_decay_pct": 0.0,
-            "handwriting_score": 100.0,
-            "micrographia_detected": False,
-        }
+        return unreadable_handwriting()
     k = max(2, len(heights_px) // 3)
     h_first = float(np.mean(heights_px[:k]))
     h_last = float(np.mean(heights_px[-k:]))
@@ -35,6 +44,7 @@ def compute_decay_from_heights(heights_px: List[float]) -> Dict[str, Any]:
         "opencv_cc_decay_pct": decay_pct,
         "handwriting_score": writing_score,
         "micrographia_detected": micrographia_detected,
+        "measured": True,
     }
 
 
@@ -63,9 +73,8 @@ def analyze_handwriting_opencv(
         }
 
     if not image_bytes:
-        metrics = compute_decay_from_heights([30.0] * 8)
         return {
-            **metrics,
+            **unreadable_handwriting(),
             "sam_3_1_decay_pct": simulated_sam_decay_pct,
             "deskew_angle_deg": 0.0,
             "letter_boxes": [],
@@ -74,9 +83,8 @@ def analyze_handwriting_opencv(
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
     if img is None:
-        metrics = compute_decay_from_heights([30.0] * 8)
         return {
-            **metrics,
+            **unreadable_handwriting(),
             "sam_3_1_decay_pct": simulated_sam_decay_pct,
             "deskew_angle_deg": 0.0,
             "letter_boxes": [],

@@ -13,7 +13,12 @@ env/
 
 # Environment variables & secrets (NEVER commit)
 .env
+*.env
+**/.env
+**/*.env
 *.env.local
+keys.txt
+*keys*.txt
 
 # SQLite databases & journals
 *.db

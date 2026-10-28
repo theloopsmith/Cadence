@@ -68,6 +68,20 @@ class TestCircuitBreakerAndDeadlineDrills:
             exhausted.timeout_for_stage(stage_max_sec=1.5, min_viable_sec=0.35)
         assert "Request deadline exhausted" in str(exc_info.value)
 
+    def test_fireworks_client_breaker_isolation_and_fallback(self):
+        from app.clients.fireworks_client import fireworks_client
+        registry = PerModelCircuitBreakerRegistry(failure_threshold=3, cooldown_sec=10.0)
+        fw_key = (fireworks_client.PROVIDER, settings.fireworks_llm_model)
+
+        assert registry.is_available(*fw_key) is True
+        for _ in range(3):
+            registry.record_failure(*fw_key)
+        assert registry.is_available(*fw_key) is False
+
+        # Resetting restores availability
+        registry.record_success(*fw_key)
+        assert registry.is_available(*fw_key) is True
+
 
 class TestDatabaseIntegrityDrills:
     """Verifies WAL mode, foreign key enforcement, and SQLCipher / schema integrity."""

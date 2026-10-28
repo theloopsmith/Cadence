@@ -68,10 +68,15 @@ public final class FoGDetector {
     private var consecutiveFreezeHops: Int = 0
     private var consecutiveRecoveryHops: Int = 0
     public private(set) var isEpisodeActive: Bool = false
+    /// Tests point this at a private queue. Production uses the shared one.
+    public var eventSync: EventSyncManager = .shared
     private var episodeDurationSec: Double = 0.0
     private var episodePeakFI: Double = 0.0
     private var episodeLastLocoPower: Double = 0.0
     private var episodeLastFreezePower: Double = 0.0
+    /// The mode that opened the episode. Later hops often disarm before the
+    /// cue ends, and the logged event has to keep the mode it started in.
+    private var episodeArmingMode: FoGArmingMode = .disarmed
     public let maxCueDurationSec: Double = 30.0
     public let hopDurationSec: Double = 0.50
 
@@ -326,6 +331,7 @@ public final class FoGDetector {
                 isEpisodeActive = true
                 episodeDurationSec = 0.0
                 episodePeakFI = fi
+                episodeArmingMode = armingMode
                 AudioCueEngine.shared.startRASMetronome(bpm: 100)
             }
             if isEpisodeActive {
@@ -361,7 +367,7 @@ public final class FoGDetector {
         AudioCueEngine.shared.stopRASMetronome()
 
         let uuid = UUID().uuidString
-        EventSyncManager.shared.saveLocalImmediate(
+        eventSync.saveLocalImmediate(
             eventUUID: uuid,
             endpoint: "/api/v1/events/fog",
             payload: [
@@ -372,7 +378,7 @@ public final class FoGDetector {
                 "locomotor_band_power": episodeLastLocoPower,
                 "freeze_band_power": episodeLastFreezePower,
                 "sampled_hz": sampledHz,
-                "arming_mode": armingMode.rawValue,
+                "arming_mode": episodeArmingMode.rawValue,
                 "speech_active_modifier": isUserSpeaking,
                 "cue_bpm": 100,
                 "recovery_latency_sec": episodeDurationSec

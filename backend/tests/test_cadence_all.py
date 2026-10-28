@@ -167,6 +167,7 @@ def test_end_to_end_api_pipelines_and_rbac():
         )
         assert forbidden_post.status_code == 403
         assert client.delete("/api/v1/patient/data", headers=CLINICIAN_HEADERS).status_code == 403
+        assert client.delete("/api/v1/patient/data", headers=DEVICE_HEADERS).status_code == 200
 
         # 3. Device token logs FoG, Dose, Meal Protein, Reality Check, Handwriting, Fall & Exam
         fog_ok = client.post(

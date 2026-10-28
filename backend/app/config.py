@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     retention_days: int = 30
     retention_incident_days: int = 365
 
+    # Fireworks AI ($100 Credits)
+    fireworks_api_key: str = ""
+    fireworks_api_base_url: str = "https://api.fireworks.ai/inference/v1"
+    fireworks_llm_model: str = "accounts/fireworks/models/llama-v3p3-70b-instruct"
+    fireworks_vlm_model: str = "accounts/fireworks/models/llama-v3p2-11b-vision-instruct"
+    fireworks_stage_budget_sec: float = 1.2
+
     # Meta Model API ($150 Credits)
     meta_api_key: str = ""
     meta_api_base_url: str = "https://api.llama.com/v1"
@@ -42,6 +49,8 @@ class Settings(BaseSettings):
     # Twilio Escalation & Caregiver Contacts
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
+    twilio_api_key_sid: str = ""
+    twilio_api_key_secret: str = ""
     twilio_from_phone: str = ""
     caregiver_primary_phone: str = ""
     caregiver_secondary_phone: str = ""

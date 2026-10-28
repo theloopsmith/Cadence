@@ -1,9 +1,14 @@
 import asyncio
+import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import settings
+
+
+class DatabaseEncryptionError(RuntimeError):
+    """Raised when a configured key would otherwise leave the database readable."""
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -156,20 +161,42 @@ CREATE INDEX IF NOT EXISTS idx_voice_logs_patient_ts ON voice_logs(patient_id, t
 """
 
 
+def _refuse_plaintext_database(path: str) -> None:
+    """A keyed database whose bytes start with the SQLite header is not encrypted."""
+    if not path or path == ":memory:" or not os.path.exists(path):
+        return
+    if os.path.getsize(path) == 0:
+        return
+    with open(path, "rb") as handle:
+        header = handle.read(16)
+    if not header.startswith(b"SQLite format 3"):
+        return
+    for suffix in ("", "-wal", "-shm"):
+        candidate = f"{path}{suffix}"
+        if os.path.exists(candidate):
+            os.remove(candidate)
+    raise DatabaseEncryptionError(
+        f"{path} is a plaintext SQLite file while SQLITE_ENCRYPTION_KEY is set."
+    )
+
+
 def _connect_sync(db_path: Optional[str] = None) -> sqlite3.Connection:
-    """Opens a synchronous SQLite (or SQLCipher if key is set) connection."""
+    """Opens a synchronous SQLite connection, or SQLCipher when a key is set."""
     target_path = db_path or settings.sqlite_db_path
     if settings.sqlite_encryption_key:
+        _refuse_plaintext_database(target_path)
         try:
             import sqlcipher3 as sqlcipher  # type: ignore
-
-            conn = sqlcipher.connect(target_path, check_same_thread=False)
-            escaped_key = settings.sqlite_encryption_key.replace("'", "''")
-            conn.execute(f"PRAGMA key = '{escaped_key}';")
-            conn.row_factory = sqlcipher.Row
-            return conn
-        except ImportError:
-            pass
+        except ImportError as exc:
+            raise DatabaseEncryptionError(
+                "SQLITE_ENCRYPTION_KEY is set but sqlcipher3 is not installed. "
+                "Refusing to open a plaintext database."
+            ) from exc
+        conn = sqlcipher.connect(target_path, check_same_thread=False)
+        escaped_key = settings.sqlite_encryption_key.replace("'", "''")
+        conn.execute(f"PRAGMA key = '{escaped_key}';")
+        conn.row_factory = sqlcipher.Row
+        return conn
     conn = sqlite3.connect(target_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON;")
@@ -183,6 +210,8 @@ def init_db_sync(db_path: Optional[str] = None) -> None:
         conn.commit()
     finally:
         conn.close()
+    if settings.sqlite_encryption_key:
+        _refuse_plaintext_database(db_path or settings.sqlite_db_path)
 
 
 async def init_db(db_path: Optional[str] = None) -> None:

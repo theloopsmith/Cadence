@@ -69,6 +69,41 @@ final class CadenceDSPTests: XCTestCase {
         AudioCueEngine.shared.stopRASMetronome()
     }
 
+    /// A sit-to-stand freeze keeps going after the 10-second arming window
+    /// closes. The queued event has to name the mode that started it.
+    func testFreezeEpisodeRecordsTheArmingModeItStartedIn() throws {
+        let db = NSTemporaryDirectory() + "fog-arming-\(UUID().uuidString).sqlite"
+        let sync = EventSyncManager(databasePath: db, startPeriodicDrain: false)
+        let detector = FoGDetector()
+        detector.eventSync = sync
+
+        func hop(sitToStand: Bool) {
+            _ = detector.evaluateHop(
+                locomotorBandPower: 0.01,
+                freezeBandPower: 0.20,
+                integratedYaw15sDeg: 0.0,
+                pitchDeg: 80.0,
+                rollDeg: 0.0,
+                sitToStandDetected: sitToStand,
+                isUserSpeaking: false
+            )
+        }
+
+        hop(sitToStand: true)
+        for _ in 0..<80 {
+            hop(sitToStand: false)
+        }
+
+        XCTAssertEqual(detector.armingMode, .disarmed)
+        XCTAssertFalse(detector.isEpisodeActive)
+        let fog = sync.dueEvents().filter { $0.endpoint == "/api/v1/events/fog" }
+        XCTAssertEqual(fog.count, 1)
+        let data = try XCTUnwrap(fog[0].payloadJSON.data(using: .utf8))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["arming_mode"] as? String, FoGArmingMode.sitToStand.rawValue)
+        AudioCueEngine.shared.stopRASMetronome()
+    }
+
     func testFallDetector3StageAndGroanVsAffirmativePhrase() {
         let detector = FallDetector()
 
