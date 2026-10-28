@@ -55,7 +55,10 @@ from app.services.reality_check import run_reality_check_pipeline
 async def lifespan(app: FastAPI):
     await init_db()
     await purge_expired_telemetry()
+    await fall_escalation_manager.resume_open_escalations()
     yield
+    for task in list(fall_escalation_manager._active_tasks.values()):
+        task.cancel()
 
 
 app = FastAPI(

@@ -215,6 +215,82 @@ async def execute_write(
     return await asyncio.to_thread(execute_write_sync, query, params, db_path)
 
 
+def claim_caregiver_alert_sync(
+    patient_id: str,
+    fall_event_uuid: str,
+    timestamp_utc: str,
+    contact_role: str,
+    contact_phone_masked: str,
+    channel: str,
+    retry_count: int,
+    db_path: Optional[str] = None,
+) -> int:
+    """
+    Inserts one escalation attempt, or returns 0 if that attempt already exists.
+
+    The status webhook and the retry loop both try the same secondary dial.
+    BEGIN IMMEDIATE serializes them so only one call is placed.
+    """
+    conn = _connect_sync(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            """
+            SELECT id FROM caregiver_alerts
+            WHERE fall_event_uuid = ? AND contact_role = ?
+              AND channel = ? AND retry_count = ?
+            """,
+            (fall_event_uuid, contact_role, channel, retry_count),
+        ).fetchone()
+        if existing is not None:
+            conn.rollback()
+            return 0
+        cur = conn.execute(
+            """
+            INSERT INTO caregiver_alerts (
+                patient_id, fall_event_uuid, timestamp_utc, contact_role,
+                contact_phone_masked, channel, provider_sid, delivery_status, retry_count
+            ) VALUES (?, ?, ?, ?, ?, ?, '', 'pending_dispatch', ?)
+            """,
+            (
+                patient_id,
+                fall_event_uuid,
+                timestamp_utc,
+                contact_role,
+                contact_phone_masked,
+                channel,
+                retry_count,
+            ),
+        )
+        conn.commit()
+        return int(cur.lastrowid or 0)
+    finally:
+        conn.close()
+
+
+async def claim_caregiver_alert(
+    patient_id: str,
+    fall_event_uuid: str,
+    timestamp_utc: str,
+    contact_role: str,
+    contact_phone_masked: str,
+    channel: str,
+    retry_count: int,
+    db_path: Optional[str] = None,
+) -> int:
+    return await asyncio.to_thread(
+        claim_caregiver_alert_sync,
+        patient_id,
+        fall_event_uuid,
+        timestamp_utc,
+        contact_role,
+        contact_phone_masked,
+        channel,
+        retry_count,
+        db_path,
+    )
+
+
 def fetch_all_sync(
     query: str,
     params: Tuple[Any, ...] = (),

@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from app.clients.twilio_client import mask_phone, twilio_client
 from app.config import settings
-from app.db import execute_write, fetch_all, fetch_one
+from app.db import claim_caregiver_alert, execute_write, fetch_all, fetch_one
 from app.models import FallEventCreate
 
 TERMINAL_FAILURE_STATUSES = {"busy", "no-answer", "failed", "canceled"}
@@ -147,6 +147,22 @@ class FallEscalationManager:
             latitude=fall_row.get("latitude"),
             longitude=fall_row.get("longitude"),
         )
+        if not dispatch_res.get("sms_sid") and not dispatch_res.get("call_sid"):
+            # Nothing reached a caregiver. Leave the row waiting so the device
+            # queue retries instead of treating a dead Twilio call as delivered.
+            await execute_write(
+                """
+                UPDATE fall_events SET status = 'confirmed_waiting_dispatch'
+                WHERE event_uuid = ? AND status = 'escalated_twilio'
+                """,
+                (payload.event_uuid,),
+            )
+            return {
+                "event_uuid": payload.event_uuid,
+                "status": "confirmed_waiting_dispatch",
+                "twilio_dispatched": False,
+                "local_siren_active": True,
+            }
 
         await execute_write(
             """
@@ -181,7 +197,7 @@ class FallEscalationManager:
 
         if start_background_retry and settings.secondary_escalation_delay_sec > 0:
             task = asyncio.create_task(
-                self._run_escalation_loop(patient_id, payload)
+                self._run_escalation_loop(patient_id, payload.event_uuid)
             )
             self._active_tasks[payload.event_uuid] = task
 
@@ -227,6 +243,19 @@ class FallEscalationManager:
             role = "primary"
             target_phone = settings.caregiver_primary_phone or "+15550001111"
 
+        now_iso = datetime.now(timezone.utc).isoformat()
+        claim_id = await claim_caregiver_alert(
+            patient_id=patient_id,
+            fall_event_uuid=event_uuid,
+            timestamp_utc=now_iso,
+            contact_role=role,
+            contact_phone_masked=mask_phone(target_phone),
+            channel="voice_call",
+            retry_count=retry_count,
+        )
+        if not claim_id:
+            return {"dispatched": False, "contact_role": role, "retry_count": retry_count}
+
         res = await twilio_client.dispatch_sms_and_call(
             to_phone=target_phone,
             event_uuid=event_uuid,
@@ -235,24 +264,20 @@ class FallEscalationManager:
             latitude=fall_row.get("latitude"),
             longitude=fall_row.get("longitude"),
         )
+        if not res.get("sms_sid") and not res.get("call_sid"):
+            await execute_write(
+                "DELETE FROM caregiver_alerts WHERE id = ?",
+                (claim_id,),
+            )
+            return {"dispatched": False, "contact_role": role, "retry_count": retry_count}
 
         await execute_write(
             """
-            INSERT INTO caregiver_alerts (
-                patient_id, fall_event_uuid, timestamp_utc, contact_role,
-                contact_phone_masked, channel, provider_sid, delivery_status, retry_count
-            ) VALUES (?, ?, ?, ?, ?, 'voice_call', ?, ?, ?)
+            UPDATE caregiver_alerts
+            SET provider_sid = ?, delivery_status = ?
+            WHERE id = ?
             """,
-            (
-                patient_id,
-                event_uuid,
-                datetime.now(timezone.utc).isoformat(),
-                role,
-                mask_phone(target_phone),
-                res["call_sid"],
-                res["delivery_status"],
-                retry_count,
-            ),
+            (res.get("call_sid") or res.get("sms_sid") or "", res["delivery_status"], claim_id),
         )
         return {"dispatched": True, "contact_role": role, "retry_count": retry_count}
 
@@ -326,12 +351,15 @@ class FallEscalationManager:
             return {"escalated": False, "reason": "already_resolved"}
 
         if status_lower in TERMINAL_FAILURE_STATUSES:
+            # retry_count 1 is the single immediate secondary dial. A later
+            # status callback for the same call finds that attempt claimed
+            # and does not place another one. The 60s loop owns the rest.
             res = await self.escalate_to_secondary_or_retry_primary(
                 patient_id=str(fall_row["patient_id"]),
                 event_uuid=event_uuid,
                 retry_count=1,
             )
-            return {"escalated": True, **res}
+            return {"escalated": bool(res.get("dispatched")), **res}
 
         return {"escalated": False, "call_status": status_lower}
 
@@ -349,6 +377,30 @@ class FallEscalationManager:
         task = self._active_tasks.pop(event_uuid, None)
         if task:
             task.cancel()
+
+        existing = await fetch_one(
+            "SELECT event_uuid FROM fall_events WHERE event_uuid = ? AND patient_id = ?",
+            (event_uuid, patient_id),
+        )
+        if existing is None:
+            # The phone can upload the cancel before the fall when the queue
+            # drains out of order. The tombstone makes the later fall a no-op.
+            inserted = await execute_write(
+                """
+                INSERT OR IGNORE INTO fall_events (
+                    patient_id, event_uuid, timestamp_utc, peak_impact_g, peak_jerk_gs,
+                    post_impact_tilt_deg, pre_impact_wear_rms_g, pre_impact_resp_power,
+                    worn_pre_impact, status, local_siren_activated
+                ) VALUES (?, ?, ?, 0, 0, 0, 0, 0, 1, 'canceled_false_alarm', 0)
+                """,
+                (patient_id, event_uuid, datetime.now(timezone.utc).isoformat()),
+            )
+            if inserted:
+                return {
+                    "event_uuid": event_uuid,
+                    "delivery_status": "canceled_by_user",
+                    "all_clear_sms_sent": 0,
+                }
 
         await execute_write(
             "UPDATE fall_events SET status = 'canceled_false_alarm' WHERE event_uuid = ? AND patient_id = ?",
@@ -409,10 +461,74 @@ class FallEscalationManager:
         )
         return resolved is not None
 
+    async def resume_open_escalations(self) -> list:
+        """
+        Restarts the retry loop for falls that were still calling caregivers
+        when the process stopped. A window that already elapsed is closed
+        instead of placing another call.
+        """
+        rows = await fetch_all(
+            """
+            SELECT f.event_uuid,
+                   f.patient_id,
+                   MIN(a.timestamp_utc) AS dispatched_at,
+                   COALESCE(MAX(CASE WHEN a.channel = 'voice_call' THEN a.retry_count END), 0)
+                       AS max_retry
+            FROM fall_events f
+            JOIN caregiver_alerts a ON a.fall_event_uuid = f.event_uuid
+            WHERE f.status = 'escalated_twilio'
+              AND NOT EXISTS (
+                  SELECT 1 FROM caregiver_alerts r
+                  WHERE r.fall_event_uuid = f.event_uuid
+                    AND r.delivery_status IN (
+                        'acknowledged_by_caregiver', 'canceled_by_user', 'exhausted_15m'
+                    )
+              )
+            GROUP BY f.event_uuid
+            """
+        )
+        resumed = []
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            event_uuid = str(row["event_uuid"])
+            if event_uuid in self._active_tasks:
+                resumed.append(event_uuid)
+                continue
+            dispatched_at = _parse_utc(str(row["dispatched_at"]))
+            elapsed = (now - dispatched_at).total_seconds()
+            if elapsed >= settings.retry_window_sec:
+                await execute_write(
+                    """
+                    UPDATE caregiver_alerts
+                    SET delivery_status = 'exhausted_15m'
+                    WHERE fall_event_uuid = ?
+                      AND delivery_status NOT IN (
+                          'acknowledged_by_caregiver', 'canceled_by_user'
+                      )
+                    """,
+                    (event_uuid,),
+                )
+                continue
+            task = asyncio.create_task(
+                self._run_escalation_loop(
+                    str(row["patient_id"]),
+                    event_uuid,
+                    delay_sec=max(0.0, settings.secondary_escalation_delay_sec - elapsed),
+                    window_sec=settings.retry_window_sec - elapsed,
+                    attempts_already=int(row["max_retry"] or 0),
+                )
+            )
+            self._active_tasks[event_uuid] = task
+            resumed.append(event_uuid)
+        return resumed
+
     async def _run_escalation_loop(
         self,
         patient_id: str,
-        payload: FallEventCreate,
+        event_uuid: str,
+        delay_sec: Optional[float] = None,
+        window_sec: Optional[float] = None,
+        attempts_already: int = 0,
     ) -> None:
         """
         Waits 90s for Primary keypress '1'; if unacknowledged, escalates to Secondary
@@ -428,19 +544,22 @@ class FallEscalationManager:
         the local iPhone .speaker siren and SOS beacon keep running until a
         human cancels on the device.
         """
+        delay = settings.secondary_escalation_delay_sec if delay_sec is None else delay_sec
+        window = settings.retry_window_sec if window_sec is None else window_sec
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + settings.retry_window_sec
+        deadline = loop.time() + window
         try:
-            await asyncio.sleep(settings.secondary_escalation_delay_sec)
+            if delay > 0:
+                await asyncio.sleep(delay)
 
-            attempt = 0
+            attempt = attempts_already
             while attempt < settings.max_retry_attempts and loop.time() < deadline:
-                if await self._is_resolved(payload.event_uuid):
+                if await self._is_resolved(event_uuid):
                     return
                 attempt += 1
                 await self.escalate_to_secondary_or_retry_primary(
                     patient_id=patient_id,
-                    event_uuid=payload.event_uuid,
+                    event_uuid=event_uuid,
                     retry_count=attempt,
                 )
                 remaining = deadline - loop.time()
@@ -450,7 +569,7 @@ class FallEscalationManager:
 
             # A caregiver may answer during the final interval, so re-check
             # before declaring the window exhausted.
-            if await self._is_resolved(payload.event_uuid):
+            if await self._is_resolved(event_uuid):
                 return
 
             await execute_write(
@@ -460,10 +579,17 @@ class FallEscalationManager:
                 WHERE fall_event_uuid = ?
                   AND delivery_status NOT IN ('acknowledged_by_caregiver', 'canceled_by_user')
                 """,
-                (payload.event_uuid,),
+                (event_uuid,),
             )
         except asyncio.CancelledError:
             return
+
+
+def _parse_utc(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 fall_escalation_manager = FallEscalationManager()

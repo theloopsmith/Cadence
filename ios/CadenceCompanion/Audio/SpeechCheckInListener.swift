@@ -41,15 +41,15 @@ public final class MockSpeechCheckInListener: SpeechCheckInListenerProtocol {
         maxVocalLevelDbfs = max(maxVocalLevelDbfs, peakDbfs)
         onTranscriptUpdate?(text, maxVocalLevelDbfs)
 
-        let normalized = text.lowercased()
+        let normalized = FallDetector.normalizeTranscript(text)
         for kw in FallDetector.distressAndNegationKeywords {
-            if normalized.contains(kw) {
+            if FallDetector.containsDistressPhrase(normalized, kw) {
                 onEarlyResolution?("confirmed_waiting_dispatch")
                 return
             }
         }
         for phrase in FallDetector.affirmativeCancelPhrases {
-            if normalized.contains(phrase) {
+            if FallDetector.containsPhrase(normalized, phrase) {
                 onEarlyResolution?("canceled_false_alarm")
                 return
             }
@@ -62,13 +62,19 @@ public final class MockSpeechCheckInListener: SpeechCheckInListenerProtocol {
     }
 }
 
-public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerProtocol, SFSpeechRecognizerDelegate {
+public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerProtocol, SFSpeechRecognizerDelegate, @unchecked Sendable {
     public static let shared = LiveSpeechCheckInListener()
 
     private let recognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+    /// Opening `AVAudioEngine.inputNode` can block. Hardware setup runs here so
+    /// `startListening` returns and the 12-second check-in timer stays armed.
+    private let audioQueue = DispatchQueue(label: "com.cadence.speechcheckin")
+    /// Bumped on start and stop. A setup block that loses the race with stop
+    /// sees a newer value and does not open the microphone.
+    private var session = 0
 
     public private(set) var maxVocalLevelDbfs: Double = -100.0
     public private(set) var latestTranscript: String = ""
@@ -96,12 +102,20 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
         onEarlyResolution: @escaping (String) -> Void
     ) {
         guard !isListening else { return }
+        session += 1
+        let session = session
         self.isListening = true
         self.maxVocalLevelDbfs = -100.0
         self.latestTranscript = ""
         self.transcriptCallback = onTranscriptUpdate
         self.earlyResolutionCallback = onEarlyResolution
+        audioQueue.async { [weak self] in
+            self?.openMicrophone(session: session)
+        }
+    }
 
+    private func openMicrophone(session: Int) {
+        guard session == self.session else { return }
         do {
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
@@ -159,19 +173,17 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
     }
 
     private func evaluateEarlyPhrases(_ transcript: String) {
-        let normalized = transcript.lowercased()
+        let normalized = FallDetector.normalizeTranscript(transcript)
 
-        // 1. Distress keyword -> Immediate escalation
         for kw in FallDetector.distressAndNegationKeywords {
-            if normalized.contains(kw) {
+            if FallDetector.containsDistressPhrase(normalized, kw) {
                 earlyResolutionCallback?("confirmed_waiting_dispatch")
                 return
             }
         }
 
-        // 2. Multi-word affirmative cancel phrase -> Immediate cancel
         for phrase in FallDetector.affirmativeCancelPhrases {
-            if normalized.contains(phrase) {
+            if FallDetector.containsPhrase(normalized, phrase) {
                 earlyResolutionCallback?("canceled_false_alarm")
                 return
             }
@@ -180,6 +192,16 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
 
     @discardableResult
     public func stopListening() -> (transcript: String, maxDbfs: Double) {
+        session += 1
+        let result = (latestTranscript, maxVocalLevelDbfs)
+        isListening = false
+        audioQueue.async { [weak self] in
+            self?.tearDownEngine()
+        }
+        return result
+    }
+
+    private func tearDownEngine() {
         if audioEngine.isRunning {
             audioEngine.stop()
             audioEngine.inputNode.removeTap(onBus: 0)
@@ -188,8 +210,5 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
         recognitionRequest = nil
         recognitionTask?.cancel()
         recognitionTask = nil
-
-        isListening = false
-        return (latestTranscript, maxVocalLevelDbfs)
     }
 }

@@ -4,8 +4,8 @@ public struct CompanionStatusView: View {
     @State private var fogDetector = FoGDetector()
     @StateObject private var fallAlert = FallAlertCoordinator()
     @StateObject private var motorExam = HomeMotorExamManager()
+    @StateObject private var motionFeed = MotionFeed()
     @ObservedObject private var scenarioReplayer = IMUScenarioReplayer.shared
-    @State private var liveWindow: [IMUSample] = []
     @State private var lastFreezeIndex: Double = 0.0
     @State private var isFoGActive: Bool = false
     @State private var lastActionBanner: String = "Ready — All 7 Pipelines Active"
@@ -24,7 +24,7 @@ public struct CompanionStatusView: View {
                         Text("Meta Gen 3 AI Glasses • \(GlassesSessionManager.shared.wearState.rawValue.uppercased())")
                             .font(.headline)
                         Spacer()
-                        Text("50–100 Hz IMU")
+                        Text(motionFeed.isRunning ? "iPhone 100 Hz" : "50–100 Hz IMU")
                             .font(.caption.monospaced())
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
@@ -83,6 +83,19 @@ public struct CompanionStatusView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Interactive Demo Scenarios & 50 Hz Replay")
                         .font(.headline)
+
+                    Button(action: togglePhoneMotion) {
+                        Label(
+                            motionFeed.isRunning
+                                ? "Stop iPhone Motion (CoreMotion fallback)"
+                                : "Start iPhone Motion (CoreMotion fallback)",
+                            systemImage: motionFeed.isRunning ? "stop.circle.fill" : "iphone"
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(motionFeed.isRunning ? .orange : .green)
+                    .disabled(scenarioReplayer.isPlaying || (!motionFeed.sourceIsAvailable && !motionFeed.isRunning))
 
                     if scenarioReplayer.isPlaying, let scenario = scenarioReplayer.activeScenario {
                         VStack(alignment: .leading, spacing: 6) {
@@ -240,139 +253,131 @@ public struct CompanionStatusView: View {
         .onAppear {
             AudioCueEngine.shared.configureLaunchAudioSession()
             LiveLocationProvider.shared.requestAuthorization()
+            motionFeed.attach(fogDetector: fogDetector, fallDetector: fallAlert.detector)
         }
+        .onChange(of: motionFeed.fallEventUUID) { uuid in
+            guard let uuid else { return }
+            fallAlert.beginCheckIn(eventUUID: uuid)
+            lastActionBanner = "Fall detected. 12s voice check-in open."
+        }
+        .onChange(of: motionFeed.lastFreezeIndex) { lastFreezeIndex = $0 }
+        .onChange(of: motionFeed.isFoGActive) { isFoGActive = $0 }
     }
 
-    private func triggerSimulatedFoG() {
-        // Build a 128-sample window @ 50 Hz (2.56s) dominated by 5.5 Hz freeze band
-        var window: [IMUSample] = []
-        let fs = 50.0
-        for i in 0..<128 {
-            let t = Double(i) / fs
-            let freezeOsc = 0.70 * sin(2.0 * .pi * 5.5 * t)
-            window.append(
-                IMUSample(
-                    timestamp: t,
-                    ax: 0.02,
-                    ay: 1.0 + freezeOsc,
-                    az: 0.15 * cos(2.0 * .pi * 5.5 * t),
-                    gx: 0.1,
-                    gy: 0.8,
-                    gz: 0.1,
-                    pitchDeg: 5.0,
-                    rollDeg: 2.0
-                )
-            )
+    private func togglePhoneMotion() {
+        motionFeed.attach(fogDetector: fogDetector, fallDetector: fallAlert.detector)
+        let running = motionFeed.togglePhone {
+            guard let loc = LiveLocationProvider.shared.currentLocation else { return nil }
+            return (loc.latitude, loc.longitude, loc.horizontalAccuracyM)
         }
-        let spectral = fogDetector.computeSpectralMetrics(window: window, sampledHz: fs)
-        // Arm via upright turn and evaluate 3 consecutive 0.50s hops (1.50s)
-        for _ in 0..<3 {
-            isFoGActive = fogDetector.evaluateHop(
-                locomotorBandPower: max(0.03, spectral.locomotorBandPower),
-                freezeBandPower: max(0.18, spectral.freezeBandPower),
-                integratedYaw15sDeg: 55.0,
-                pitchDeg: 6.0,
-                rollDeg: 3.0,
-                sitToStandDetected: false,
-                isUserSpeaking: false,
-                sampledHz: fs
-            )
-        }
-        lastFreezeIndex = max(spectral.freezeIndex, 0.18 / 0.03)
-        lastActionBanner = String(
-            format: "FoG Detected! Peak FI=%.2f • 100 BPM Woodblock Cue Active",
-            lastFreezeIndex
-        )
-    }
-
-    private func triggerSimulatedFallCheckIn() {
-        let detector = fallAlert.detector
-        // Stage 1: Free-fall (<0.45g) at t=1.00s
-        _ = detector.processIMUSample(
-            IMUSample(timestamp: 1.00, ax: 0.1, ay: 0.1, az: 0.1, gx: 0, gy: 0, gz: 0, pitchDeg: 4.0, rollDeg: 2.0)
-        )
-        // Stage 2: Hard impact (>2.8g, jerk >35g/s) at t=1.10s
-        _ = detector.processIMUSample(
-            IMUSample(timestamp: 1.10, ax: 0.2, ay: 3.85, az: 0.3, gx: 3.0, gy: 2.0, gz: 1.0, pitchDeg: 25.0, rollDeg: 10.0)
-        )
-        // Stage 3: Post-impact horizontal stillness (pitch ~76 deg, low dynamic energy) at t=1.80s
-        let eventUUID = detector.processIMUSample(
-            IMUSample(timestamp: 1.80, ax: 0.98, ay: 0.15, az: 0.05, gx: 0.01, gy: 0.01, gz: 0.01, pitchDeg: 76.0, rollDeg: 4.0),
-            latitude: 37.7749,
-            longitude: -122.4194,
-            horizontalAccuracyM: 6.5
-        )
-        fallAlert.beginCheckIn(eventUUID: eventUUID ?? UUID().uuidString)
-        lastActionBanner = "Stage 3 fall confirmed. Local row saved; 12s voice check-in open."
+        lastActionBanner = running
+            ? "Listening to iPhone motion at 100 Hz."
+            : motionFeed.status
     }
 
     private func startKinematicReplay(_ scenario: IMUScenario) {
-        liveWindow.removeAll()
+        motionFeed.stopPhone()
+        motionFeed.attach(fogDetector: fogDetector, fallDetector: fallAlert.detector)
+        motionFeed.beginSegment()
         lastActionBanner = "Playing \(scenario.rawValue)..."
-        var sampleCount = 0
 
         scenarioReplayer.playScenario(scenario, sampleRateHz: 50.0, onSample: { sample in
-            sampleCount += 1
-            liveWindow.append(sample)
-            if liveWindow.count > 128 {
-                liveWindow.removeFirst()
-            }
-
-            switch scenario {
-            case .freezeOfGaitWithRecovery:
-                if liveWindow.count == 128 && sampleCount % 25 == 0 {
-                    let spectral = fogDetector.computeSpectralMetrics(window: liveWindow, sampledHz: 50.0)
-                    let active = fogDetector.evaluateHop(
-                        locomotorBandPower: spectral.locomotorBandPower,
-                        freezeBandPower: spectral.freezeBandPower,
-                        integratedYaw15sDeg: 0.0,
-                        pitchDeg: sample.pitchDeg,
-                        rollDeg: sample.rollDeg,
-                        sitToStandDetected: false,
-                        isUserSpeaking: false,
-                        sampledHz: 50.0
-                    )
-                    DispatchQueue.main.async {
-                        self.isFoGActive = active
-                        self.lastFreezeIndex = spectral.freezeIndex
-                    }
-                }
-
-            case .hardFallWithImpact:
-                if let eventUUID = fallAlert.detector.processIMUSample(
-                    sample,
-                    latitude: 37.7749,
-                    longitude: -122.4194,
-                    horizontalAccuracyM: 5.0
-                ) {
-                    DispatchQueue.main.async {
-                        self.fallAlert.beginCheckIn(eventUUID: eventUUID)
-                        self.lastActionBanner = "Stage 3 fall detected via replay. 12s voice check-in open."
-                    }
-                }
-
-            case .bedRollSuppression:
-                if liveWindow.count == 128 && sampleCount % 25 == 0 {
-                    let spectral = fogDetector.computeSpectralMetrics(window: liveWindow, sampledHz: 50.0)
-                    _ = fogDetector.evaluateHop(
-                        locomotorBandPower: spectral.locomotorBandPower,
-                        freezeBandPower: spectral.freezeBandPower,
-                        integratedYaw15sDeg: 55.0,
-                        pitchDeg: sample.pitchDeg,
-                        rollDeg: sample.rollDeg,
-                        sitToStandDetected: false,
-                        isUserSpeaking: false,
-                        sampledHz: 50.0
-                    )
-                }
-
-            case .sitToStandInitiation:
-                break
-            }
+            _ = motionFeed.ingest(
+                sample,
+                latitude: 37.7749,
+                longitude: -122.4194,
+                horizontalAccuracyM: 5.0
+            )
         }, onCompletion: {
             DispatchQueue.main.async {
                 self.lastActionBanner = "Scenario \(scenario.rawValue) finished."
             }
         })
+    }
+}
+
+/// Owns the phone motion source and the shared sample engine. Published fields
+/// are what the SwiftUI view renders; the engine itself has no UI.
+@MainActor
+private final class MotionFeed: ObservableObject {
+    @Published var isRunning = false
+    @Published var lastFreezeIndex = 0.0
+    @Published var isFoGActive = false
+    @Published var fallEventUUID: String?
+    @Published var status = "Phone motion idle"
+
+    private let source = PhoneMotionSource()
+    private var engine: LiveEdgeEngine?
+
+    var sourceIsAvailable: Bool { source.isAvailable }
+
+    func attach(fogDetector: FoGDetector, fallDetector: FallDetector) {
+        if engine == nil {
+            engine = LiveEdgeEngine(fogDetector: fogDetector, fallDetector: fallDetector)
+        }
+    }
+
+    func beginSegment() {
+        engine?.beginSegment()
+    }
+
+    @discardableResult
+    func ingest(
+        _ sample: IMUSample,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        horizontalAccuracyM: Double? = nil
+    ) -> LiveEdgeUpdate? {
+        guard let engine else { return nil }
+        let update = engine.ingest(
+            sample,
+            latitude: latitude,
+            longitude: longitude,
+            horizontalAccuracyM: horizontalAccuracyM
+        )
+        apply(update)
+        return update
+    }
+
+    /// Returns whether the phone stream is running after the toggle.
+    @discardableResult
+    func togglePhone(
+        location: @escaping () -> (latitude: Double, longitude: Double, accuracy: Double)?
+    ) -> Bool {
+        if source.isActive {
+            stopPhone()
+            return false
+        }
+        guard engine != nil else {
+            status = "Motion engine is not ready."
+            return false
+        }
+        source.start { [weak self] sample in
+            guard let self else { return }
+            let loc = location()
+            _ = self.ingest(
+                sample,
+                latitude: loc?.latitude,
+                longitude: loc?.longitude,
+                horizontalAccuracyM: loc?.accuracy
+            )
+        }
+        isRunning = source.isActive
+        status = isRunning
+            ? "Listening to iPhone motion at 100 Hz."
+            : "iPhone motion is not available on this device."
+        return isRunning
+    }
+
+    func stopPhone() {
+        source.stop()
+        isRunning = false
+        status = "Phone motion stopped."
+    }
+
+    private func apply(_ update: LiveEdgeUpdate) {
+        if let freezeIndex = update.freezeIndex { lastFreezeIndex = freezeIndex }
+        if let fogActive = update.fogActive { isFoGActive = fogActive }
+        if let uuid = update.fallEventUUID { fallEventUUID = uuid }
     }
 }

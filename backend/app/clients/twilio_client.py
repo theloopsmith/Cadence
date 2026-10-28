@@ -1,4 +1,6 @@
-from typing import Dict, Optional
+import asyncio
+from typing import Dict, Optional, Tuple
+
 from app.config import settings
 
 
@@ -80,40 +82,23 @@ class TwilioEscalationClient:
                 "delivery_status": "queued",
             }
 
-        try:
-            from twilio.rest import Client
-
-            client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
-            sms_msg = client.messages.create(
-                body=sms_body,
-                from_=settings.twilio_from_phone,
-                to=to_phone,
-            )
-            call_msg = client.calls.create(
-                twiml=twiml,
-                from_=settings.twilio_from_phone,
-                to=to_phone,
-                status_callback=(
-                    f"{settings.public_webhook_base_url.rstrip('/')}"
-                    f"/api/v1/webhooks/twilio/status?event_uuid={event_uuid}"
-                ),
-                status_callback_method="POST",
-            )
-            return {
-                "sms_sid": sms_msg.sid,
-                "call_sid": call_msg.sid,
-                "sms_body": sms_body,
-                "twiml": twiml,
-                "delivery_status": "queued",
-            }
-        except Exception as exc:
-            return {
-                "sms_sid": "",
-                "call_sid": "",
-                "sms_body": sms_body,
-                "twiml": twiml,
-                "delivery_status": f"failed:{exc}",
-            }
+        sms_sid, call_sid, delivery_status = await asyncio.to_thread(
+            _place_sms_and_call,
+            to_phone,
+            sms_body,
+            twiml,
+            (
+                f"{settings.public_webhook_base_url.rstrip('/')}"
+                f"/api/v1/webhooks/twilio/status?event_uuid={event_uuid}"
+            ),
+        )
+        return {
+            "sms_sid": sms_sid,
+            "call_sid": call_sid,
+            "sms_body": sms_body,
+            "twiml": twiml,
+            "delivery_status": delivery_status,
+        }
 
     async def send_all_clear_sms(
         self,
@@ -148,6 +133,48 @@ class TwilioEscalationClient:
             return {"sms_sid": msg.sid, "body": body, "delivery_status": "delivered"}
         except Exception:
             return {"sms_sid": "", "body": body, "delivery_status": "failed"}
+
+
+def _place_sms_and_call(
+    to_phone: str,
+    sms_body: str,
+    twiml: str,
+    status_callback: str,
+) -> Tuple[str, str, str]:
+    """Places SMS and the voice call independently. A dead SMS path must not skip the call."""
+    from twilio.rest import Client
+
+    client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
+    sms_sid = ""
+    call_sid = ""
+    errors = []
+    try:
+        sms_msg = client.messages.create(
+            body=sms_body,
+            from_=settings.twilio_from_phone,
+            to=to_phone,
+        )
+        sms_sid = sms_msg.sid or ""
+    except Exception as exc:
+        errors.append(f"sms:{exc}")
+    try:
+        call_msg = client.calls.create(
+            twiml=twiml,
+            from_=settings.twilio_from_phone,
+            to=to_phone,
+            status_callback=status_callback,
+            status_callback_method="POST",
+        )
+        call_sid = call_msg.sid or ""
+    except Exception as exc:
+        errors.append(f"call:{exc}")
+    if sms_sid and call_sid:
+        delivery_status = "queued"
+    elif sms_sid or call_sid:
+        delivery_status = "partial"
+    else:
+        delivery_status = "failed:" + (errors[0] if errors else "unknown")
+    return sms_sid, call_sid, delivery_status
 
 
 twilio_client = TwilioEscalationClient()

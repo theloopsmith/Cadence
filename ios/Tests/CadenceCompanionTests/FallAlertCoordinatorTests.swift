@@ -26,8 +26,8 @@ final class FallAlertCoordinatorTests: XCTestCase {
 
     private func makeCoordinator(
         checkInWindow: TimeInterval = FallAlertCoordinator.checkInWindowSec,
-        locationProvider: LocationProvider = LiveLocationProvider.shared,
-        speechListener: SpeechCheckInListenerProtocol = LiveSpeechCheckInListener.shared
+        locationProvider: LocationProvider = MockLocationProvider(),
+        speechListener: SpeechCheckInListenerProtocol = MockSpeechCheckInListener()
     ) -> FallAlertCoordinator {
         FallAlertCoordinator(
             detector: FallDetector(), audio: .shared,
@@ -284,6 +284,19 @@ final class FallAlertCoordinatorTests: XCTestCase {
         XCTAssertFalse(c.isAlertVisible)
         XCTAssertEqual(c.lastOutcome, "canceled_false_alarm")
         XCTAssertFalse(AudioCueEngine.shared.isSirenActive)
+    }
+
+    /// "I'm fine now" contains the letters of the distress word "no". Matching
+    /// has to be on whole words, or the spoken cancel escalates instead.
+    func testSpokenFineNowCancelsInsteadOfEscalating() {
+        let mockListener = MockSpeechCheckInListener()
+        let c = makeCoordinator(speechListener: mockListener)
+        c.beginCheckIn(eventUUID: "fall-fine-now")
+
+        mockListener.simulateUtterance("I'm fine now")
+        XCTAssertFalse(c.isDispatched)
+        XCTAssertEqual(c.lastOutcome, "canceled_false_alarm")
+        XCTAssertFalse(c.isAlertVisible)
     }
 
     /// Spoken distress keyword ("help, I fell") streamed into the speech listener

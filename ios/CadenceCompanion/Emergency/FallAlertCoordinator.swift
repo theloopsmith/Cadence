@@ -218,20 +218,6 @@ public final class FallAlertCoordinator: ObservableObject {
         screen.engageEmergencyBrightness()
         screen.setIdleTimerDisabled(true)
 
-        speechListener.startListening(
-            onTranscriptUpdate: { _, _ in },
-            onEarlyResolution: { [weak self] earlyOutcome in
-                guard let self = self else { return }
-                if earlyOutcome == "canceled_false_alarm" {
-                    let (transcript, _) = self.speechListener.stopListening()
-                    self.cancelByUser(reason: "canceled_false_alarm", transcript: transcript)
-                } else {
-                    _ = self.speechListener.stopListening()
-                    self.escalate(status: earlyOutcome)
-                }
-            }
-        )
-
         let window = checkInWindow
         checkInTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(window * 1_000_000_000))
@@ -243,6 +229,21 @@ public final class FallAlertCoordinator: ObservableObject {
                 maxVocalLevelDbfs: maxDbfs
             )
         }
+
+        let listener = speechListener
+        listener.startListening(
+            onTranscriptUpdate: { _, _ in },
+            onEarlyResolution: { [weak self] earlyOutcome in
+                guard let self = self else { return }
+                if earlyOutcome == "canceled_false_alarm" {
+                    let (transcript, _) = listener.stopListening()
+                    self.cancelByUser(reason: "canceled_false_alarm", transcript: transcript)
+                } else {
+                    _ = listener.stopListening()
+                    self.escalate(status: earlyOutcome)
+                }
+            }
+        )
     }
 
     /// The window closed with no transcript and no voice.

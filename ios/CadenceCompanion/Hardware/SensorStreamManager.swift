@@ -42,6 +42,14 @@ public final class SensorStreamManager {
     public private(set) var estimatedSampleRateHz: Double = 50.0
     public let hopDurationSec: Double = 0.50
 
+    /// Time spanned by the samples currently held. The spectral hop waits until
+    /// this covers the analysis window, so a short buffer is not padded into a
+    /// fake spectrum.
+    public var bufferedDurationSec: Double {
+        guard let first = rawBuffer.first, let last = rawBuffer.last else { return 0 }
+        return last.timestamp - first.timestamp
+    }
+
     public init() {}
 
     public func appendSample(_ sample: IMUSample) {
