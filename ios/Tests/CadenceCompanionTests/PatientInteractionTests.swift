@@ -280,4 +280,13 @@ final class MotorExamInteractionTests: XCTestCase {
         manager.cancelExam()
         XCTAssertEqual(manager.currentStep, .idle)
     }
+
+    func testAppModelForwardsExamObjectWillChange() {
+        let app = CadenceAppModel()
+        var appChanged = false
+        let cancellable = app.objectWillChange.sink { _ in appChanged = true }
+        app.exam.startExam()
+        XCTAssertTrue(appChanged, "app.objectWillChange must fire when exam state changes")
+        cancellable.cancel()
+    }
 }

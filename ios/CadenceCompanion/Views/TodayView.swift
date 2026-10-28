@@ -36,7 +36,8 @@ struct TodayView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 96)
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle(simple ? "Right now" : "Today")

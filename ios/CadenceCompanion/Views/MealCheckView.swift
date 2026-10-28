@@ -31,7 +31,8 @@ public struct MealCheckView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 64)
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle("Meal & Medication Check")

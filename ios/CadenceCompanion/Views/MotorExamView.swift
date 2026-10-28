@@ -8,6 +8,7 @@ import UIKit
 /// composite motor score with clinical narrative and medication state.
 public struct MotorExamView: View {
     @ObservedObject var app: CadenceAppModel
+    @ObservedObject private var exam: HomeMotorExamManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var voiceSecondsRemaining: Int = 5
@@ -23,10 +24,9 @@ public struct MotorExamView: View {
     @State private var handwritingStatus: String?
     @State private var isAnalyzingHandwriting = false
 
-    private var exam: HomeMotorExamManager { app.exam }
-
     public init(app: CadenceAppModel) {
         self.app = app
+        self._exam = ObservedObject(wrappedValue: app.exam)
     }
 
     public var body: some View {
@@ -50,7 +50,8 @@ public struct MotorExamView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 64)
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle("Motor Check")

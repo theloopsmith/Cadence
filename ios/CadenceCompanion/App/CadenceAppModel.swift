@@ -14,6 +14,7 @@ public final class CadenceAppModel: ObservableObject {
     public let exam: HomeMotorExamManager
     public let doses: DoseLogModel
     public let diary: DiaryStore
+    public let transcripts: TranscriptListening
     public let haptics: HapticRouter
     public let voiceDose: VoiceDoseAssistant
     public let pillPhotos: PillPhotoStore
@@ -63,6 +64,7 @@ public final class CadenceAppModel: ObservableObject {
         self.motion = motion
         self.fallAlert = fallAlert
         self.diary = diary
+        self.transcripts = transcripts
         self.pillPhotos = pillPhotos
         self.pillPhoto = pillPhotos.load()
         self.offHours = OffHourLearner(diary: diary)
@@ -175,6 +177,7 @@ public final class CadenceAppModel: ObservableObject {
             glasses.objectWillChange.eraseToAnyPublisher(),
             calibration.objectWillChange.eraseToAnyPublisher(),
             recorder.objectWillChange.eraseToAnyPublisher(),
+            exam.objectWillChange.eraseToAnyPublisher(),
             doses.objectWillChange.eraseToAnyPublisher(),
             voiceDose.objectWillChange.eraseToAnyPublisher(),
         ] {

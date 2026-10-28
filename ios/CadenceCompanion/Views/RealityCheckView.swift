@@ -8,6 +8,7 @@ public struct RealityCheckView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var question: String = "Is someone standing there, or is it just an object?"
+    @State private var isListeningToVoice: Bool = false
     @State private var showCamera: Bool = false
     @State private var isChecking: Bool = false
     @State private var checkResult: RealityCheckResult?
@@ -40,7 +41,8 @@ public struct RealityCheckView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 64)
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle("Check Surroundings")
@@ -49,8 +51,14 @@ public struct RealityCheckView: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    Button("Close") {
+                        stopVoiceInput()
+                        dismiss()
+                    }
                 }
+            }
+            .onDisappear {
+                stopVoiceInput()
             }
             .sheet(isPresented: $showCamera) {
                 CameraPicker(
@@ -81,12 +89,54 @@ public struct RealityCheckView: View {
     // MARK: - Question selector
 
     private var questionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("What would you like to check?")
                 .font(.headline)
 
+            // Voice input prompt
+            if isListeningToVoice {
+                HStack(spacing: 12) {
+                    Image(systemName: "waveform")
+                        .foregroundColor(CadenceTheme.accent)
+                        .font(.title2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Listening… speak what you see or ask")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(question.isEmpty ? "“Is someone standing there?”" : question)
+                            .font(.body.weight(.medium))
+                            .foregroundColor(.primary)
+                    }
+                    Spacer()
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(CadenceTheme.accent.opacity(0.12))
+                )
+
+                GuardedButton(size: .big, style: .filled(CadenceTheme.accent), action: {
+                    stopVoiceInput()
+                }) {
+                    Label("Done Speaking", systemImage: "checkmark")
+                }
+            } else {
+                GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: {
+                    startVoiceInput()
+                }) {
+                    Label("Speak Question with Microphone", systemImage: "mic.fill")
+                }
+            }
+
+            Divider().padding(.vertical, 2)
+
+            Text("Or choose a common question:")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+
             ForEach(sampleQuestions, id: \.self) { q in
                 Button {
+                    stopVoiceInput()
                     question = q
                 } label: {
                     HStack {
@@ -219,7 +269,28 @@ public struct RealityCheckView: View {
 
     // MARK: - Logic
 
+    private func startVoiceInput() {
+        isListeningToVoice = true
+        question = ""
+        app.transcripts.startListening { text in
+            Task { @MainActor in
+                self.question = text
+            }
+        }
+    }
+
+    private func stopVoiceInput() {
+        if isListeningToVoice {
+            isListeningToVoice = false
+            app.transcripts.stopListening()
+            if question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                question = "Check the room and tell me what is there."
+            }
+        }
+    }
+
     private func captureWithGlasses() {
+        stopVoiceInput()
         isChecking = true
         errorMessage = nil
         guard let device = app.glasses.device, app.glasses.connectionState == .connected else {
@@ -241,6 +312,7 @@ public struct RealityCheckView: View {
     }
 
     private func runRealityCheck(jpeg: Data) {
+        stopVoiceInput()
         isChecking = true
         errorMessage = nil
         checkResult = nil
