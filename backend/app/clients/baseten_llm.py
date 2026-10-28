@@ -3,6 +3,7 @@ import httpx
 
 from app.clients.circuit_breaker import RequestDeadlineContext, circuit_breakers
 from app.config import settings
+from app.services.plain_language import summarize_day
 
 
 class BasetenLLMClient:
@@ -10,7 +11,7 @@ class BasetenLLMClient:
     Baseten 2M-TPM client ($100 Credits) running meta-models/muse-spark-open-1026.
     Used for:
       1. Selecting a template_id + 1 inanimate label strictly from L_sam in Reality Check.
-      2. Generating the neurologist clinical narrative from deterministic S(t_k) & Exam deltas.
+      2. Writing the plain day summary for the report.
     """
 
     PROVIDER = "baseten"
@@ -82,44 +83,11 @@ class BasetenLLMClient:
         summary_stats: Dict[str, Any],
     ) -> str:
         """
-        Generates a concise objective clinical summary from deterministic ON/OFF diary
-        and Home Motor Exam metrics. Falls back to a deterministic clinical summary
-        if Baseten is unconfigured or offline.
+        Plain counts of the day's events and the latest raw task measurements.
+        Deterministic, so the report always has wording that names no medication
+        state and no score.
         """
-        on_pct = summary_stats.get("on_pct", 0.0)
-        wearing_off_pct = summary_stats.get("wearing_off_pct", 0.0)
-        off_pct = summary_stats.get("off_pct", 0.0)
-        fog_total = summary_stats.get("fog_count", 0)
-        fall_total = summary_stats.get("fall_count", 0)
-        resolved_falls = summary_stats.get("fall_candidate_resolved_count", 0)
-        latest_exam = summary_stats.get("latest_exam_score")
-        delta = summary_stats.get("exam_on_vs_off_delta")
-
-        deterministic_summary = (
-            f"Objective 24h Motor Summary: ON {on_pct:.0f}%, WEARING_OFF {wearing_off_pct:.0f}%, "
-            f"OFF {off_pct:.0f}%. Recorded {fog_total} freezing-of-gait episode(s) and "
-            f"{fall_total} confirmed fall event(s)."
-        )
-        if resolved_falls:
-            # A detected impact the patient waved off is still clinically
-            # relevant; omitting it would hide a near-fall from the neurologist.
-            deterministic_summary += (
-                f" {resolved_falls} additional impact(s) were detected and resolved "
-                "by the patient during the voice check-in."
-            )
-        if latest_exam is not None:
-            deterministic_summary += (
-                f" Latest Guided Home Motor Exam composite score: {latest_exam:.1f}/100."
-            )
-        if delta:
-            deterministic_summary += (
-                f" Measured levodopa response: composite "
-                f"{float(delta['off_composite']):.1f} "
-                f"({delta.get('off_baseline_state', 'OFF')}) to "
-                f"{float(delta['on_composite']):.1f} (ON), a change of "
-                f"{float(delta['composite_improvement_pts']):+.1f} points."
-            )
-        return deterministic_summary
+        return summarize_day(summary_stats)
 
 
 baseten_client = BasetenLLMClient()

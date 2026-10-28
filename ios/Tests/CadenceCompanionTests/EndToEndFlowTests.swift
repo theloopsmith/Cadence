@@ -105,8 +105,8 @@ final class EndToEndFlowTests: XCTestCase {
         XCTAssertTrue(dialer.dialedNumbers.isEmpty, "nobody should be called")
     }
 
-    /// The exam button's full path: three prompts, submit, score on screen.
-    func testGuidedExamRunsAndSurfacesTheBackendScore() async {
+    /// The exam button's full path: three prompts, submit, raw measurements on screen.
+    func testGuidedExamRunsAndShowsMeasurementsNotAScore() async {
         let scored = HomeMotorExamResult(
             examUUID: "exam-e2e-1", medicationStateLabel: "WEARING_OFF",
             voiceScore: 86.5, handwritingScore: 72.8, gaitScore: 71.5,
@@ -127,7 +127,8 @@ final class EndToEndFlowTests: XCTestCase {
         let summary = await mgr.runDemoExam(measurements: m, examUUID: "exam-e2e-1")
         XCTAssertEqual(mgr.currentStep, .completed)
         XCTAssertEqual(mgr.lastResult?.compositeMotorScore, 76.4)
-        XCTAssertTrue(summary.contains("WEARING_OFF"))
+        XCTAssertFalse(summary.contains("WEARING_OFF"))
+        XCTAssertTrue(summary.contains("22% smaller"), summary)
         XCTAssertEqual(sync.pendingCount(), 0, "a successful exam must not be queued for retry")
     }
 }

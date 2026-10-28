@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.auth import decode_token
 from app.config import settings
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -27,20 +28,45 @@ def get_auth_context(
             detail="Missing Authorization Bearer token",
         )
     token = credentials.credentials
-    if secrets.compare_digest(token, settings.cadence_device_token):
-        return AuthContext(
-            role="device_writer",
-            patient_id=settings.cadence_default_patient_id,
-        )
-    if secrets.compare_digest(token, settings.cadence_clinician_token):
-        return AuthContext(
-            role="clinician_reader",
-            patient_id=settings.cadence_default_patient_id,
-        )
+    claims = decode_token(token)
+    if claims is not None:
+        return AuthContext(role=claims["role"], patient_id=claims["pid"])
+
+    if settings.static_tokens_enabled:
+        if secrets.compare_digest(token, settings.cadence_device_token):
+            return AuthContext(
+                role="device_writer",
+                patient_id=settings.cadence_default_patient_id,
+            )
+        if secrets.compare_digest(token, settings.cadence_clinician_token):
+            return AuthContext(
+                role="clinician_reader",
+                patient_id=settings.cadence_default_patient_id,
+            )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid Bearer token",
+        detail="Please sign in again.",
     )
+
+
+def require_demo_mode() -> None:
+    """Demo-only endpoints and inputs. Off in production."""
+    if not settings.demo_mode_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo data is turned off on this server.",
+        )
+
+
+def reject_simulated_inputs(**fields: object) -> None:
+    """`simulated_*` request fields stand in for camera output in tests and demos only."""
+    if settings.demo_mode_enabled:
+        return
+    if any(value is not None for value in fields.values()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Simulated inputs are only accepted in demo mode. Send a photo instead.",
+        )
 
 
 def require_device_writer(

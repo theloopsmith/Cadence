@@ -29,7 +29,9 @@ public struct URLSessionJSONTransport: JSONTransporting {
     public func send(_ request: URLRequest, bearerToken: String) async throws -> Data {
         var req = request
         req.timeoutInterval = timeoutSec
-        req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        if !bearerToken.isEmpty {
+            req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
         if req.httpBody != nil {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
@@ -133,8 +135,11 @@ public struct ReportSummary: Decodable {
     public let fallCount: Int
     public let fallCandidateResolvedCount: Int
     public let latestExamScore: Double?
+    /// Doses logged in the last 24 hours. Absent from older servers.
+    public let doseCount: Int?
 
     enum CodingKeys: String, CodingKey {
+        case doseCount = "dose_count"
         case onPct = "on_pct"
         case wearingOffPct = "wearing_off_pct"
         case offPct = "off_pct"
@@ -151,11 +156,26 @@ public struct DiaryBucket: Decodable, Identifiable {
     public let labelHHMM: String
     public let clinicalState: String
     public let symptomBurdenScore: Double
+    public let fogCount: Int?
+    public let fallOccurred: Bool?
+    public let hasExam: Bool?
 
     enum CodingKeys: String, CodingKey {
         case labelHHMM = "label_hhmm"
         case clinicalState = "clinical_state"
         case symptomBurdenScore = "symptom_burden_score"
+        case fogCount = "fog_count"
+        case fallOccurred = "fall_occurred"
+        case hasExam = "has_exam"
+    }
+
+    /// What happened in this half hour, counted rather than interpreted.
+    public enum EventLevel { case none, onePause, more }
+
+    public var eventLevel: EventLevel {
+        let pauses = fogCount ?? 0
+        if fallOccurred == true || pauses >= 2 { return .more }
+        return pauses == 1 ? .onePause : .none
     }
 }
 
@@ -242,6 +262,51 @@ public struct CadenceAPIClient {
                 "medication_name": medicationName,
             ]
         )
+    }
+
+    public enum TranscribePurpose: String {
+        case fallCheckIn = "fall_check_in"
+        case dose
+    }
+
+    /// `POST /api/v1/speech/transcribe`: Muse Voice Transcribe via the server,
+    /// which holds the Meta key. Returns nil when the transcriber is unavailable.
+    public func transcribe(wav: Data, purpose: TranscribePurpose, keywords: [String]) async throws -> String? {
+        struct Reply: Decodable {
+            let available: Bool
+            let transcript: String
+        }
+        let reply: Reply = try await post(
+            "/api/v1/speech/transcribe",
+            body: [
+                "audio_base64": wav.base64EncodedString(),
+                "purpose": purpose.rawValue,
+                "keywords": Array(keywords.prefix(10)),
+            ]
+        )
+        return reply.available && !reply.transcript.isEmpty ? reply.transcript : nil
+    }
+
+    public struct LoginResult: Decodable {
+        public let accessToken: String
+        public let expiresIn: Int
+        public let role: String
+
+        enum CodingKeys: String, CodingKey {
+            case accessToken = "access_token"
+            case expiresIn = "expires_in"
+            case role
+        }
+    }
+
+    /// `POST /api/v1/auth/login`. Sent without any existing token.
+    public func login(username: String, password: String) async throws -> LoginResult {
+        guard let url = URL(string: "\(baseURL)/api/v1/auth/login") else { throw CadenceAPIError.badURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["username": username, "password": password])
+        let data = try await transport.send(request, bearerToken: "")
+        return try decoder.decode(LoginResult.self, from: data)
     }
 
     public struct Health: Decodable {

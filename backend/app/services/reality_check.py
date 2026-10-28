@@ -84,7 +84,7 @@ async def run_reality_check_pipeline(
       1. SAM 3.1 masks filtered by confidence >= 0.65 & area_ratio >= 0.015 -> L_sam
       2. Deterministic Grounding Gate: locks inanimate slot strictly to L_inanimate,sam
       3. Baseten muse-spark-open-1026 slot selection + deny-list validation
-      4. Muse Voice TTS (or immediate text for iOS AVSpeechSynthesizer)
+      4. The phone speaks the reply with its own voice
     """
     ctx = deadline or RequestDeadlineContext()
     t0 = time.monotonic()
@@ -106,7 +106,7 @@ async def run_reality_check_pipeline(
             "chosen_inanimate_label": None,
             "template_id": "UNVERIFIED_LIGHTING_FALLBACK",
             "spoken_response": spoken,
-            "tts_source": "ios_avspeech_fallback",
+            "tts_source": "ios_on_device",
             "latency_ms": latency_ms,
         }
 
@@ -165,7 +165,6 @@ async def run_reality_check_pipeline(
                 chosen_label = None
                 spoken = render_grounded_template(template_id)
 
-    tts_res = await meta_client.synthesize_muse_voice(spoken, ctx)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
     return {
@@ -175,6 +174,6 @@ async def run_reality_check_pipeline(
         "chosen_inanimate_label": chosen_label,
         "template_id": template_id,
         "spoken_response": spoken,
-        "tts_source": tts_res.get("tts_source", "ios_avspeech_fallback"),
+        "tts_source": "ios_on_device",
         "latency_ms": latency_ms,
     }

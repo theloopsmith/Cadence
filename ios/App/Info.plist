@@ -40,6 +40,10 @@
 		<key>TeamID</key>
 		<string>$(DEVELOPMENT_TEAM)</string>
 	</dict>
+	<!-- Cadence server for this build. Set the CADENCE_SERVER_URL build setting;
+	     left unset, the app talks to a local development server. -->
+	<key>CadenceServerURL</key>
+	<string>$(CADENCE_SERVER_URL)</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Cadence uses the local network only to receive a photo from your glasses when you ask it to look around.</string>
 	<key>NSBonjourServices</key>

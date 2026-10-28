@@ -10,6 +10,7 @@ public enum DiaryEventKind: String, Codable, CaseIterable {
     case helpSent
     case environmentCheck
     case mealLogged
+    case motorCheck
 
     public var systemImage: String {
         switch self {
@@ -21,6 +22,7 @@ public enum DiaryEventKind: String, Codable, CaseIterable {
         case .helpSent: return "phone.fill"
         case .environmentCheck: return "eye.fill"
         case .mealLogged: return "fork.knife"
+        case .motorCheck: return "figure.walk.motion"
         }
     }
 
@@ -34,6 +36,7 @@ public enum DiaryEventKind: String, Codable, CaseIterable {
         case .helpSent: return "Help contacted"
         case .environmentCheck: return "Looked around"
         case .mealLogged: return "Meal noted"
+        case .motorCheck: return "Motor check"
         }
     }
 }

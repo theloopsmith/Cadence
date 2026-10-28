@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cadence — Objective ON/OFF Diary &amp; Home Motor Exam Report</title>
+  <title>Cadence — Daily Summary for the Care Team</title>
   <style>
     :root {
       --bg: #f8fafc;
@@ -137,8 +137,8 @@
   <div class="container">
     <header>
       <div>
-        <h1>CADENCE — Neurologist Objective ON/OFF Diary &amp; Home Motor Exam Report</h1>
-        <p>Meta Gen 3 AI Glasses Companion • Method-Invariant Motor Scoring &amp; Pure Motor S(t_k) Classification</p>
+        <h1>CADENCE — Daily Summary for the Care Team</h1>
+        <p>Logged events and raw task measurements from the Cadence companion. Cadence is not a medical device and does not assess health.</p>
       </div>
       <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn" style="background:#16a34a;" onclick="seedDemoTimeline()">⚡ Seed 24h Demo Patient</button>
@@ -156,58 +156,58 @@
         </span>
       </div>
       <div class="sim-grid">
-        <button class="btn-sim" onclick="simFoG()">1. 🦶 Trigger Freeze of Gait (FI=3.10 ➔ 100 BPM RAS Cue)</button>
-        <button class="btn-sim" onclick="simDoseAndSteak()">2. 🥩 Log Levodopa + Steak Meal (SAM 3.1 Protein Conflict)</button>
-        <button class="btn-sim" onclick="simRealityCheck()">3. 👁️ Hallucination Check ("Is someone by the coat rack?")</button>
-        <button class="btn-sim" onclick="simMicrographia()">4. ✍️ Handwriting Check (-31% Stroke Decay Micrographia)</button>
-        <button class="btn-sim" onclick="simHomeMotorExam()">5. 🩺 Run Guided 3-Step Home Motor Exam (Voice+Writing+Walk)</button>
+        <button class="btn-sim" onclick="simFoG()">1. 🦶 Walking Pause (plays the 100 BPM beat)</button>
+        <button class="btn-sim" onclick="simDoseAndSteak()">2. 🥩 Log Levodopa + Steak Meal (protein near a dose)</button>
+        <button class="btn-sim" onclick="simRealityCheck()">3. 👁️ Look Around ("Is someone by the coat rack?")</button>
+        <button class="btn-sim" onclick="simMicrographia()">4. ✍️ Handwriting Check (letter size across a line)</button>
+        <button class="btn-sim" onclick="simHomeMotorExam()">5. 🩺 Run 3-Step Motor Check (Voice + Writing + Walk)</button>
         <button class="btn-sim" onclick="simFallAndCancel()">6. 🚨 Trigger 3-Stage Fall Alert + Caregiver All-Clear Cancel</button>
       </div>
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label">Clinical Narrative (Meta Llama 3.3 70B • Fireworks / Baseten)</div>
+      <div class="metric-label">Summary of the Last 24 Hours</div>
       <p id="narrativeText" style="margin: 8px 0 0; font-size: 15px; line-height: 1.5;">
-        Click "Seed 24h Demo Patient" above to populate a full 24-hour Parkinson's patient timeline, or trigger individual pipelines in real time.
+        Click "Seed 24h Demo Patient" above to fill in a sample day, or use the buttons to log individual events.
       </p>
     </div>
 
     <div class="grid">
       <div class="card">
-        <div class="metric-label">ON State Share</div>
-        <div class="metric-value" id="onPct" style="color: var(--on);">—</div>
+        <div class="metric-label">Doses Logged</div>
+        <div class="metric-value" id="doseCount" style="color: var(--on);">—</div>
       </div>
       <div class="card">
-        <div class="metric-label">WEARING-OFF Share</div>
-        <div class="metric-value" id="wearingOffPct" style="color: var(--wearing-off);">—</div>
+        <div class="metric-label">Beats Played (walking paused)</div>
+        <div class="metric-value" id="beatCount" style="color: var(--wearing-off);">—</div>
       </div>
       <div class="card">
-        <div class="metric-label">OFF State Share</div>
-        <div class="metric-value" id="offPct" style="color: var(--off);">—</div>
+        <div class="metric-label">Falls (caregiver contacted)</div>
+        <div class="metric-value" id="fallCount" style="color: var(--off);">—</div>
       </div>
       <div class="card">
-        <div class="metric-label">FoG Episodes / Falls</div>
+        <div class="metric-label">Impacts Answered as Okay</div>
         <div class="metric-value" id="incidentsCount">—</div>
       </div>
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label" style="margin-bottom: 8px;">30-Minute Pure Motor S(t_k) Clinical Diary Timeline (OFF ➔ NO_DOSE ➔ WEARING_OFF ➔ ON)</div>
+      <div class="metric-label" style="margin-bottom: 8px;">Half-Hour Timeline (green = no events, amber = a walking pause, red = a fall or several pauses)</div>
       <div id="timelineRibbon" class="timeline-ribbon"></div>
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label" style="margin-bottom: 12px;">Guided 3-Step Home Motor Exams (ON vs. OFF Objective Comparison)</div>
+      <div class="metric-label" style="margin-bottom: 12px;">3-Step Motor Checks (raw measurements)</div>
       <table>
         <thead>
           <tr>
             <th>Timestamp (UTC)</th>
-            <th>State</th>
-            <th>Voice Score (0–100)</th>
-            <th>Writing Score (opencv_cc)</th>
-            <th>SAM 3.1 Refinement</th>
-            <th>Gait Score (0–100)</th>
-            <th>Composite Score</th>
+            <th>Voice (“Ahhh”, dB)</th>
+            <th>Voice steadiness (dB spread)</th>
+            <th>Letter size across the line</th>
+            <th>Steps a minute</th>
+            <th>Walking pauses</th>
+            <th>Minutes since dose</th>
           </tr>
         </thead>
         <tbody id="examTableBody">
@@ -217,22 +217,22 @@
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label" style="margin-bottom: 10px;">Objective Medication Response (ON vs. OFF Home Motor Exam Delta)</div>
-      <div id="examDelta" style="font-size:13px; color:var(--muted);">Not enough exams yet — record one ON and one OFF exam.</div>
+      <div class="metric-label" style="margin-bottom: 10px;">Change Since the Previous Motor Check</div>
+      <div id="examDelta" style="font-size:13px; color:var(--muted);">Two motor checks are needed to show a change.</div>
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label" style="margin-bottom: 10px;">Fall Detection &amp; Caregiver Escalation Audit</div>
+      <div class="metric-label" style="margin-bottom: 10px;">Fall Check-Ins &amp; Caregiver Contact</div>
       <div id="fallList" style="font-size:13px; color:var(--muted);">No fall events recorded.</div>
     </div>
 
     <div class="grid">
       <div class="card">
-        <div class="metric-label" style="margin-bottom: 10px;">Recent Reality Checks (SAM 3.1 Grounded Slot Lock)</div>
+        <div class="metric-label" style="margin-bottom: 10px;">Recent Look-Around Checks</div>
         <div id="realityList" style="font-size:13px; color:var(--muted);">None recorded yet.</div>
       </div>
       <div class="card">
-        <div class="metric-label" style="margin-bottom: 10px;">Medication &amp; Plate-Normalized Protein Logs</div>
+        <div class="metric-label" style="margin-bottom: 10px;">Doses and Meals</div>
         <div id="medList" style="font-size:13px; color:var(--muted);">None recorded yet.</div>
       </div>
     </div>
@@ -241,12 +241,14 @@
   <!-- In-Page Modal Only (Token stored in sessionStorage, NEVER in URL query string) -->
   <div id="authModal" class="no-print">
     <div class="modal-box">
-      <h3 style="margin-top:0;">Clinician / Device Bearer Token</h3>
+      <h3 style="margin-top:0;">Sign in</h3>
       <p style="font-size:13px; color:var(--muted);">
-        Pre-filled with the default local development token so you can click <strong>Load Report</strong> immediately.
+        Use the account your care team set up. Your session ends when you close this tab.
       </p>
-      <input type="text" id="tokenInput" value="cadence-dev-device-writer-token-2026" />
-      <button class="btn" style="width:100%;" onclick="saveTokenAndLoad()">Load Report</button>
+      <input type="text" id="usernameInput" placeholder="Username" autocomplete="username" />
+      <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password" />
+      <p id="loginError" style="font-size:13px; color:#b91c1c; min-height:18px; margin:4px 0;"></p>
+      <button class="btn" style="width:100%;" onclick="signIn()">Sign in</button>
     </div>
   </div>
 
@@ -268,10 +270,27 @@
       }
     }
 
-    function saveTokenAndLoad() {
-      const val = document.getElementById("tokenInput").value.trim();
-      if (!val) return;
-      sessionStorage.setItem(STORAGE_KEY, val);
+    async function signIn() {
+      const username = document.getElementById("usernameInput").value.trim();
+      const password = document.getElementById("passwordInput").value;
+      const errorEl = document.getElementById("loginError");
+      errorEl.textContent = "";
+      if (!username || !password) {
+        errorEl.textContent = "Enter your username and password.";
+        return;
+      }
+      const res = await fetch("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        errorEl.textContent = body.message || "Sign-in didn't work. Please try again.";
+        return;
+      }
+      sessionStorage.setItem(STORAGE_KEY, body.access_token);
+      document.getElementById("passwordInput").value = "";
       document.getElementById("authModal").style.display = "none";
       loadReport();
     }
@@ -309,33 +328,24 @@
       }
       const data = await res.json();
       document.getElementById("narrativeText").textContent = data.clinical_narrative;
-      document.getElementById("onPct").textContent = data.summary_stats.on_pct + "%";
-      document.getElementById("wearingOffPct").textContent = data.summary_stats.wearing_off_pct + "%";
-      document.getElementById("offPct").textContent = data.summary_stats.off_pct + "%";
       const st = data.summary_stats;
-      const resolvedFalls = st.fall_candidate_resolved_count || 0;
-      document.getElementById("incidentsCount").textContent =
-        st.fog_count + " FoG / " + st.fall_count + " Falls" +
-        (resolvedFalls ? " (+" + resolvedFalls + " resolved)" : "");
+      document.getElementById("doseCount").textContent = st.dose_count ?? 0;
+      document.getElementById("beatCount").textContent = st.fog_count;
+      document.getElementById("fallCount").textContent = st.fall_count;
+      document.getElementById("incidentsCount").textContent = st.fall_candidate_resolved_count || 0;
 
       const dEl = document.getElementById("examDelta");
-      const d = st.exam_on_vs_off_delta;
-      if (!d) {
-        dEl.textContent = "Not enough exams yet — record one ON and one OFF exam.";
+      const exams = data.motor_exams || [];
+      if (exams.length < 2) {
+        dEl.textContent = "Two motor checks are needed to show a change.";
       } else {
-        const sign = (v) => (v >= 0 ? "+" : "") + v.toFixed(1);
+        const [latest, prev] = exams;
+        const signed = (v, unit) => (v >= 0 ? "+" : "") + v.toFixed(0) + unit;
+        const letters = (p) => Math.abs(p) < 5 ? "about the same size" : Math.abs(p).toFixed(0) + "% " + (p < 0 ? "smaller" : "larger");
         dEl.innerHTML = `
-          <div style="margin-bottom:8px;">
-            Baseline: <strong>${d.off_baseline_state || "OFF"}</strong> exam
-            ${d.off_composite.toFixed(1)}/100 &nbsp;➔&nbsp;
-            <strong>ON</strong> exam ${d.on_composite.toFixed(1)}/100
-          </div>
-          <div>
-            Composite <strong>${sign(d.composite_improvement_pts)} pts</strong> &nbsp;•&nbsp;
-            Voice ${sign(d.voice_delta_pts)} &nbsp;•&nbsp;
-            Writing ${sign(d.writing_delta_pts)} &nbsp;•&nbsp;
-            Gait ${sign(d.gait_delta_pts)}
-          </div>`;
+          <div>Letters: ${letters(latest.handwriting_opencv_decay_pct)} across the line (previously ${letters(prev.handwriting_opencv_decay_pct)})</div>
+          <div>Voice: ${signed(latest.voice_mean_dbfs - prev.voice_mean_dbfs, " dB")} compared with the previous check</div>
+          <div>Walking: ${signed(latest.walk_cadence_spm - prev.walk_cadence_spm, " steps a minute")} compared with the previous check</div>`;
       }
 
       const fList = document.getElementById("fallList");
@@ -348,8 +358,9 @@
             : "";
           const resolved = f.status === "canceled_false_alarm";
           const badge = resolved ? "badge-ON" : "badge-OFF";
+          const words = resolved ? "Answered okay" : (f.status === "suppressed_unworn_drop" ? "Glasses dropped" : "Caregiver contacted");
           return `<div style="margin-bottom:8px;">
-            <span class="badge ${badge}">${f.status}</span>
+            <span class="badge ${badge}">${words}</span>
             ${f.timestamp_utc} • impact ${Number(f.peak_impact_g).toFixed(1)}g
             • tilt ${Number(f.post_impact_tilt_deg).toFixed(0)}°${gps}
             ${f.cancel_transcript ? `<br/><span style="color:var(--muted);">check-in: &ldquo;${f.cancel_transcript}&rdquo;</span>` : ""}
@@ -361,27 +372,34 @@
       ribbon.innerHTML = "";
       for (const b of (data.buckets_24h || [])) {
         const div = document.createElement("div");
-        div.className = `bucket-pill bucket-${b.clinical_state}`;
-        div.innerHTML = `<div>${b.label_hhmm}</div><div>${b.clinical_state}</div><div>S=${b.symptom_burden_score.toFixed(0)}</div>`;
+        const pauses = b.fog_count || 0;
+        const level = (b.fall_occurred || pauses >= 2) ? "OFF" : (pauses === 1 ? "WEARING_OFF" : "ON");
+        const events = [];
+        if (pauses) events.push(pauses + (pauses === 1 ? " pause" : " pauses"));
+        if (b.fall_occurred) events.push("fall");
+        if (b.has_exam) events.push("check");
+        div.className = `bucket-pill bucket-${level}`;
+        div.innerHTML = `<div>${b.label_hhmm}</div><div>${events.join(", ") || "—"}</div>`;
         ribbon.appendChild(div);
       }
 
       const tbody = document.getElementById("examTableBody");
       tbody.innerHTML = "";
       if (!data.motor_exams || data.motor_exams.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7">No Guided Home Motor Exams recorded yet. Click "⚡ Seed 24h Demo Patient" above!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7">No motor checks recorded yet. Click "⚡ Seed 24h Demo Patient" above!</td></tr>';
       } else {
         for (const ex of data.motor_exams) {
           const tr = document.createElement("tr");
-          const samCol = ex.handwriting_sam_decay_pct != null ? ex.handwriting_sam_decay_pct.toFixed(1) + "%" : "—";
+          const p = ex.handwriting_opencv_decay_pct;
+          const letters = Math.abs(p) < 5 ? "about the same" : Math.abs(p).toFixed(0) + "% " + (p < 0 ? "smaller" : "larger");
           tr.innerHTML = `
             <td>${ex.timestamp_utc}</td>
-            <td><span class="badge badge-${ex.medication_state_label}">${ex.medication_state_label}</span></td>
-            <td>${ex.voice_score.toFixed(1)}</td>
-            <td>${ex.handwriting_score.toFixed(1)} (${ex.handwriting_opencv_decay_pct.toFixed(1)}%)</td>
-            <td>${samCol}</td>
-            <td>${ex.gait_score.toFixed(1)}</td>
-            <td><strong>${ex.composite_motor_score.toFixed(1)}</strong></td>
+            <td>${ex.voice_mean_dbfs.toFixed(0)}</td>
+            <td>${ex.voice_stability_db.toFixed(1)}</td>
+            <td>${letters}</td>
+            <td>${ex.walk_cadence_spm.toFixed(0)}</td>
+            <td>${ex.walk_fog_count}</td>
+            <td>${ex.minutes_since_last_dose ?? "—"}</td>
           `;
           tbody.appendChild(tr);
         }
@@ -401,14 +419,14 @@
         mList.textContent = "None recorded yet.";
       } else {
         mList.innerHTML = data.medication_logs.slice(0, 5).map(m =>
-          `<div style="margin-bottom:6px;">• <strong>${m.event_type}</strong> (${m.timestamp_utc}) ${m.estimated_protein_grams ? '— ' + m.estimated_protein_grams.toFixed(0) + 'g protein' : ''} ${m.conflict_detected ? '<span class="badge badge-OFF">CONFLICT</span>' : ''}</div>`
+          `<div style="margin-bottom:6px;">• <strong>${m.event_type}</strong> (${m.timestamp_utc}) ${m.estimated_protein_grams ? '— ' + m.estimated_protein_grams.toFixed(0) + 'g protein' : ''} ${m.conflict_detected ? '<span class="badge badge-WEARING_OFF">near a dose</span>' : ''}</div>`
         ).join("");
       }
     }
 
     async function seedDemoTimeline() {
       await apiPost("/api/v1/demo/seed");
-      setGlassesBanner("24-hour Parkinson's patient timeline seeded.");
+      setGlassesBanner("Sample day added.");
       await loadReport();
     }
 
@@ -436,7 +454,7 @@
         cue_bpm: 100,
         recovery_latency_sec: 3.0
       });
-      setGlassesBanner("Step, step, step. 100 BPM Rhythmic Auditory Cueing active.");
+      setGlassesBanner("Step with the beat.");
       await loadReport();
     }
 

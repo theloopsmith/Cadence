@@ -25,6 +25,7 @@ public final class WalkingModel: ObservableObject {
     public let motion: MotionFeed
     public let glasses: GlassesSessionManager
     private let location: LocationProvider
+    private let keepAlive: BackgroundKeepAliving
     private var cancellables: Set<AnyCancellable> = []
     private var demoTask: Task<Void, Never>?
 
@@ -33,12 +34,14 @@ public final class WalkingModel: ObservableObject {
         fallAlert: FallAlertCoordinator,
         fogDetector: FoGDetector = FoGDetector(),
         location: LocationProvider,
-        glasses: GlassesSessionManager? = nil
+        glasses: GlassesSessionManager? = nil,
+        keepAlive: BackgroundKeepAliving? = nil
     ) {
         self.motion = motion
         self.fallAlert = fallAlert
         self.fogDetector = fogDetector
         self.location = location
+        self.keepAlive = keepAlive ?? AudioCueEngine.shared.keepAlive
         self.glasses = glasses ?? GlassesSessionManager(phoneMotion: motion.phoneSource)
         motion.attach(fogDetector: fogDetector, fallDetector: fallAlert.detector)
         fallAlert.wearStateProvider = self.glasses
@@ -70,7 +73,10 @@ public final class WalkingModel: ObservableObject {
             let source = glasses.preferredMotionSource
             let label = glasses.preferredSourceLabel
             let started = motion.start(source: source, label: label) { [location] in location.currentLocation }
-            if !started {
+            if started {
+                keepAlive.start()
+            } else {
+                keepAlive.stop()
                 headline = source.isAvailable
                     ? "Protection could not start"
                     : "Motion sensors are not available on this device"
@@ -80,6 +86,7 @@ public final class WalkingModel: ObservableObject {
             }
         } else {
             motion.stopPhone()
+            keepAlive.stop()
             if fogDetector.isEpisodeActive {
                 AudioCueEngine.shared.stopRASMetronome()
             }

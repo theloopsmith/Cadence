@@ -61,7 +61,7 @@ public final class VoiceDoseAssistant: ObservableObject {
         state = .listening
         lastTranscript = ""
         lastHeard = ""
-        speaker.speak("Have you taken your \(doses.schedule.medicationName)? Say taken when you have.")
+        speaker.speak(Self.askPrompt(doses.schedule.medicationName))
         listener.startListening { [weak self] text in
             self?.heard(text)
         }
@@ -91,22 +91,43 @@ public final class VoiceDoseAssistant: ObservableObject {
         case (.listening, .taken), (.listening, .yes):
             state = .confirming
             lastTranscript = transcript
-            speaker.speak("You took your \(doses.schedule.medicationName) just now. Is that right? Yes or no.")
+            speaker.speak(Self.readbackPrompt(doses.schedule.medicationName))
         case (.listening, .no):
             finish(.cancelled, saying: "No problem. Log it when you can.")
         case (.listening, .unclear):
-            speaker.speak("Say taken when you have had it, or say no if not yet.")
-        case (.confirming, .yes), (.confirming, .taken):
+            speaker.speak(Self.reaskPrompt)
+        case (.confirming, .yes):
             doses.markTaken()
             Haptics.success()
             finish(.done, saying: "Logged. Thank you.")
         case (.confirming, .no):
             finish(.cancelled, saying: "No problem. Nothing was logged.")
         case (.confirming, .unclear):
-            speaker.speak("Just yes or no. Did you take it?")
+            speaker.speak(Self.confirmAgainPrompt)
         default:
             break
         }
+    }
+
+    // MARK: - Prompts
+
+    // Spoken while listening, so none of them may contain an answer word
+    // ("taken", "yes", "no"…): a prompt picked up by the microphone must
+    // never answer itself. Repeating "taken" during the readback is not a
+    // yes; only a yes logs the dose.
+    nonisolated static func askPrompt(_ name: String) -> String {
+        "Time for your \(name). Tell me once you've had it."
+    }
+
+    nonisolated static func readbackPrompt(_ name: String) -> String {
+        "You've had your \(name) just now. Shall I write that down?"
+    }
+
+    nonisolated static let reaskPrompt = "Tell me once you've had it. It's fine to do it later."
+    nonisolated static let confirmAgainPrompt = "Shall I write it down?"
+
+    nonisolated static func allPrompts(medicationName name: String) -> [String] {
+        [askPrompt(name), readbackPrompt(name), reaskPrompt, confirmAgainPrompt]
     }
 
     private func armSilence() {

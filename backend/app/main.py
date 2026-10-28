@@ -1,17 +1,20 @@
+import asyncio
 import base64
+import io
+import wave
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, Response
 
 from app.clients.baseten_llm import baseten_client
 from app.clients.circuit_breaker import RequestDeadlineContext
 from app.clients.fireworks_client import fireworks_client
-from app.clients.meta_models import meta_client
+from app.clients.meta_models import check_in_keywords, dose_keywords, meta_client
 from app.config import settings
 from app.db import (
     execute_write,
@@ -27,18 +30,24 @@ from app.models import (
     FoGEventCreate,
     HandwritingAnalyzeRequest,
     HomeMotorExamCreate,
+    LoginRequest,
+    SpeechTranscribeRequest,
     MealProteinAnalyzeRequest,
     RealityCheckRequest,
     VoiceLogCreate,
 )
+from app.auth import AuthError, authenticate_sync, validate_security_settings
 from app.security import (
     AuthContext,
+    reject_simulated_inputs,
     require_any_authenticated_role,
+    require_demo_mode,
     require_device_writer,
     verify_twilio_signature,
 )
 from app.errors import install_error_handlers
-from app.services.dose_clock import dose_timestamp_at_or_before
+from app.services.dose_clock import dose_timestamp_at_or_before, parse_utc
+from app.services.plain_language import describe_task_metrics
 from app.services.diary_engine import (
     DiaryBucketMetrics,
     build_24h_diary_timeline,
@@ -57,6 +66,7 @@ from app.services.reality_check import run_reality_check_pipeline
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_security_settings()
     await init_db()
     await purge_expired_telemetry()
     await fall_escalation_manager.resume_open_escalations()
@@ -89,6 +99,68 @@ async def get_neurologist_dashboard_shell() -> HTMLResponse:
     """
     html_path = STATIC_DIR / "neurologist_dashboard.html"
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"), status_code=200)
+
+
+# ==================== SPEECH (Muse Voice Transcribe) ====================
+MAX_CLIP_SECONDS = 30
+
+
+def _validated_wav(audio_base64: str) -> bytes:
+    try:
+        data = base64.b64decode(audio_base64, validate=True)
+        with wave.open(io.BytesIO(data), "rb") as clip:
+            channels, width, rate, frames = (
+                clip.getnchannels(), clip.getsampwidth(), clip.getframerate(), clip.getnframes()
+            )
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That clip isn't a WAV recording.")
+    if channels != 1 or width != 2 or rate not in (16000, 24000):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Clips must be mono 16-bit audio at 16 or 24 kHz.",
+        )
+    if frames / rate > MAX_CLIP_SECONDS:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Clips can be at most {MAX_CLIP_SECONDS} seconds.",
+        )
+    return data
+
+
+@app.post("/api/v1/speech/transcribe")
+async def transcribe_speech(
+    payload: SpeechTranscribeRequest,
+    auth: AuthContext = Depends(require_device_writer),
+) -> Dict[str, Any]:
+    """Second listener next to the phone's on-device recognizer. Audio is not stored."""
+    wav_bytes = _validated_wav(payload.audio_base64)
+    extra = [k.strip()[:40] for k in payload.keywords if k.strip()]
+    base = check_in_keywords() if payload.purpose == "fall_check_in" else dose_keywords()
+    keywords = list(dict.fromkeys(base + extra))
+    result = await meta_client.transcribe_muse_voice(wav_bytes, keywords=keywords)
+    return {
+        "available": result["available"],
+        "transcript": result["transcript"],
+        "source": "muse_voice_transcribe",
+    }
+
+
+# ==================== ACCOUNTS ====================
+@app.post("/api/v1/auth/login")
+async def login(payload: LoginRequest) -> Dict[str, Any]:
+    try:
+        issued = await asyncio.to_thread(authenticate_sync, payload.username, payload.password)
+    except AuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS if exc.locked else status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        )
+    return {
+        "access_token": issued.access_token,
+        "token_type": "bearer",
+        "expires_in": issued.expires_in,
+        "role": issued.role,
+    }
 
 
 # ==================== PIPELINE 1: FREEZING OF GAIT (FoG) ====================
@@ -215,6 +287,7 @@ async def analyze_meal_protein(
     payload: MealProteinAnalyzeRequest,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
+    reject_simulated_inputs(simulated_masks=payload.simulated_masks)
     deadline = RequestDeadlineContext()
     img_bytes = (
         base64.b64decode(payload.image_base64) if payload.image_base64 else None
@@ -258,8 +331,9 @@ async def analyze_meal_protein(
 
     if conflict:
         spoken = (
-            f"High-protein meal (~{protein_est['estimated_protein_grams']:.0f} grams) "
-            "logged near your Levodopa window. Noted in your diary for your neurologist."
+            f"Meal logged, about {protein_est['estimated_protein_grams']:.0f} grams of protein, "
+            "close to your Levodopa time. Some people find protein near a dose matters for them; "
+            "it's noted in your diary to share with your care team."
         )
     else:
         spoken = f"Meal logged (~{protein_est['estimated_protein_grams']:.0f} grams of protein)."
@@ -281,6 +355,7 @@ async def reality_check_endpoint(
     img_bytes = (
         base64.b64decode(payload.image_base64) if payload.image_base64 else None
     )
+    reject_simulated_inputs(simulated_sam_masks=payload.simulated_sam_masks)
     res = await run_reality_check_pipeline(
         user_query=payload.user_query,
         image_bytes=img_bytes,
@@ -321,6 +396,10 @@ async def analyze_handwriting_endpoint(
 ) -> Dict[str, Any]:
     img_bytes = (
         base64.b64decode(payload.image_base64) if payload.image_base64 else None
+    )
+    reject_simulated_inputs(
+        simulated_letter_heights_px=payload.simulated_letter_heights_px,
+        simulated_sam_decay_pct=payload.simulated_sam_decay_pct,
     )
     res = analyze_handwriting_opencv(
         image_bytes=img_bytes,
@@ -447,12 +526,12 @@ async def complete_home_motor_exam(
         )
     )
 
-    clinical_summary = (
-        f"Guided Home Motor Exam ({diary_eval['clinical_state']}): "
-        f"Composite {scores['composite_motor_score']:.1f}/100 "
-        f"(Voice {scores['voice_score']:.1f}, Writing {scores['handwriting_score']:.1f}, "
-        f"Gait {scores['gait_score']:.1f})."
-    )
+    clinical_summary = "Home motor check: " + describe_task_metrics(
+        voice_mean_dbfs=payload.voice_mean_dbfs,
+        handwriting_decay_pct=payload.handwriting_opencv_decay_pct,
+        walk_cadence_spm=payload.walk_cadence_spm,
+        walk_fog_count=payload.walk_fog_count,
+    ) + "."
 
     await execute_write(
         """
@@ -505,6 +584,14 @@ async def get_exam_history(
         (auth.patient_id,),
     )
     return {"patient_id": auth.patient_id, "exams": exams}
+
+
+def _within_last_day(timestamp_iso: str) -> bool:
+    try:
+        when = parse_utc(timestamp_iso)
+    except ValueError:
+        return False
+    return (datetime.now(timezone.utc) - when).total_seconds() <= 24 * 3600
 
 
 # ==================== PIPELINE 7: NEUROLOGIST REPORT & PATIENT WIPE ====================
@@ -576,6 +663,24 @@ async def get_neurologist_report(
         ),
         "latest_exam_score": exam_rows[0]["composite_motor_score"] if exam_rows else None,
         "exam_on_vs_off_delta": timeline["exam_on_vs_off_delta"],
+        "dose_count": len(
+            [
+                m
+                for m in med_rows
+                if m.get("event_type") == "dose_taken"
+                and _within_last_day(str(m.get("timestamp_utc", "")))
+            ]
+        ),
+        "latest_exam_metrics": (
+            {
+                "voice_mean_dbfs": exam_rows[0]["voice_mean_dbfs"],
+                "handwriting_opencv_decay_pct": exam_rows[0]["handwriting_opencv_decay_pct"],
+                "walk_cadence_spm": exam_rows[0]["walk_cadence_spm"],
+                "walk_fog_count": exam_rows[0]["walk_fog_count"],
+            }
+            if exam_rows
+            else None
+        ),
     }
     narrative = None
     if settings.fireworks_api_key:
@@ -609,9 +714,9 @@ async def delete_patient_data(
     }
 
 
-@app.post("/api/v1/demo/seed")
+@app.post("/api/v1/demo/seed", dependencies=[Depends(require_demo_mode)])
 async def seed_demo_patient_timeline(
-    auth: AuthContext = Depends(require_any_authenticated_role),
+    auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
     """
     Populates a complete, clinically realistic 24-hour Parkinson's patient timeline:

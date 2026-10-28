@@ -19,17 +19,49 @@ final class StubTransport: EventTransport, @unchecked Sendable {
 
     var attemptCount: Int { sentEndpoints.count }
 
-    func send(endpoint: String, jsonData: Data, bearerToken: String) async -> Bool {
+    func send(endpoint: String, jsonData: Data, bearerToken: String) async -> DeliveryOutcome {
         return record(endpoint: endpoint)
     }
 
     /// Non-async so NSLock is never held across a suspension point.
-    private func record(endpoint: String) -> Bool {
+    private func record(endpoint: String) -> DeliveryOutcome {
         lock.lock(); defer { lock.unlock() }
         _sent.append(endpoint)
         let shouldFail = _failuresRemaining > 0
         if shouldFail { _failuresRemaining -= 1 }
-        return !shouldFail
+        return shouldFail ? .retryLater : .delivered
+    }
+}
+
+/// Answers every send with a fixed outcome.
+final class FixedOutcomeTransport: EventTransport, @unchecked Sendable {
+    var outcome: DeliveryOutcome
+    init(_ outcome: DeliveryOutcome) { self.outcome = outcome }
+    func send(endpoint: String, jsonData: Data, bearerToken: String) async -> DeliveryOutcome { outcome }
+}
+
+final class SignInRejectionQueueTests: XCTestCase {
+    /// An expired sign-in must never cost a fall alert: the event stays queued
+    /// and the app is told it needs signing in again.
+    func testARejectedTokenKeepsTheEventQueuedAndRaisesTheAlarm() async {
+        let transport = FixedOutcomeTransport(.unauthorized)
+        let mgr = EventSyncManager(
+            transport: transport,
+            databasePath: NSTemporaryDirectory() + "unauth-\(UUID().uuidString).sqlite",
+            startPeriodicDrain: false
+        )
+        var told = 0
+        mgr.onUnauthorized = { told += 1 }
+        mgr.saveLocalImmediate(eventUUID: "fall-unauth-1", endpoint: "/api/v1/events/fall", payload: ["event_uuid": "fall-unauth-1"])
+
+        let first = await mgr.drainPendingEvents()
+        XCTAssertEqual(first.delivered, 0)
+        XCTAssertEqual(mgr.pendingCount(), 1, "the fall stays on the phone")
+        XCTAssertEqual(told, 1)
+
+        transport.outcome = .delivered
+        _ = await mgr.drainPendingEvents(now: Date().addingTimeInterval(3600))
+        XCTAssertEqual(mgr.pendingCount(), 0, "it is sent once sign-in is fixed")
     }
 }
 

@@ -117,13 +117,12 @@ def test_exhaustive_diary_classifier_states_and_modifiers():
 
 
 def test_per_model_circuit_breaker_isolation():
-    """Verifies that 3 failures on ('meta', 'sam-3.1') never trip ('meta', 'muse-voice')."""
+    """Verifies that 3 failures on ('meta', 'sam-3.1') never trip ('meta', 'muse-voice-transcribe-1.0')."""
     reg = PerModelCircuitBreakerRegistry(failure_threshold=3, cooldown_sec=60.0)
     for _ in range(3):
         reg.record_failure("meta", "sam-3.1")
     assert not reg.is_available("meta", "sam-3.1")
-    assert reg.is_available("meta", "muse-voice")
-    assert reg.is_available("meta", "muse-transcribe")
+    assert reg.is_available("meta", "muse-voice-transcribe-1.0")
 
 
 def test_plate_normalized_protein_lookup():

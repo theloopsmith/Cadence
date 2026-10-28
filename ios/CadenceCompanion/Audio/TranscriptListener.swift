@@ -34,11 +34,25 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
     private var hasInstalledTap: Bool = false
     public private(set) var isListening = false
 
+    /// Nothing heard while the app is speaking counts, so a spoken prompt can
+    /// never answer itself.
+    public var echoGuard: EchoGuarding = AudioCueEngine.shared
+    private var echoFilter = EchoFilteredTranscript()
+
+    /// Builds the Muse Voice Transcribe listener beside the on-device one.
+    public var cloudEarFactory: ((@escaping (String) -> Void) -> CloudEar)?
+    private var cloudEar: CloudEar?
+
     public func startListening(onTranscript: @escaping (String) -> Void) {
         guard !isListening else { return }
         isListening = true
         session += 1
         let session = session
+        echoFilter = EchoFilteredTranscript()
+        cloudEar = cloudEarFactory? { [weak self] text in
+            guard let self, self.isListening else { return }
+            onTranscript(text)
+        }
         audioQueue.async { [weak self] in
             self?.open(session: session, onTranscript: onTranscript)
         }
@@ -97,8 +111,15 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
             input.removeTap(onBus: 0)
             hasInstalledTap = false
         }
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+        let sampleRate = format.sampleRate
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             request.append(buffer)
+            guard let self, let channel = buffer.floatChannelData?[0] else { return }
+            let samples = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+            self.cloudEar?.feed(
+                samples: samples, sampleRate: sampleRate,
+                echoActive: self.echoGuard.isInEchoWindow(at: Date())
+            )
         }
         hasInstalledTap = true
 
@@ -109,16 +130,22 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
             isListening = false
             return
         }
-        task = recognizer?.recognitionTask(with: request) { result, _ in
-            guard let result else { return }
+        task = recognizer?.recognitionTask(with: request) { [weak self] result, _ in
+            guard let self, let result else { return }
             let text = result.bestTranscription.formattedString
-            DispatchQueue.main.async { onTranscript(text) }
+            let echo = self.echoGuard.isInEchoWindow(at: Date())
+            DispatchQueue.main.async {
+                guard let fresh = self.echoFilter.update(fullTranscript: text, echoActive: echo) else { return }
+                onTranscript(fresh)
+            }
         }
     }
 
     public func stopListening() {
         session += 1
         isListening = false
+        cloudEar?.stop()
+        cloudEar = nil
         audioQueue.async { [weak self] in
             guard let self else { return }
             if self.audioEngine.isRunning {

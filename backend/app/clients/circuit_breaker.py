@@ -27,7 +27,7 @@ class RequestDeadlineContext:
 class PerModelCircuitBreakerRegistry:
     """
     Tracks 3-strike circuit breakers keyed by (provider, model_id) so a transient
-    SAM 3.1 slowdown never trips Muse Voice TTS or Muse Transcribe STT.
+    SAM 3.1 slowdown never trips Muse Voice Transcribe.
     """
 
     def __init__(self, failure_threshold: int = 3, cooldown_sec: float = 60.0):

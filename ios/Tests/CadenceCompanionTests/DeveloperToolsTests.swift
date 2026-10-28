@@ -23,7 +23,8 @@ final class DeveloperToolsTests: XCTestCase {
             transcripts: MockTranscriptListener(),
             phoneHaptics: RecordingHapticSink(),
             pillPhotos: PillPhotoStore(directory: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(suite)-pill")),
-            apiTransport: transport
+            apiTransport: transport,
+            notifications: RecordingNotificationCenter()
         )
         return (app, transport)
     }

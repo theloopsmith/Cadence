@@ -83,7 +83,7 @@ final class VoiceDoseAssistantTests: XCTestCase {
         listener.hear("I took my pill")
         XCTAssertEqual(assistant.state, .confirming)
         XCTAssertTrue(speaker.spoken.last?.contains("Levodopa") == true)
-        XCTAssertTrue(speaker.spoken.last?.lowercased().contains("yes or no") == true)
+        XCTAssertTrue(speaker.spoken.last?.lowercased().contains("write that down") == true)
         XCTAssertEqual(doses.takenToday.count, 0, "not yet")
 
         listener.hear("yes")
@@ -92,6 +92,18 @@ final class VoiceDoseAssistantTests: XCTestCase {
         XCTAssertTrue(doses.canUndo)
         XCTAssertFalse(listener.isListening)
         XCTAssertTrue(speaker.spoken.last?.lowercased().contains("logged") == true)
+    }
+
+    /// Two listeners can hear the same "taken" twice. Only a yes logs the dose.
+    func testHearingTakenAgainDuringTheReadbackDoesNotLog() {
+        let (assistant, listener, _, doses) = make()
+        assistant.begin()
+        listener.hear("I took my pill")
+        listener.hear("I took my pill")
+        XCTAssertEqual(assistant.state, .confirming)
+        XCTAssertEqual(doses.takenToday.count, 0)
+        listener.hear("yes")
+        XCTAssertEqual(doses.takenToday.count, 1)
     }
 
     func testNoAtReadbackLogsNothingAndIsWarm() {
@@ -115,7 +127,7 @@ final class VoiceDoseAssistantTests: XCTestCase {
         let last = speaker.spoken.last?.lowercased() ?? ""
         XCTAssertFalse(last.contains("louder"))
         XCTAssertFalse(last.contains("clearly"))
-        XCTAssertTrue(last.contains("taken") || last.contains("when you"))
+        XCTAssertTrue(last.contains("once you've had it"))
     }
 
     /// Silence for the long window ends gently and logs nothing.

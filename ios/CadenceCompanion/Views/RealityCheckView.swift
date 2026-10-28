@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Reality Check view for Parkinson's hallucination reassurance (Pipeline 4).
+/// Look-around view: describes what the camera actually sees, calmly and factually.
 /// Uses SAM 3.1 instance lock and Fireworks Llama 3.2 Vision to ground objects
 /// (e.g. differentiating a coat on a chair or coat rack in low light from an intruder).
 public struct RealityCheckView: View {

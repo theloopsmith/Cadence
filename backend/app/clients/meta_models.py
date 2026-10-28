@@ -1,3 +1,4 @@
+import json
 import base64
 from io import BytesIO
 from typing import Any, Dict, List, Optional
@@ -38,8 +39,8 @@ class MetaModelClient:
     """
     Meta Model API client ($150 Credits) with per-model 3-strike circuit breakers:
       - ("meta", settings.meta_sam_model)       -> SAM 3.1 instance masks & boxes
-      - ("meta", settings.meta_stt_model)       -> Muse Transcribe STT
-      - ("meta", settings.meta_tts_model)       -> Muse Voice TTS
+      - ("meta", settings.meta_stt_model)       -> Muse Voice Transcribe (speech to text)
+    Meta offers no text-to-speech API; spoken replies use the phone's own voices.
     """
 
     PROVIDER = "meta"
@@ -89,44 +90,62 @@ class MetaModelClient:
             circuit_breakers.record_failure(self.PROVIDER, model_id)
             return {"sam_verified": False, "masks": [], "reason": str(exc)}
 
-    async def synthesize_muse_voice(
+    async def transcribe_muse_voice(
         self,
-        text: str,
-        deadline: RequestDeadlineContext,
+        wav_bytes: bytes,
+        keywords: List[str],
+        timeout_sec: float = 6.0,
     ) -> Dict[str, Any]:
         """
-        Synthesizes calm open-ear audio via Muse Voice (0.8s budget).
-        If remaining deadline < 0.35s or breaker is open, returns text immediately
-        for zero-latency on-device AVSpeechSynthesizer fallback.
+        Muse Voice Transcribe, one-request form (POST /asr/transcribe, multipart
+        `request` JSON + `audio` WAV). Plain-text replies avoid depending on the
+        JSON response shape. Returns {"available": bool, "transcript": str}.
         """
-        model_id = settings.meta_tts_model
+        model_id = settings.meta_stt_model
         if not circuit_breakers.is_available(self.PROVIDER, model_id):
-            return {"tts_source": "ios_avspeech_fallback", "audio_base64": None, "text": text}
-
+            return {"available": False, "transcript": "", "reason": "circuit_open"}
         if not settings.meta_api_key:
-            return {"tts_source": "ios_avspeech_fallback", "audio_base64": None, "text": text}
+            return {"available": False, "transcript": "", "reason": "unconfigured"}
 
+        request = {
+            "model": model_id,
+            "audioEncoding": "WAV",
+            "mode": "PUSH_TO_TALK",
+            "keywords": keywords,
+            "languageBias": ["english"],
+        }
         try:
-            timeout_sec = deadline.timeout_for_stage(
-                settings.tts_stage_budget_sec, min_viable_sec=0.35
-            )
             async with httpx.AsyncClient(timeout=timeout_sec) as client:
                 resp = await client.post(
-                    f"{settings.meta_api_base_url.rstrip('/')}/audio/speech",
-                    headers={"Authorization": f"Bearer {settings.meta_api_key}"},
-                    json={"model": model_id, "input": text},
+                    f"{settings.meta_asr_base_url.rstrip('/')}/asr/transcribe",
+                    headers={
+                        "Authorization": f"Bearer {settings.meta_api_key}",
+                        "Accept": "text/plain",
+                    },
+                    files={
+                        "request": (None, json.dumps(request), "application/json"),
+                        "audio": ("clip.wav", wav_bytes, "audio/wav"),
+                    },
                 )
                 resp.raise_for_status()
-                data = resp.json()
+                transcript = " ".join(line.strip() for line in resp.text.splitlines() if line.strip())
                 circuit_breakers.record_success(self.PROVIDER, model_id)
-                return {
-                    "tts_source": "meta_muse_voice",
-                    "audio_base64": data.get("audio_base64"),
-                    "text": text,
-                }
-        except Exception:
+                return {"available": True, "transcript": transcript}
+        except Exception as exc:
             circuit_breakers.record_failure(self.PROVIDER, model_id)
-            return {"tts_source": "ios_avspeech_fallback", "audio_base64": None, "text": text}
+            return {"available": False, "transcript": "", "reason": str(exc)}
+
+
+def check_in_keywords() -> List[str]:
+    """Words the fall check-in listens for, so a soft voice is more likely to be understood."""
+    return ["I'm okay", "I am okay", "I'm fine", "okay", "help", "hurt", "fell", "can't get up", "emergency", "no"]
+
+
+def dose_keywords(medication_name: str = "") -> List[str]:
+    words = ["taken", "took", "yes", "no", "not yet", "Levodopa", "Carbidopa"]
+    if medication_name and medication_name not in words:
+        words.append(medication_name)
+    return words
 
 
 meta_client = MetaModelClient()

@@ -7,6 +7,19 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class SpeechTranscribeRequest(BaseModel):
+    """A short clip from the phone's microphone. Transcribed and discarded."""
+
+    audio_base64: str = Field(..., min_length=4, max_length=3_000_000)
+    purpose: Literal["fall_check_in", "dose"]
+    keywords: List[str] = Field(default_factory=list, max_length=10)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=128)
+    password: str = Field(..., min_length=1, max_length=256)
+
+
 class FoGEventCreate(BaseModel):
     event_uuid: str = Field(..., min_length=4)
     timestamp_utc: str = Field(default_factory=utc_now_iso)

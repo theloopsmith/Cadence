@@ -19,6 +19,8 @@ public final class CadenceAppModel: ObservableObject {
     public let voiceDose: VoiceDoseAssistant
     public let pillPhotos: PillPhotoStore
     public let offHours: OffHourLearner
+    public let reminders: DoseReminderScheduler
+    public let auth: AuthSession
 
     /// True while the mock glasses stand in for the real device.
     @Published public private(set) var isUsingMockGlasses = false
@@ -43,7 +45,8 @@ public final class CadenceAppModel: ObservableObject {
             transcripts: LiveTranscriptListener.shared,
             phoneHaptics: PhoneHaptics(),
             pillPhotos: .default,
-            apiTransport: URLSessionJSONTransport()
+            apiTransport: URLSessionJSONTransport(),
+            notifications: SystemNotificationCenter()
         )
     }
 
@@ -57,10 +60,17 @@ public final class CadenceAppModel: ObservableObject {
         transcripts: TranscriptListening,
         phoneHaptics: HapticPatternPlaying,
         pillPhotos: PillPhotoStore,
-        apiTransport: JSONTransporting
+        apiTransport: JSONTransporting,
+        notifications: DoseNotificationCentering
     ) {
         settings.apiTransport = apiTransport
         self.settings = settings
+        self.reminders = DoseReminderScheduler(center: notifications)
+        let auth = AuthSession(settings: settings)
+        self.auth = auth
+        settings.sync.onUnauthorized = { [weak auth] in
+            Task { @MainActor in auth?.markExpired() }
+        }
         self.motion = motion
         self.fallAlert = fallAlert
         self.diary = diary
@@ -116,7 +126,21 @@ public final class CadenceAppModel: ObservableObject {
 
         settings.$schedule
             .dropFirst()
-            .sink { [weak self] schedule in self?.doses.schedule = schedule }
+            .sink { [weak self] schedule in
+                guard let self else { return }
+                self.doses.schedule = schedule
+                Task { await self.reminders.sync(schedule) }
+            }
+            .store(in: &cancellables)
+
+        // A logged dose withdraws today's reminder for it.
+        doses.$takenToday
+            .dropFirst()
+            .scan(([Date](), [Date]())) { ($0.1, $1) }
+            .sink { [weak self] previous, current in
+                guard let self, current.count > previous.count, let latest = current.last else { return }
+                self.reminders.doseTaken(at: latest, schedule: self.settings.schedule)
+            }
             .store(in: &cancellables)
 
         // A confirmed impact opens the check-in; the overlay follows `fallAlert.phase`.
@@ -180,6 +204,7 @@ public final class CadenceAppModel: ObservableObject {
             exam.objectWillChange.eraseToAnyPublisher(),
             doses.objectWillChange.eraseToAnyPublisher(),
             voiceDose.objectWillChange.eraseToAnyPublisher(),
+            auth.objectWillChange.eraseToAnyPublisher(),
         ] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
@@ -255,12 +280,37 @@ public final class CadenceAppModel: ObservableObject {
         }
     }
 
+    /// A Muse Voice Transcribe listener for one purpose. The server holds the
+    /// Meta key; the phone only sends short clips while it is listening.
+    private func cloudEarFactory(
+        for purpose: CadenceAPIClient.TranscribePurpose
+    ) -> (@escaping (String) -> Void) -> CloudEar {
+        { [weak self] onTranscript in
+            CloudEar(
+                transcribe: { [weak self] wav in
+                    guard let self else { return nil }
+                    let request: (CadenceAPIClient, [String])? = await MainActor.run {
+                        guard self.settings.cloudListeningEnabled else { return nil }
+                        let keywords = purpose == .dose ? [self.settings.schedule.medicationName] : []
+                        return (self.settings.api, keywords)
+                    }
+                    guard let (client, keywords) = request else { return nil }
+                    return try? await client.transcribe(wav: wav, purpose: purpose, keywords: keywords)
+                },
+                onTranscript: onTranscript
+            )
+        }
+    }
+
     /// Called once the first screen appears.
     public func start() {
+        LiveSpeechCheckInListener.shared.cloudEarFactory = cloudEarFactory(for: .fallCheckIn)
+        LiveTranscriptListener.shared.cloudEarFactory = cloudEarFactory(for: .dose)
         AudioCueEngine.shared.configureLaunchAudioSession()
         LiveLocationProvider.shared.requestAuthorization()
         if settings.protectionEnabled {
             walking.setProtection(enabled: true)
         }
+        Task { await reminders.sync(settings.schedule) }
     }
 }

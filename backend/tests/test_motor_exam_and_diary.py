@@ -85,7 +85,7 @@ def test_demo_seed_and_neurologist_report_endpoint():
     from fastapi.testclient import TestClient
     from app.main import app
 
-    headers = {"Authorization": "Bearer cadence-dev-clinician-reader-token-2026"}
+    headers = {"Authorization": "Bearer cadence-dev-device-writer-token-2026"}
     with TestClient(app) as client:
         seed_res = client.post("/api/v1/demo/seed", headers=headers)
         assert seed_res.status_code == 200

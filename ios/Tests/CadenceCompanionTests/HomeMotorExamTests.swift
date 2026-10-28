@@ -146,20 +146,35 @@ final class HomeMotorExamTests: XCTestCase {
         XCTAssertEqual(body["walk_fog_count"] as? Int, 0)
     }
 
-    /// Scores come from the backend, never from the device, so the diary
-    /// classifier and the ON/OFF comparison cannot disagree with them.
-    func testScoresAreTakenFromTheBackendResponse() async {
+    /// The backend's response is kept, but what the wearer sees is the raw
+    /// measurements, never the backend's score or state.
+    func testTheSummaryShowsMeasurementsNotTheBackendScore() async {
+        let mgr = HomeMotorExamManager(
+            submitter: StubExamSubmitter(result: scoredResult), audio: .shared, sync: sync
+        )
+        var m = measurements()
+        m.handwritingMeasured = true
+        m.walkMeasured = true
+        mgr.measurements = m
+
+        let result = await mgr.completeExam(examUUID: "exam-score-1")
+        XCTAssertEqual(result?.compositeMotorScore, 76.4)
+        XCTAssertFalse(mgr.lastResultSummary?.contains("76") == true)
+        XCTAssertFalse(mgr.lastResultSummary?.contains("WEARING") == true)
+        XCTAssertTrue(mgr.lastResultSummary?.contains("22% smaller") == true, mgr.lastResultSummary ?? "")
+        XCTAssertEqual(mgr.lastRecord?.handwritingDecayPct, -22.0)
+    }
+
+    /// A step that was not measured stays empty in the record.
+    func testUnmeasuredStepsAreNotRecordedAsResults() async {
         let mgr = HomeMotorExamManager(
             submitter: StubExamSubmitter(result: scoredResult), audio: .shared, sync: sync
         )
         mgr.measurements = measurements()
-
-        let result = await mgr.completeExam(examUUID: "exam-score-1")
-        XCTAssertEqual(result?.compositeMotorScore, 76.4)
-        XCTAssertEqual(result?.medicationStateLabel, "WEARING_OFF")
-        XCTAssertEqual(mgr.lastResult?.compositeMotorScore, 76.4)
-        XCTAssertTrue(mgr.lastResultSummary?.contains("76.4") == true)
-        XCTAssertTrue(mgr.lastResultSummary?.contains("WEARING_OFF") == true)
+        _ = await mgr.completeExam(examUUID: "exam-unmeasured-1")
+        XCTAssertNil(mgr.lastRecord?.voiceMeanDbfs)
+        XCTAssertNil(mgr.lastRecord?.handwritingDecayPct)
+        XCTAssertNil(mgr.lastRecord?.walkStepsPerMinute)
     }
 
     /// Offline, the exam is queued for retry and the wearer is told the score
@@ -178,7 +193,7 @@ final class HomeMotorExamTests: XCTestCase {
 
         let queued = sync.dueEvents().first
         XCTAssertEqual(queued?.endpoint, "/api/v1/exam/complete")
-        XCTAssertTrue(mgr.lastResultSummary?.lowercased().contains("offline") == true)
+        XCTAssertTrue(mgr.lastResultSummary?.lowercased().contains("online") == true)
     }
 
     /// An exam with no SAM refinement omits the field rather than sending a
@@ -220,7 +235,8 @@ final class HomeMotorExamTests: XCTestCase {
         let summary = await mgr.runDemoExam(measurements: measurements(), examUUID: "exam-demo-1")
         XCTAssertEqual(stub.submittedBodies.count, 1)
         XCTAssertEqual(mgr.currentStep, .completed)
-        XCTAssertTrue(summary.contains("76.4"), "summary should carry the composite: \(summary)")
+        XCTAssertFalse(summary.contains("76.4"), "no score in the summary: \(summary)")
+        XCTAssertTrue(summary.contains("steps a minute"), summary)
     }
 
     /// Task 1 vowel phonation recording via VoiceMonitor populates voice measurements

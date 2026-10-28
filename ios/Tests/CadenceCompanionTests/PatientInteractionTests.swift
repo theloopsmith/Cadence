@@ -294,10 +294,10 @@ final class MotorExamInteractionTests: XCTestCase {
 // MARK: - Clinical Report Presentation
 
 @MainActor
-final class ClinicalReportPresentationTests: XCTestCase {
-    func testClinicalReportViewInitializesWithApp() {
+final class DaySummaryPresentationTests: XCTestCase {
+    func testDaySummaryViewInitializesWithApp() {
         let app = CadenceAppModel()
-        let reportView = ClinicalReportView(app: app)
+        let reportView = DaySummaryView(app: app)
         XCTAssertNotNil(reportView)
     }
 }

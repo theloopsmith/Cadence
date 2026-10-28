@@ -23,7 +23,24 @@ public struct HomeMotorExamMeasurements {
     public var walkMeanFI: Double = 0.0
     public var walkFogCount: Int = 0
 
+    /// Which steps produced a real measurement. A step that was skipped or
+    /// failed stays false, and its value is never shown as a result.
+    public var voiceMeasured = false
+    public var handwritingMeasured = false
+    public var walkMeasured = false
+
     public init() {}
+
+    /// What was actually measured, for trends and the diary.
+    public func record(at date: Date) -> TaskMetricsRecord {
+        TaskMetricsRecord(
+            date: date,
+            voiceMeanDbfs: voiceMeasured ? voiceMeanDbfs : nil,
+            handwritingDecayPct: handwritingMeasured ? handwritingOpencvDecayPct : nil,
+            walkStepsPerMinute: walkMeasured ? walkCadenceSpm : nil,
+            walkFreezes: walkMeasured ? walkFogCount : nil
+        )
+    }
 }
 
 /// What the backend returns from `POST /api/v1/exam/complete`.
@@ -90,15 +107,17 @@ public struct URLSessionExamSubmitter: ExamSubmitting {
 /// Pipeline 6 (Demo-Critical P0): Guided 3-Step Home Motor Exam state machine.
 ///
 /// Walks the wearer through voice, handwriting and a timed walk, then submits
-/// the measurements to the backend, which owns the scoring. The scores are
-/// deliberately not computed on device: the diary classifier and the ON/OFF
-/// comparison must agree with them exactly, so there is one implementation of
-/// the formulas and it lives in `app/services/motor_exam.py`.
+/// the raw measurements to the backend. What the wearer sees and hears is
+/// the measurements themselves and how they compare with the last check.
 @MainActor
 public final class HomeMotorExamManager: ObservableObject {
     @Published public private(set) var currentStep: HomeMotorExamStep = .idle
     @Published public private(set) var lastResult: HomeMotorExamResult?
     @Published public private(set) var lastResultSummary: String?
+    /// The latest check's raw measurements and the one before, for trends.
+    @Published public private(set) var lastRecord: TaskMetricsRecord?
+    @Published public private(set) var previousRecord: TaskMetricsRecord?
+    public var history: TaskMetricsHistory
 
     public var measurements = HomeMotorExamMeasurements()
     public var backendBaseURL: String = "http://localhost:8000" {
@@ -118,8 +137,14 @@ public final class HomeMotorExamManager: ObservableObject {
         submitter: ExamSubmitting? = nil,
         audio: AudioCueEngine = .shared,
         sync: EventSyncManager = .shared,
-        voiceMonitor: VoiceMonitor = .shared
+        voiceMonitor: VoiceMonitor = .shared,
+        history: TaskMetricsHistory? = nil
     ) {
+        let isRunningInTest = NSClassFromString("XCTestCase") != nil
+        self.history = history ?? (isRunningInTest
+            ? TaskMetricsHistory(directory: URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("motor-\(UUID().uuidString)"))
+            : .default)
         self.submitter = submitter ?? URLSessionExamSubmitter(baseURL: "http://localhost:8000")
         self.audio = audio
         self.sync = sync
@@ -140,7 +165,7 @@ public final class HomeMotorExamManager: ObservableObject {
             return "Step 2 of 3 — Write the test sentence on your pad, then look down at the line."
         case .task3PromptedTimedWalk:
             return "Step 3 of 3 — Stand up when ready and walk forward in a straight line for 10 seconds."
-        case .submitting: return "Scoring your motor check…"
+        case .submitting: return "Saving your motor check…"
         case .completed: return "Motor check complete."
         }
     }
@@ -151,6 +176,9 @@ public final class HomeMotorExamManager: ObservableObject {
         currentStep = .task1PromptedVoice
         lastResult = nil
         lastResultSummary = nil
+        measurements.voiceMeasured = false
+        measurements.handwritingMeasured = false
+        measurements.walkMeasured = false
         voiceMonitor.startVowelPhonationRecording()
         audio.speakPrompt(
             "Step 1: Take a deep breath and say Ahhh steadily for 5 seconds, then read today's sentence.",
@@ -164,6 +192,7 @@ public final class HomeMotorExamManager: ObservableObject {
         if stabilityDb > 0.0 {
             measurements.voiceMeanDbfs = meanDbfs
             measurements.voiceStabilityDb = stabilityDb
+            measurements.voiceMeasured = true
         }
         audio.speakPrompt(
             "Step 2: Write the test sentence on your pad, then look down at the line.",
@@ -179,12 +208,11 @@ public final class HomeMotorExamManager: ObservableObject {
         )
     }
 
-    /// Submits the collected measurements and speaks the composite score.
+    /// Submits the collected measurements and keeps the raw ones on the phone
+    /// for trends. Nothing spoken or shown is a score.
     ///
-    /// Returns the scored result, or nil when the backend could not be reached
-    /// — in that case the exam is queued for retry and the wearer is told the
-    /// score will appear in their report rather than being given a number the
-    /// device invented.
+    /// Returns the backend's result, or nil when it could not be reached — in
+    /// that case the exam is queued for retry.
     @discardableResult
     public func completeExam(examUUID: String = UUID().uuidString) async -> HomeMotorExamResult? {
         currentStep = .submitting
@@ -212,38 +240,29 @@ public final class HomeMotorExamManager: ObservableObject {
             return nil
         }
 
+        let record = measurements.record(at: Date())
+        previousRecord = history.latest()
+        lastRecord = record
+        try? history.append(record)
+
         if let result = await submitter.submit(examJSON: body, bearerToken: deviceBearerToken) {
             lastResult = result
-            lastResultSummary = String(
-                format: "%@ • Composite %.1f/100 (voice %.1f, writing %.1f, gait %.1f)",
-                result.medicationStateLabel,
-                result.compositeMotorScore,
-                result.voiceScore,
-                result.handwritingScore,
-                result.gaitScore
-            )
+            lastResultSummary = TaskMetricsSummary.diaryDetail(record)
             currentStep = .completed
-            audio.speakPrompt(
-                String(
-                    format: "Motor check complete. Your composite motor score is %.0f out of 100.",
-                    result.compositeMotorScore
-                ),
-                priority: 2
-            )
+            audio.speakPrompt("Motor check done. Your results are in your diary.", priority: 2)
             return result
         }
 
-        // Offline: queue it so the neurologist still receives the exam, and say
-        // so plainly instead of reporting a score that was never computed.
+        // Offline: queue it so the care team still receives it later.
         sync.saveLocalImmediate(
             eventUUID: examUUID,
             endpoint: "/api/v1/exam/complete",
             payload: payload
         )
-        lastResultSummary = "Saved offline — your score will appear in your report once you reconnect."
+        lastResultSummary = "Saved on the phone. It will be sent when you're back online."
         currentStep = .completed
         audio.speakPrompt(
-            "Motor check recorded. I'll send it to your doctor when you're back online.",
+            "Motor check done. It's saved on your phone and will be sent when you're back online.",
             priority: 2
         )
         return nil
@@ -262,7 +281,9 @@ public final class HomeMotorExamManager: ObservableObject {
         measurements seeded: HomeMotorExamMeasurements? = nil,
         examUUID: String = "exam-\(UUID().uuidString.prefix(8))"
     ) async -> String {
-        if let seeded { measurements = seeded }
+        if let seeded {
+            measurements = seeded
+        }
 
         startExam()
         await pause()
@@ -271,12 +292,16 @@ public final class HomeMotorExamManager: ObservableObject {
         advanceToTimedWalk()
         await pause()
 
+        // A seeded demo supplies every measurement.
+        measurements.voiceMeasured = true
+        measurements.handwritingMeasured = true
+        measurements.walkMeasured = true
         let result = await completeExam(examUUID: examUUID)
-        if let result {
-            return "Exam complete — \(result.medicationStateLabel), composite "
-                + String(format: "%.1f/100", result.compositeMotorScore)
+        let detail = lastRecord.map(TaskMetricsSummary.diaryDetail) ?? "Motor check done"
+        if result != nil {
+            return "Motor check saved — \(detail)"
         }
-        return "Exam saved offline — backend unreachable, queued for retry."
+        return "Motor check saved on the phone; it will be sent when you're back online."
     }
 
     private func pause() async {

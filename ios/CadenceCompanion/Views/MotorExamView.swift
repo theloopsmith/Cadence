@@ -3,9 +3,8 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Guided 3-step Home Motor Check (Voice, Handwriting, Timed Walk).
-/// Submits raw measurements to `/api/v1/exam/complete` and displays
-/// composite motor score with clinical narrative and medication state.
+/// Guided 3-step motor check (voice, handwriting, timed walk). Shows the raw
+/// measurements and how they compare with the previous check. No scores.
 public struct MotorExamView: View {
     @ObservedObject var app: CadenceAppModel
     @ObservedObject private var exam: HomeMotorExamManager
@@ -19,6 +18,8 @@ public struct MotorExamView: View {
     @State private var isWalkCountingDown = false
     @State private var walkTimer: Timer?
     @State private var walkRecorder = WalkTestRecorder()
+    @State private var walkSinkToken: UUID?
+    @State private var startedMotionForWalk = false
 
     @State private var showCamera = false
     @State private var handwritingStatus: String?
@@ -109,7 +110,7 @@ public struct MotorExamView: View {
             IconBadge(systemName: "figure.walk.motion", color: CadenceTheme.accent, size: 48)
             Text("1-Minute Motor Check")
                 .font(.title2.weight(.bold))
-            Text("This 3-step check records your voice stability, handwriting size, and walking rhythm. Your neurologist uses it to track medication ON and OFF periods.")
+            Text("Three short tasks: your voice, your handwriting, and a short walk. Cadence keeps the measurements in your diary so you can share how they change over time with your care team.")
                 .font(.body)
                 .foregroundColor(.secondary)
 
@@ -150,7 +151,7 @@ public struct MotorExamView: View {
             StatusPill(text: "Step 1 of 3: Voice", color: CadenceTheme.accent, filled: true)
             Text("Take a deep breath and say “Ahhh” steadily")
                 .font(.title3.weight(.semibold))
-            Text("Hold a steady tone for 5 seconds. Cadence measures phonation stability.")
+            Text("Hold a steady tone for 5 seconds. Cadence notes how loud and how steady it is.")
                 .font(.body)
                 .foregroundColor(.secondary)
 
@@ -217,7 +218,7 @@ public struct MotorExamView: View {
             StatusPill(text: "Step 2 of 3: Handwriting", color: CadenceTheme.accent, filled: true)
             Text("Write a line or repeated “eee” on paper")
                 .font(.title3.weight(.semibold))
-            Text("Take a photo of the handwriting line. OpenCV measures micrographia (progressive letter shrinkage across the line).")
+            Text("Take a photo of the line. Cadence measures whether the letters change size from start to end.")
                 .font(.body)
                 .foregroundColor(.secondary)
 
@@ -228,16 +229,14 @@ public struct MotorExamView: View {
                     .frame(maxWidth: .infinity)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.1)))
                 if let status = handwritingStatus {
-                    Text(status)
-                        .font(.footnote)
-                        .foregroundColor(CadenceTheme.calm)
+                    InlineNotice(text: status)
                 }
             }
 
             if isAnalyzingHandwriting {
                 HStack(spacing: 12) {
                     ProgressView()
-                    Text("Analyzing letter heights with OpenCV…")
+                    Text("Measuring the letters…")
                         .font(.body)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -250,10 +249,10 @@ public struct MotorExamView: View {
                 }
 
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
-                    exam.measurements.handwritingOpencvDecayPct = -12.0
+                    exam.measurements.handwritingMeasured = false
                     exam.advanceToTimedWalk()
                 }) {
-                    Text("Use sample measurement & continue")
+                    Text("Skip handwriting this time")
                 }
             }
         }
@@ -262,29 +261,26 @@ public struct MotorExamView: View {
 
     private func analyzeHandwriting(jpeg: Data) {
         isAnalyzingHandwriting = true
-        handwritingStatus = "Analyzing handwriting…"
+        handwritingStatus = nil
         Task {
             do {
-                let client = app.settings.api
-                let result = try await client.analyzeHandwriting(jpeg: jpeg, sourceContext: .homeMotorExam)
+                let result = try await app.settings.api.analyzeHandwriting(jpeg: jpeg, sourceContext: .homeMotorExam)
                 await MainActor.run {
                     isAnalyzingHandwriting = false
-                    if let decay = result.opencvDecayPct {
+                    if result.measured, let decay = result.opencvDecayPct {
                         exam.measurements.handwritingOpencvDecayPct = decay
-                        handwritingStatus = String(format: "Measured decay: %.1f%%", decay)
+                        exam.measurements.handwritingMeasured = true
+                        Haptics.success()
+                        exam.advanceToTimedWalk()
                     } else {
-                        exam.measurements.handwritingOpencvDecayPct = 0.0
-                        handwritingStatus = "Analyzed (no significant decay)"
+                        // Stay on this step: an unreadable photo is not a result.
+                        handwritingStatus = "Couldn't read enough of the line. Try another photo with the whole line in view, or skip."
                     }
-                    Haptics.success()
-                    exam.advanceToTimedWalk()
                 }
             } catch {
                 await MainActor.run {
                     isAnalyzingHandwriting = false
-                    handwritingStatus = "Photo captured · advancing to walk test"
-                    exam.measurements.handwritingOpencvDecayPct = -8.0
-                    exam.advanceToTimedWalk()
+                    handwritingStatus = "Couldn't reach Cadence to measure the photo. Try again, or skip this step."
                 }
             }
         }
@@ -297,7 +293,7 @@ public struct MotorExamView: View {
             StatusPill(text: "Step 3 of 3: Timed Walk", color: CadenceTheme.accent, filled: true)
             Text("Stand up and walk normally for 10 seconds")
                 .font(.title3.weight(.semibold))
-            Text("Keep the phone in your pocket or hold it steady. We measure cadence, gait symmetry, and freeze episodes.")
+            Text("Keep the phone in a pocket. Cadence counts your steps and notes any pauses.")
                 .font(.body)
                 .foregroundColor(.secondary)
 
@@ -332,7 +328,13 @@ public struct MotorExamView: View {
     private func beginWalkCountdown() {
         isWalkCountingDown = true
         walkSecondsRemaining = 10
-        walkRecorder = WalkTestRecorder()
+        let recorder = WalkTestRecorder()
+        walkRecorder = recorder
+        if !app.motion.isRunning {
+            app.walking.setProtection(enabled: true)
+            startedMotionForWalk = app.motion.isRunning
+        }
+        walkSinkToken = app.motion.addSink { sample in recorder.ingest(sample) }
 
         walkTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
             Task { @MainActor in
@@ -348,24 +350,32 @@ public struct MotorExamView: View {
     private func finishWalkTest() {
         cleanUpTimers()
         isWalkCountingDown = false
+        stopWalkRecording()
         let result = walkRecorder.finish()
-        let cadence = result.cadenceSpm > 0 ? result.cadenceSpm : 108.0
-        let fi = result.meanFreezeIndex > 0 ? result.meanFreezeIndex : 0.42
-        let fog = result.fogCount
-
-        exam.measurements.walkCadenceSpm = cadence
-        exam.measurements.walkMeanFI = fi
-        exam.measurements.walkFogCount = fog
+        // Fewer than three seconds or no steps counted is not a measurement.
+        let measured = result.durationSec >= 3.0 && result.stepCount > 0
+        exam.measurements.walkCadenceSpm = measured ? result.cadenceSpm : 0
+        exam.measurements.walkMeanFI = measured ? result.meanFreezeIndex : 0
+        exam.measurements.walkFogCount = measured ? result.fogCount : 0
+        exam.measurements.walkMeasured = measured
 
         Task {
             await exam.completeExam()
-            if let scored = exam.lastResult {
-                app.recordDiary(
-                    .checkInAnswered,
-                    detail: "Motor check: \(scored.medicationStateLabel) (Score: \(Int(scored.compositeMotorScore))/100)"
-                )
+            if let record = exam.lastRecord {
+                app.recordDiary(.motorCheck, detail: TaskMetricsSummary.diaryDetail(record))
             }
             Haptics.success()
+        }
+    }
+
+    private func stopWalkRecording() {
+        if let token = walkSinkToken {
+            app.motion.removeSink(token)
+            walkSinkToken = nil
+        }
+        if startedMotionForWalk {
+            app.walking.setProtection(enabled: false)
+            startedMotionForWalk = false
         }
     }
 
@@ -376,9 +386,9 @@ public struct MotorExamView: View {
             ProgressView()
                 .scaleEffect(1.5)
                 .tint(CadenceTheme.accent)
-            Text("Scoring your motor check…")
+            Text("Saving your motor check…")
                 .font(.title3.weight(.semibold))
-            Text("Computing voice stability, handwriting decay, and gait cadence against neurologist baseline.")
+            Text("This only takes a moment.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -392,43 +402,24 @@ public struct MotorExamView: View {
 
     private var completedCard: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                IconBadge(systemName: "checkmark.seal.fill", color: CadenceTheme.calm, size: 48)
-                Spacer()
-                if let state = exam.lastResult?.medicationStateLabel {
-                    StatusPill(text: state, color: CadenceTheme.accent, filled: true)
+            IconBadge(systemName: "checkmark.seal.fill", color: CadenceTheme.calm, size: 48)
+            Text("Motor check done")
+                .font(.title2.weight(.bold))
+
+            if let record = exam.lastRecord {
+                VStack(spacing: 14) {
+                    ForEach(TaskMetricsSummary.lines(current: record, previous: exam.previousRecord), id: \.title) { line in
+                        metricRow(line)
+                    }
                 }
             }
 
-            if let result = exam.lastResult {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Composite Motor Score")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text("\(Int(result.compositeMotorScore)) / 100")
-                        .font(.system(size: 48, weight: .bold, design: .rounded))
-                        .foregroundColor(CadenceTheme.calm)
-                }
-
-                Divider()
-
-                VStack(spacing: 12) {
-                    scoreRow(title: "Voice Stability", score: result.voiceScore, icon: "waveform")
-                    scoreRow(title: "Handwriting Size", score: result.handwritingScore, icon: "pencil.line")
-                    scoreRow(title: "Gait & Cadence", score: result.gaitScore, icon: "figure.walk")
-                }
-
-                if !result.clinicalSummary.isEmpty {
-                    Text(result.clinicalSummary)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                        .padding(10)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.1)))
-                }
-            } else {
-                Text("Motor check complete. Measurements saved and will sync with your neurologist report.")
-                    .font(.body)
-            }
+            Text(exam.lastResult == nil
+                 ? "Saved on your phone. It will be sent when you're back online."
+                 : "Saved in your diary to share with your care team. These are measurements, not a judgement of how you are doing.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             GuardedButton(size: .giant, style: .filled(CadenceTheme.calm), action: {
                 dismiss()
@@ -439,16 +430,22 @@ public struct MotorExamView: View {
         .card()
     }
 
-    private func scoreRow(title: String, score: Double, icon: String) -> some View {
-        HStack {
-            Image(systemName: icon)
+    private func metricRow(_ line: TaskMetricsSummary.Line) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: line.systemImage)
                 .foregroundColor(CadenceTheme.accent)
                 .frame(width: 24)
-            Text(title).font(.body)
-            Spacer()
-            Text("\(Int(score)) / 100")
-                .font(.body.weight(.semibold).monospacedDigit())
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(line.title).font(.subheadline).foregroundColor(.secondary)
+                Text(line.value).font(.body.weight(.semibold))
+                if let comparison = line.comparison {
+                    Text(comparison).font(.footnote).foregroundColor(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private func cleanUpTimers() {
@@ -456,5 +453,6 @@ public struct MotorExamView: View {
         voiceTimer = nil
         walkTimer?.invalidate()
         walkTimer = nil
+        stopWalkRecording()
     }
 }

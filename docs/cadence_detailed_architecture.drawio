@@ -96,7 +96,7 @@
           <mxGeometry x="1255" y="45" width="310" height="105" as="geometry" />
         </mxCell>
 
-        <mxCell id="l3_s5" value="5. Proactive Voice Alert &amp; Sync Log&#xa;• Muse Voice (or AVSpeechSynthesizer):&#xa;  &quot;High-protein meal (~28g) detected&#xa;   25 min before your 1:00 PM dose.&quot;&#xa;• Sync SQLite insert before response" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=11;fontStyle=1;align=left;spacingLeft=10;strokeWidth=2;" vertex="1" parent="lane3">
+        <mxCell id="l3_s5" value="5. Proactive Voice Alert &amp; Sync Log&#xa;• Phone voice (AVSpeechSynthesizer):&#xa;  &quot;High-protein meal (~28g) detected&#xa;   25 min before your 1:00 PM dose.&quot;&#xa;• Sync SQLite insert before response" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=11;fontStyle=1;align=left;spacingLeft=10;strokeWidth=2;" vertex="1" parent="lane3">
           <mxGeometry x="1665" y="45" width="345" height="105" as="geometry" />
         </mxCell>
 
@@ -127,7 +127,7 @@
           <mxGeometry x="1255" y="48" width="310" height="105" as="geometry" />
         </mxCell>
 
-        <mxCell id="l4_s5" value="5. Calm Open-Ear Voice Reply&#xa;• Plays privately via Muse Voice:&#xa;  &quot;No one is in the armchair—there is&#xa;   a coat on the cushion.&quot;&#xa;• Sync SQLite insert (no image bytes)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=11;fontStyle=1;align=left;spacingLeft=10;strokeWidth=2;" vertex="1" parent="lane4">
+        <mxCell id="l4_s5" value="5. Calm Open-Ear Voice Reply&#xa;• Plays privately in the phone&apos;s voice:&#xa;  &quot;No one is in the armchair—there is&#xa;   a coat on the cushion.&quot;&#xa;• Sync SQLite insert (no image bytes)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;fontColor=#78350F;fontSize=11;fontStyle=1;align=left;spacingLeft=10;strokeWidth=2;" vertex="1" parent="lane4">
           <mxGeometry x="1665" y="48" width="345" height="105" as="geometry" />
         </mxCell>
 
@@ -204,11 +204,11 @@
           <mxGeometry x="40" y="1215" width="2040" height="255" as="geometry" />
         </mxCell>
 
-        <mxCell id="c_meta" value="🟣 CORE 1: META MODEL API ($150 Credits — Per-Model Breakers)&#xa;• SAM 3.1 (1.8s budget): Instance masks &amp; letter boxes&#xa;• Muse Transcribe (1.2s budget): Whisper &amp; check-in STT&#xa;• Muse Voice (0.8s budget): Open-ear spoken responses&#xa;• Per-Model 3-Strike Circuit Breakers: Keyed by model_id&#xa;  (meta:sam-3.1, meta:muse-voice, meta:muse-transcribe)&#xa;  so a SAM outage NEVER trips Muse Voice or STT!" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAF5FF;strokeColor=#7C3AED;fontColor=#0F172A;fontSize=11;fontStyle=1;align=left;spacingLeft=12;strokeWidth=2;" vertex="1" parent="lane7">
+        <mxCell id="c_meta" value="🟣 CORE 1: META MODEL API ($150 Credits — Per-Model Breakers)&#xa;• SAM 3.1 (1.8s budget): Instance masks &amp; letter boxes&#xa;• Muse Voice Transcribe (6s budget): second listener for&#xa;  fall check-ins and voice dose logging&#xa;• No Meta TTS exists: replies use the phone&apos;s voices&#xa;• Per-Model 3-Strike Circuit Breakers: Keyed by model_id&#xa;  (meta:sam-3.1, meta:muse-voice-transcribe-1.0)&#xa;  so a SAM outage NEVER trips transcription!" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAF5FF;strokeColor=#7C3AED;fontColor=#0F172A;fontSize=11;fontStyle=1;align=left;spacingLeft=12;strokeWidth=2;" vertex="1" parent="lane7">
           <mxGeometry x="25" y="48" width="470" height="190" as="geometry" />
         </mxCell>
 
-        <mxCell id="c_baseten" value="⚡ CORE 2: BASETEN ($100 Credits • 2M TPM — Active)&#xa;• Endpoint: https://inference.baseten.co/v1&#xa;• Model: meta-models/muse-spark-open-1026 (Configurable)&#xa;• Shared 4.0s Request Deadline across SAM + Baseten + TTS&#xa;• Selects from SAM-returned label set L_sam; narrates&#xa;  deterministic S(t_k) ON/OFF Diary &amp; Motor Exam trends&#xa;• Qualifies for $10K 'Best Build on Meta Open Weight Models'" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#0F172A;fontSize=11;fontStyle=1;align=left;spacingLeft=12;strokeWidth=2;" vertex="1" parent="lane7">
+        <mxCell id="c_baseten" value="⚡ CORE 2: BASETEN ($100 Credits • 2M TPM — Active)&#xa;• Endpoint: https://inference.baseten.co/v1&#xa;• Model: meta-models/muse-spark-open-1026 (Configurable)&#xa;• Shared 4.0s Request Deadline across SAM + Baseten&#xa;• Selects from SAM-returned label set L_sam; narrates&#xa;  deterministic S(t_k) ON/OFF Diary &amp; Motor Exam trends&#xa;• Qualifies for $10K 'Best Build on Meta Open Weight Models'" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;fontColor=#0F172A;fontSize=11;fontStyle=1;align=left;spacingLeft=12;strokeWidth=2;" vertex="1" parent="lane7">
           <mxGeometry x="530" y="48" width="480" height="190" as="geometry" />
         </mxCell>
 

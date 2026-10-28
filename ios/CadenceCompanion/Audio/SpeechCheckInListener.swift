@@ -84,6 +84,16 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
     private var transcriptCallback: ((String, Double) -> Void)?
     private var earlyResolutionCallback: ((String) -> Void)?
 
+    /// Says when the app itself is talking. Nothing heard then counts, so the
+    /// spoken prompt can never answer the check-in.
+    public var echoGuard: EchoGuarding = AudioCueEngine.shared
+    private var echoFilter = EchoFilteredTranscript()
+
+    /// Builds the Muse Voice Transcribe listener that runs beside the
+    /// on-device recognizer. Nil (the default) means on-device only.
+    public var cloudEarFactory: ((@escaping (String) -> Void) -> CloudEar)?
+    private var cloudEar: CloudEar?
+
     public override init() {
         self.recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         super.init()
@@ -110,6 +120,12 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
         self.latestTranscript = ""
         self.transcriptCallback = onTranscriptUpdate
         self.earlyResolutionCallback = onEarlyResolution
+        self.echoFilter = EchoFilteredTranscript()
+        self.cloudEar = cloudEarFactory? { [weak self] text in
+            // Either listener can resolve the check-in; the same rules apply.
+            guard let self, self.isListening else { return }
+            self.evaluateEarlyPhrases(text)
+        }
         audioQueue.async { [weak self] in
             self?.openMicrophone(session: session)
         }
@@ -174,18 +190,22 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
                 hasInstalledTap = false
             }
 
+            let sampleRate = recordingFormat.sampleRate
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
                 guard let self = self else { return }
                 request.append(buffer)
+                let echo = self.echoGuard.isInEchoWindow(at: Date())
 
-                // Compute buffer RMS amplitude for vocal level & groan tracking
                 if let channelData = buffer.floatChannelData?[0] {
                     let frameLength = Int(buffer.frameLength)
+                    let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
+                    self.cloudEar?.feed(samples: samples, sampleRate: sampleRate, echoActive: echo)
+
+                    // Voice level for the groan rule. The app's own prompt is
+                    // loud and must not count as the wearer making a sound.
+                    guard !echo else { return }
                     var sumSquares: Float = 0.0
-                    for i in 0..<frameLength {
-                        let sample = channelData[i]
-                        sumSquares += sample * sample
-                    }
+                    for sample in samples { sumSquares += sample * sample }
                     let rms = sqrt(sumSquares / Float(max(1, frameLength)))
                     let dbfs = Double(20.0 * log10(max(1e-5, rms)))
                     DispatchQueue.main.async {
@@ -202,10 +222,12 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
                 guard let self = self else { return }
                 if let result = result {
                     let text = result.bestTranscription.formattedString
+                    let echo = self.echoGuard.isInEchoWindow(at: Date())
                     DispatchQueue.main.async {
-                        self.latestTranscript = text
-                        self.transcriptCallback?(text, self.maxVocalLevelDbfs)
-                        self.evaluateEarlyPhrases(text)
+                        guard let fresh = self.echoFilter.update(fullTranscript: text, echoActive: echo) else { return }
+                        self.latestTranscript = fresh
+                        self.transcriptCallback?(fresh, self.maxVocalLevelDbfs)
+                        self.evaluateEarlyPhrases(fresh)
                     }
                 }
                 if error != nil || (result?.isFinal ?? false) {
@@ -241,6 +263,8 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
         session += 1
         let result = (latestTranscript, maxVocalLevelDbfs)
         isListening = false
+        cloudEar?.stop()
+        cloudEar = nil
         audioQueue.async { [weak self] in
             self?.tearDownEngine()
         }

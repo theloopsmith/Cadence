@@ -3,6 +3,7 @@ import httpx
 
 from app.clients.circuit_breaker import RequestDeadlineContext, circuit_breakers
 from app.config import settings
+from app.services.plain_language import is_plain, summarize_day
 
 
 class FireworksClient:
@@ -83,8 +84,9 @@ class FireworksClient:
         deadline: Optional[RequestDeadlineContext] = None,
     ) -> Optional[str]:
         """
-        Uses Llama 3.3 70B on Fireworks to generate an objective clinical summary
-        narrative for the neurologist report. Returns None on failure or if unconfigured.
+        Rephrases the plain day summary with Llama 3.3 70B. Only the plain facts
+        are sent, and the reply is rejected unless it stays plain. Returns None on
+        failure, if unconfigured, or if the reply drifts into clinical language.
         """
         model_id = settings.fireworks_llm_model
         if not settings.fireworks_api_key:
@@ -92,28 +94,11 @@ class FireworksClient:
         if not circuit_breakers.is_available(self.PROVIDER, model_id):
             return None
 
-        on_pct = summary_stats.get("on_pct", 0.0)
-        wearing_off_pct = summary_stats.get("wearing_off_pct", 0.0)
-        off_pct = summary_stats.get("off_pct", 0.0)
-        fog_total = summary_stats.get("fog_count", 0)
-        fall_total = summary_stats.get("fall_count", 0)
-        resolved_falls = summary_stats.get("fall_candidate_resolved_count", 0)
-        latest_exam = summary_stats.get("latest_exam_score")
-        delta = summary_stats.get("exam_on_vs_off_delta")
-
+        facts = summarize_day(summary_stats)
         prompt = (
-            f"Generate a concise, 2-3 sentence objective clinical report for a movement disorders neurologist:\n"
-            f"- 24h Motor States: ON: {on_pct:.0f}%, WEARING_OFF: {wearing_off_pct:.0f}%, OFF: {off_pct:.0f}%\n"
-            f"- Freezing of Gait (FoG) Episodes: {fog_total}\n"
-            f"- Falls: {fall_total} confirmed, {resolved_falls} resolved by voice check-in\n"
+            "Rewrite these facts as two or three short, warm sentences for the person and their care team. "
+            "Keep every number exactly as given. Add nothing.\n\n" + facts
         )
-        if latest_exam is not None:
-            prompt += f"- Latest 3-step home motor exam composite score: {latest_exam:.1f}/100\n"
-        if delta:
-            prompt += (
-                f"- Levodopa response: {delta.get('off_baseline_state', 'OFF')} composite {float(delta['off_composite']):.1f} "
-                f"-> ON composite {float(delta['on_composite']):.1f} (change: {float(delta['composite_improvement_pts']):+.1f} pts)\n"
-            )
 
         try:
             timeout_sec = (
@@ -133,9 +118,9 @@ class FireworksClient:
                             {
                                 "role": "system",
                                 "content": (
-                                    "You are an objective Parkinson's clinical decision support AI assistant. "
-                                    "Provide a precise, factual summary strictly derived from the provided numbers. "
-                                    "Do not extrapolate or give advice."
+                                    "You describe a day's logged events in plain, reassuring language. "
+                                    "Never name medication states, never give scores, never interpret "
+                                    "health or give advice about medication."
                                 ),
                             },
                             {"role": "user", "content": prompt},
@@ -145,7 +130,7 @@ class FireworksClient:
                 resp.raise_for_status()
                 text = resp.json()["choices"][0]["message"]["content"].strip()
                 circuit_breakers.record_success(self.PROVIDER, model_id)
-                return text
+                return text if is_plain(text) else None
         except Exception:
             circuit_breakers.record_failure(self.PROVIDER, model_id)
             return None

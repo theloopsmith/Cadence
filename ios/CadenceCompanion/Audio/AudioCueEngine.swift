@@ -1,7 +1,7 @@
 import AVFoundation
 
 /// Launch-configured priority audio engine (P0 Fall > P1 FoG Metronome > P2 Exam/Reality > P3 Nudge).
-public final class AudioCueEngine {
+public final class AudioCueEngine: EchoGuarding {
     public static let shared = AudioCueEngine()
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
@@ -10,8 +10,25 @@ public final class AudioCueEngine {
     public private(set) var isSirenActive: Bool = false
     public private(set) var isMetronomeActive: Bool = false
 
+    /// Keeps the app alive in the background while protection runs.
+    public private(set) lazy var keepAlive: SilentAudioKeepAlive = SilentAudioKeepAlive(engine: engine)
+
+    /// A voice chosen in setup. Nil, or a voice that has been deleted, means
+    /// "the most natural English voice installed".
+    public var preferredVoiceIdentifier: String? {
+        didSet { cachedVoice = nil }
+    }
+    private var cachedVoice: AVSpeechSynthesisVoice?
+
+    /// When the app is speaking, and for a moment after. Listeners ignore the
+    /// microphone in that window so the app never answers its own question.
+    private var echoWindow = EchoWindow()
+    private let echoLock = NSLock()
+    private lazy var speechObserver = SpeechObserver(engine: self)
+
     private init() {
         configureLaunchAudioSession()
+        synthesizer.delegate = speechObserver
         engine.attach(playerNode)
         engine.connect(playerNode, to: engine.mainMixerNode, format: pcmFormat)
         engine.mainMixerNode.outputVolume = 1.0
@@ -119,7 +136,7 @@ public final class AudioCueEngine {
         if isSirenActive && priority > 0 { return }
         if isMetronomeActive && priority > 1 { return }
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.voice = currentVoice()
         utterance.rate = 0.48
         utterance.volume = (priority == 0) ? 1.0 : 0.85
         synthesizer.speak(utterance)
@@ -165,5 +182,61 @@ public final class AudioCueEngine {
             }
         }
         return buffer
+    }
+
+    // MARK: - Voice
+
+    /// The voice prompts are spoken in.
+    public func currentVoice() -> AVSpeechSynthesisVoice? {
+        if let cachedVoice { return cachedVoice }
+        let chosen = VoiceSelection.best(from: VoiceCandidate.installed, preferred: preferredVoiceIdentifier)
+        cachedVoice = chosen.flatMap { AVSpeechSynthesisVoice(identifier: $0.identifier) }
+            ?? AVSpeechSynthesisVoice(language: "en-US")
+        return cachedVoice
+    }
+
+    /// Plays a short sample in a given voice, for choosing one in setup.
+    public func speakSample(voiceIdentifier: String) {
+        let utterance = AVSpeechUtterance(string: "Hello. This is how Cadence will sound. Step with the beat.")
+        utterance.voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier)
+        utterance.rate = 0.48
+        synthesizer.stopSpeaking(at: .immediate)
+        synthesizer.speak(utterance)
+    }
+
+    // MARK: - Echo window
+
+    public func isInEchoWindow(at date: Date) -> Bool {
+        echoLock.lock(); defer { echoLock.unlock() }
+        return synthesizer.isSpeaking || echoWindow.isActive(at: date)
+    }
+
+    fileprivate func speechDidStart() {
+        echoLock.lock(); echoWindow.speechStarted(); echoLock.unlock()
+    }
+
+    fileprivate func speechDidEnd() {
+        echoLock.lock(); echoWindow.speechEnded(at: Date()); echoLock.unlock()
+    }
+}
+
+/// Receives the synthesizer's start and finish callbacks.
+private final class SpeechObserver: NSObject, AVSpeechSynthesizerDelegate {
+    private unowned let engine: AudioCueEngine
+
+    init(engine: AudioCueEngine) {
+        self.engine = engine
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        engine.speechDidStart()
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        engine.speechDidEnd()
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        engine.speechDidEnd()
     }
 }

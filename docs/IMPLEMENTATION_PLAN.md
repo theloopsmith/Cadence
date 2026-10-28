@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **Hackathon Compliance, Hardware Constraints & Clinical Safety Architecture**
-> - **Page 5 Hardware Constraint**: Per the official Meta Global AI Developer Hackathon handbook (Page 5), **Meta Gen 3 AI Glasses have no HUD/display** and apps do **not** run natively on the glasses. All edge signal processing executes on the paired **iOS Companion App** via the **Meta Wearables Device Access Toolkit**, and all user feedback is delivered via **open-ear speakers** (`Muse Voice` / `AVAudioEngine` / `AVSpeechSynthesizer`), with emergency bystander alerts forced out of the **iPhone bottom speaker** (`overrideOutputAudioPort(.speaker)`).
+> - **Page 5 Hardware Constraint**: Per the official Meta Global AI Developer Hackathon handbook (Page 5), **Meta Gen 3 AI Glasses have no HUD/display** and apps do **not** run natively on the glasses. All edge signal processing executes on the paired **iOS Companion App** via the **Meta Wearables Device Access Toolkit**, and all user feedback is delivered via **open-ear speakers** (`AVAudioEngine` / `AVSpeechSynthesizer` with the phone's most natural installed voice), with emergency bystander alerts forced out of the **iPhone bottom speaker** (`overrideOutputAudioPort(.speaker)`).
 > - **Fail-Safe Safety & Clinical Grounding**:
 >   1. **Zero-Latency Safety Critical Path**: Freezing of Gait (FoG) rhythmic cueing (`<50 ms` on-device DSP) and 3-stage Fall Impact Detection execute 100% locally on the iOS companion app with **zero cloud dependency**.
 >   2. **Guaranteed Event Persistence & Synchronous Commits**: Every fall candidate is persisted locally in encrypted SQLite (`candidate_check_in_pending`) the millisecond Stage 3 completes—before the 12-second check-in begins. All backend endpoints (`POST /api/v1/events/fog`, `POST /api/v1/events/fall`, `POST /api/v1/exam/complete`, etc.) perform a **synchronous SQLite commit before returning HTTP `200 OK` or calling external APIs**.
@@ -34,7 +34,7 @@ flowchart TB
 
     subgraph T3["TIER 3: FASTAPI CLINICAL ORCHESTRATOR & SPONSOR CLOUD LAYER"]
         API["FastAPI Backend + Encrypted SQLite<br/>• Device-Writer vs Clinician-Reader RBAC<br/>• Shared 4.0s Deadline & Per-Model Breakers<br/>• Synchronous SQLite Commits<br/>• Pure Motor S(t_k) ON/OFF Diary"]
-        META["Meta Model API ($150 Credits)<br/>• SAM 3.1 (Food+Plate, Reality & Writing)<br/>• Muse Transcribe (Cloud STT)<br/>• Muse Voice (Natural Open-Ear TTS)"]
+        META["Meta Model API ($150 Credits)<br/>• SAM 3.1 (Food+Plate, Reality & Writing)<br/>• Muse Voice Transcribe (second listener for check-ins and dose logging)"]
         BASE["Baseten ($100 Credits • 2M TPM)<br/>• meta-models/muse-spark-open-1026<br/>• Chooses Slot strictly from L_sam<br/>• Narrates Deterministic ON/OFF Diary"]
         TWILIO["Twilio Escalation + Signed Webhooks<br/>• Primary SMS + Voice (<Gather> '1')<br/>• X-Twilio-Signature Validation<br/>• Secondary Escalation & 60s Retry Loop<br/>• Public /dashboard HTML + Bearer API"]
     end
@@ -58,7 +58,7 @@ All external model identifiers are loaded via `pydantic-settings` in `backend/ap
 
 | Sponsor / Platform | Available Credits / Limits | Active Role in Cadence | Config Env Var & Default Model ID |
 | :--- | :--- | :--- | :--- |
-| **Meta Model API** | **\$150** (`META_API_KEY`) | **Primary Multimodal Core**: `SAM 3.1` segmentation masks (food + plate normalization, hallucination verification, handwriting letter boxes), `Muse Transcribe` STT, and `Muse Voice` TTS. | `META_SAM_MODEL="sam-3.1"`<br/>`META_STT_MODEL="muse-transcribe"`<br/>`META_TTS_MODEL="muse-voice"` |
+| **Meta Model API** | **\$150** (`META_API_KEY`) | **Primary Multimodal Core**: `SAM 3.1` segmentation masks (food + plate normalization, hallucination verification, handwriting letter boxes), and `Muse Voice Transcribe` speech to text (`POST https://api.meta.ai/v1/asr/transcribe`, $0.18 per audio hour). Meta offers no text-to-speech API; spoken replies use the phone's voices. | `META_SAM_MODEL="sam-3.1"`<br/>`META_STT_MODEL="muse-voice-transcribe-1.0"`<br/>`META_ASR_BASE_URL="https://api.meta.ai/v1"` |
 | **Baseten** | **\$100** (`BASETEN_API_KEY`, **2M TPM**) | **Primary High-Throughput Reasoning & Clinical Summarizer**: Runs `muse-spark-open-1026` at `https://inference.baseten.co/v1` to select from SAM-verified labels $L_{\text{sam}}$ and narrate the deterministic $S(t_k)$ ON/OFF diary & Home Motor Exam report. | `BASETEN_MODEL="meta-models/muse-spark-open-1026"` |
 
 ### 2.2 Shared `4.0 s` Request Deadline & Per-Model 3-Strike Circuit Breakers
@@ -66,14 +66,13 @@ To guarantee interactive response times on the glasses and prevent cross-service
 1. **Shared `4.0 s` Request Deadline (`RequestDeadlineContext`)**: Every cloud-assisted interactive pipeline (Pipelines 3, 4, 5, and 6) initializes a request-scoped `deadline = time.monotonic() + 4.0`. Each downstream stage receives `min(stage_budget, remaining_budget)`:
    - **Stage A (`SAM 3.1`)**: `1.8 s` max budget.
    - **Stage B (Baseten `muse-spark-open-1026`)**: `1.2 s` max budget.
-   - **Stage C (`Muse Voice` TTS)**: `0.8 s` max budget (if remaining budget `< 0.35 s`, skips cloud TTS and returns text immediately for zero-latency on-device `AVSpeechSynthesizer` playback).
+   - **Stage C (spoken reply)**: the server returns text only; the phone speaks it with `AVSpeechSynthesizer`, so no time is spent on cloud audio.
 2. **Per-Model 3-Strike Circuit Breakers (`app/clients/circuit_breaker.py`)**:
    - Circuit breakers are keyed by **`(provider, model_id)`** rather than by provider alone:
      - `("meta", "sam-3.1")`
-     - `("meta", "muse-transcribe")`
-     - `("meta", "muse-voice")`
+     - `("meta", "muse-voice-transcribe-1.0")`
      - `("baseten", settings.baseten_model)`
-   - **Why Per-Model**: If `SAM 3.1` experiences transient latency and trips its 3-strike breaker (`60 s` cooldown), `Muse Voice` and `Muse Transcribe` remain **CLOSED (healthy)** so spoken audio and transcription never degrade unnecessarily.
+   - **Why Per-Model**: If `SAM 3.1` experiences transient latency and trips its 3-strike breaker (`60 s` cooldown), `Muse Voice Transcribe` remains **CLOSED (healthy)** so transcription never degrades unnecessarily.
 
 ### 2.3 Protected Demo-Critical Path vs. Secondary Scope Cut List
 To ensure the 9-day build finishes on schedule for the **3-minute pitch video**, features are partitioned into a **Protected Demo-Critical Path (`P0`)** and an **Ordered 6-Item Scope Cut List (`P1` / Stretch)**:
@@ -116,7 +115,7 @@ Because a user could experience a gait freeze or fall while a lower-priority voi
 | :---: | :--- | :--- | :--- |
 | **Priority 0 (Highest)** | **Fall Check-In Prompt & Bystander Siren** | Immediately preempts and cancels P1, P2, and P3 audio. | Check-in on glasses (`0.85` vol); **Bystander Siren forced to iPhone bottom speaker (`0 dBFS`)**. |
 | **Priority 1** | **Freezing of Gait (FoG) 100 BPM RAS Metronome** | Preempts P2 and P3 immediately (`<50 ms`). Only preempted by P0 Fall Alert. | Open-ear glasses speakers (`AVAudioEngine` PCM buffer). |
-| **Priority 2** | **Guided Home Motor Exam Prompts & Hallucination Reply** | Preempts P3 ambient nudges. Pauses/waits if P1 FoG metronome is active. | Open-ear glasses speakers (`Muse Voice` or `AVSpeechSynthesizer`). |
+| **Priority 2** | **Guided Home Motor Exam Prompts & Hallucination Reply** | Preempts P3 ambient nudges. Pauses/waits if P1 FoG metronome is active. | Open-ear glasses speakers (`AVSpeechSynthesizer`). |
 | **Priority 3 (Lowest)** | **Ambient Coaching Nudges (Voice Volume, Handwriting, Protein)** | Dropped or deferred (`60 s`) if P0, P1, or P2 is active. | Open-ear glasses speakers (`0.65` vol). |
 
 - **Launch-Configured `.playAndRecord` Session & Hands-Free Profile (`HFP`) Note (`AudioCueEngine.init()`)**:
@@ -225,7 +224,7 @@ Because a user could experience a gait freeze or fall while a lower-priority voi
        - **Strict Validator**: The backend verifies `chosen_label in L_inanimate_sam` and ensures the rendered sentence contains zero living-entity words (`person`, `man`, `woman`, `child`, `someone`, `stranger`, `pet`, `dog`, `cat`). If Baseten times out or outputs any label $\notin L_{\text{inanimate,sam}}$, the backend deterministically selects the **highest-confidence inanimate mask directly from $L_{\text{inanimate,sam}}$** (*"Everything looks clear. No one is there—I only see a coat on the chair."*).
        - If $L_{\text{inanimate,sam}}$ is empty (only background/floor detected), renders `"REASSURE_EMPTY_SPACE"`: *"Everything looks clear and safe. No one is in that area."*
      - **Fail-Safe Unverified Fallback**: If `SAM 3.1` fails or times out (`sam_verified == False`), Baseten is bypassed and the backend returns: *"I couldn't get a clear view of the room right now. Please turn on a light or ask someone nearby."*
-  4. **Stage 4 — Synchronous SQLite Commit & Private Audio**: Commits the metadata row (`sam_masks_json`, `living_subject_present`, `spoken_response`) and returns audio via `Muse Voice` (`0.8 s` budget) or on-device `AVSpeechSynthesizer`.
+  4. **Stage 4 — Synchronous SQLite Commit & Private Audio**: Commits the metadata row (`sam_masks_json`, `living_subject_present`, `spoken_response`) and returns the reply text, which the phone speaks with `AVSpeechSynthesizer`.
 
 ---
 
@@ -473,7 +472,7 @@ Cadence/
 │   │   ├── models.py                          # Strict Pydantic request/response schemas
 │   │   ├── clients/
 │   │   │   ├── circuit_breaker.py             # Per-model 3-strike breaker + 4.0s shared deadline
-│   │   │   ├── meta_models.py                 # Meta Model API client (SAM 3.1, Muse Voice/STT)
+│   │   │   ├── meta_models.py                 # Meta Model API client (SAM 3.1, Muse Voice Transcribe)
 │   │   │   ├── baseten_llm.py                 # Baseten 2M-TPM client (muse-spark-open-1026)
 │   │   │   └── twilio_client.py               # Twilio SMS + Voice (<Gather>) + All-Clear SMS
 │   │   ├── services/
@@ -559,7 +558,7 @@ class RequestDeadlineContext:
 class PerModelCircuitBreakerRegistry:
     """
     Tracks 3-strike circuit breakers keyed by (provider, model_id) so a transient
-    SAM 3.1 slowdown never trips Muse Voice TTS or Muse Transcribe STT.
+    SAM 3.1 slowdown never trips Muse Voice Transcribe.
     """
     def __init__(self, failure_threshold: int = 3, cooldown_sec: float = 60.0):
         self.failure_threshold = failure_threshold

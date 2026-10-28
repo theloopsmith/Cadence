@@ -147,6 +147,16 @@ CREATE TABLE IF NOT EXISTS motor_exams (
 );
 CREATE INDEX IF NOT EXISTS idx_motor_exams_patient_ts ON motor_exams(patient_id, timestamp_utc);
 
+-- 9. Accounts (scrypt password hashes only; never the password)
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL,
+    patient_id TEXT NOT NULL DEFAULT 'default_patient',
+    created_at_utc TEXT NOT NULL
+);
+
 -- 8. Voice Hypophonia Logs
 CREATE TABLE IF NOT EXISTS voice_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

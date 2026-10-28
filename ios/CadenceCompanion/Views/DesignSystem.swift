@@ -42,26 +42,6 @@ public enum CadenceTheme {
         return Color.gray.opacity(0.15)
         #endif
     }
-
-    /// Colour for an ON/OFF diary state.
-    public static func color(forState state: String) -> Color {
-        switch state {
-        case "ON": return calm
-        case "WEARING_OFF": return caution
-        case "OFF": return danger
-        default: return Color.secondary.opacity(0.35)
-        }
-    }
-
-    /// Plain-language label for an ON/OFF diary state.
-    public static func label(forState state: String) -> String {
-        switch state {
-        case "ON": return "Medication working"
-        case "WEARING_OFF": return "Wearing off"
-        case "OFF": return "Symptoms present"
-        default: return "No dose logged"
-        }
-    }
 }
 
 struct CardModifier: ViewModifier {
@@ -426,41 +406,6 @@ struct LevelMeter: View {
         .frame(height: 10)
         .accessibilityLabel("Voice level")
         .accessibilityValue("\(Int((min(max(level, 0), 1)) * 100)) percent")
-    }
-}
-
-/// Progress ring for scores out of 100.
-struct ScoreRing: View {
-    let score: Double
-    var lineWidth: CGFloat = 12
-    var size: CGFloat = 120
-
-    private var color: Color {
-        if score >= 70 { return CadenceTheme.calm }
-        if score >= 50 { return CadenceTheme.caution }
-        return CadenceTheme.danger
-    }
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(CadenceTheme.subtleFill, lineWidth: lineWidth)
-            Circle()
-                .trim(from: 0, to: CGFloat(min(max(score, 0), 100) / 100))
-                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .animation(.easeOut(duration: 0.6), value: score)
-            VStack(spacing: 2) {
-                Text(String(format: "%.0f", score))
-                    .font(.system(size: size * 0.3, weight: .bold, design: .rounded))
-                Text("of 100")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .frame(width: size, height: size)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Score \(Int(score)) of 100")
     }
 }
 

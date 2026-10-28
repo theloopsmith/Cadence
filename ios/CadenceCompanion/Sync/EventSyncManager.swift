@@ -18,10 +18,19 @@ public struct PendingEvent {
     public let retryCount: Int
 }
 
+/// What happened to one delivery attempt.
+public enum DeliveryOutcome: Equatable {
+    /// Accepted, or rejected as malformed in a way a retry can never fix.
+    case delivered
+    /// Offline, rate limited, or a server error: try again later.
+    case retryLater
+    /// The sign-in was refused (401/403). Keep the event and ask for sign-in.
+    case unauthorized
+}
+
 /// Abstracts the HTTPS POST so the retry policy can be tested without a network.
 public protocol EventTransport {
-    /// Delivers one event. Returns true when the backend accepted it (2xx).
-    func send(endpoint: String, jsonData: Data, bearerToken: String) async -> Bool
+    func send(endpoint: String, jsonData: Data, bearerToken: String) async -> DeliveryOutcome
 }
 
 /// Default transport: a plain URLSession POST against the FastAPI backend.
@@ -34,25 +43,35 @@ public struct URLSessionEventTransport: EventTransport {
         self.timeoutSec = timeoutSec
     }
 
-    public func send(endpoint: String, jsonData: Data, bearerToken: String) async -> Bool {
-        guard let url = URL(string: "\(baseURL)\(endpoint)") else { return false }
+    public func send(endpoint: String, jsonData: Data, bearerToken: String) async -> DeliveryOutcome {
+        guard let url = URL(string: "\(baseURL)\(endpoint)") else { return .retryLater }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.timeoutInterval = timeoutSec
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        if !bearerToken.isEmpty {
+            req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
         req.httpBody = jsonData
         do {
             let (_, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse else { return false }
-            // 4xx other than 429 means the backend rejected the payload itself;
-            // replaying it will never succeed, so treat it as delivered and let
-            // the row drain rather than retrying a poison event forever.
-            if (200...299).contains(http.statusCode) { return true }
-            if (400...499).contains(http.statusCode) && http.statusCode != 429 { return true }
-            return false
+            guard let http = response as? HTTPURLResponse else { return .retryLater }
+            return Self.outcome(forStatus: http.statusCode)
         } catch {
-            return false
+            return .retryLater
+        }
+    }
+
+    /// A refused sign-in is never "delivered": dropping a fall because a token
+    /// expired would lose the one event that matters most. Other 4xx mean the
+    /// payload itself was rejected and a retry cannot succeed.
+    public static func outcome(forStatus status: Int) -> DeliveryOutcome {
+        switch status {
+        case 200...299: return .delivered
+        case 401, 403: return .unauthorized
+        case 429: return .retryLater
+        case 400...499: return .delivered
+        default: return .retryLater
         }
     }
 }
@@ -79,6 +98,10 @@ public final class EventSyncManager {
 
     /// Swappable for tests.
     public var transport: EventTransport
+
+    /// Called after a drain in which the server refused the sign-in, on the
+    /// drain's thread. Hop to the main actor before touching UI state.
+    public var onUnauthorized: (() -> Void)?
 
     /// When false, the manager never dispatches on its own: neither the 15s
     /// periodic drain nor the opportunistic attempt on save. Tests drive
@@ -257,23 +280,32 @@ public final class EventSyncManager {
     public func drainPendingEvents(now: Date = Date()) async -> (delivered: Int, failed: Int) {
         var delivered = 0
         var failed = 0
+        var sawUnauthorized = false
+        defer {
+            if sawUnauthorized { onUnauthorized?() }
+        }
 
         for event in dueEvents(now: now) {
             guard let data = event.payloadJSON.data(using: .utf8) else {
                 markSynced(event.eventUUID)   // unparseable row: do not retry forever
                 continue
             }
-            let ok = await transport.send(
+            let outcome = await transport.send(
                 endpoint: event.endpoint,
                 jsonData: data,
                 bearerToken: deviceBearerToken
             )
-            if ok {
+            switch outcome {
+            case .delivered:
                 markSynced(event.eventUUID)
                 delivered += 1
-            } else {
+            case .retryLater:
                 scheduleRetry(event.eventUUID, currentRetryCount: event.retryCount, now: now)
                 failed += 1
+            case .unauthorized:
+                scheduleRetry(event.eventUUID, currentRetryCount: event.retryCount, now: now)
+                failed += 1
+                sawUnauthorized = true
             }
         }
         return (delivered, failed)

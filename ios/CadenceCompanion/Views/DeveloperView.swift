@@ -11,6 +11,7 @@ struct DeveloperView: View {
     @State private var question = "Is someone sitting in that chair?"
     @State private var cameraPurpose: CameraPurpose?
     @State private var forceSimple = false
+    @State private var showServerSummary = false
 
     enum CameraPurpose: Identifiable {
         case environment, meal
@@ -40,6 +41,9 @@ struct DeveloperView: View {
             .onAppear {
                 tools.refreshQueue()
                 Task { await tools.checkBackend() }
+            }
+            .sheet(isPresented: $showServerSummary) {
+                DaySummaryView(app: app)
             }
             .sheet(item: $cameraPurpose) { purpose in
                 CameraPicker(
@@ -133,6 +137,10 @@ struct DeveloperView: View {
         Section {
             Button("Make a dose due now") { tools.makeDoseDueNow() }
             Button("Clear today's logged doses") { tools.clearTodaysDoses() }
+            Toggle("Muse Voice Transcribe as second listener", isOn: Binding(
+                get: { app.settings.cloudListeningEnabled },
+                set: { app.settings.cloudListeningEnabled = $0 }
+            ))
             Button("Start voice logging") { app.voiceDose.begin() }
                 .disabled(app.voiceDose.state == .listening || app.voiceDose.state == .confirming)
             row("Voice state", "\(app.voiceDose.state)")
@@ -226,6 +234,7 @@ struct DeveloperView: View {
     private var diarySection: some View {
         Section("Diary") {
             Button("Write a sample day") { tools.seedSampleDay() }
+            Button("Server summary (last 24 hours)") { showServerSummary = true }
             Button("Clear today", role: .destructive) { tools.clearToday() }
         }
     }

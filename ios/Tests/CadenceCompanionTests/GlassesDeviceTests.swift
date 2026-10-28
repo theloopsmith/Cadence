@@ -212,7 +212,7 @@ final class MockMotionSource: MotionSource {
     let isAvailable: Bool
     private(set) var isActive = false
     init(available: Bool) { isAvailable = available }
-    func start(_ onSample: @escaping (IMUSample) -> Void) { isActive = true }
+    func start(_ onSample: @escaping (IMUSample) -> Void) { if isAvailable { isActive = true } }
     func stop() { isActive = false }
 }
 

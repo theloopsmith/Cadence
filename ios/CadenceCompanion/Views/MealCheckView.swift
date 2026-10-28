@@ -61,9 +61,9 @@ public struct MealCheckView: View {
     private var infoCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             IconBadge(systemName: "fork.knife", color: CadenceTheme.accent, size: 48)
-            Text("Protein & Levodopa Timing")
+            Text("Meals and protein")
                 .font(.title2.weight(.bold))
-            Text("Levodopa and dietary protein compete for the same transporters into your brain. Eating high protein within 1 hour of a dose can delay your medication and trigger an OFF period.")
+            Text("Some people notice that protein-rich meals close to a Levodopa dose matter for them. Cadence can estimate the protein on your plate and note meals near a dose in your diary, to talk over with your care team.")
                 .font(.body)
                 .foregroundColor(.secondary)
 
@@ -102,7 +102,7 @@ public struct MealCheckView: View {
                 .tint(CadenceTheme.accent)
             Text("Analyzing plate…")
                 .font(.headline)
-            Text("SAM 3.1 is normalizing portion size and estimating protein grams.")
+            Text("Estimating the protein on your plate.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }
@@ -117,13 +117,13 @@ public struct MealCheckView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 StatusPill(
-                    text: result.conflictDetected ? "Protein Conflict Detected" : "Safe to Eat",
+                    text: result.conflictDetected ? "Close to a dose" : "Meal noted",
                     color: result.conflictDetected ? CadenceTheme.caution : CadenceTheme.calm,
                     filled: true
                 )
                 Spacer()
                 if result.plateDetected {
-                    Text("Plate normalized")
+                    Text("Plate found")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -141,7 +141,7 @@ public struct MealCheckView: View {
 
             if !result.items.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Identified items:")
+                    Text("What Cadence saw:")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.secondary)
                     ForEach(result.items, id: \.label) { item in
@@ -160,7 +160,7 @@ public struct MealCheckView: View {
             }
 
             if result.conflictDetected {
-                Text("Recommendation: Take your Levodopa now with a full glass of water and wait 30–45 minutes before eating, or save this protein-rich food for 1 hour after your dose.")
+                Text("This meal is close to your Levodopa time and is noted in your diary. Questions about meals and your medication are best answered by your care team.")
                     .font(.footnote)
                     .foregroundColor(.secondary)
                     .padding(10)

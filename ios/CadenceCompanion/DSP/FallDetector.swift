@@ -27,6 +27,12 @@ public final class FallDetector {
         "don't call"
     ]
 
+    /// Spoken when a hard impact is confirmed. Contains none of the phrases that
+    /// cancel and none of the words that escalate, so even if the microphone
+    /// hears it the check-in cannot answer itself. Listeners also ignore
+    /// everything heard while the app is speaking.
+    public static let checkInPrompt = "Are you all right? Tell me how you are, or ask me to call someone."
+
     public static let distressAndNegationKeywords: [String] = [
         "not okay",
         "not fine",
@@ -169,10 +175,7 @@ public final class FallDetector {
                     )
 
                     stage = .stage3CheckInActive(eventUUID: eventUUID, startedAt: sample.timestamp)
-                    AudioCueEngine.shared.speakPrompt(
-                        "Hard impact detected. Say I am okay to cancel the caregiver alert.",
-                        priority: 0
-                    )
+                    AudioCueEngine.shared.speakPrompt(Self.checkInPrompt, priority: 0)
                     return eventUUID
                 }
             } else if postImpactElapsed > 2.5 {

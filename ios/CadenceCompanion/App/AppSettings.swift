@@ -7,7 +7,12 @@ import Foundation
 public final class AppSettings: ObservableObject {
     private enum Key {
         static let backendBaseURL = "cadence.backendBaseURL"
-        static let deviceToken = "cadence.deviceToken"
+        /// Read once to move an older build's token into the Keychain, then erased.
+        static let legacyDeviceToken = "cadence.deviceToken"
+        static let signedInUsername = "cadence.signedInUsername"
+        static let summaryName = "cadence.summaryName"
+        static let preferredVoice = "cadence.preferredVoice"
+        static let cloudListening = "cadence.cloudListening"
         static let caregiverName = "cadence.caregiverName"
         static let caregiverPhone = "cadence.caregiverPhone"
         static let emergencyNumber = "cadence.emergencyNumber"
@@ -42,8 +47,44 @@ public final class AppSettings: ObservableObject {
     @Published public var backendBaseURL: String {
         didSet { defaults.set(backendBaseURL, forKey: Key.backendBaseURL); apply() }
     }
+    /// The sign-in token, kept in the Keychain and never in UserDefaults.
     @Published public var deviceToken: String {
-        didSet { defaults.set(deviceToken, forKey: Key.deviceToken); apply() }
+        didSet { tokenStore.write(deviceToken); apply() }
+    }
+    /// Who the phone is signed in as, for display only.
+    @Published public var signedInUsername: String? {
+        didSet { defaults.set(signedInUsername, forKey: Key.signedInUsername) }
+    }
+
+    /// The shared development token, available in debug builds so the app
+    /// works against a local server before anyone signs in.
+    public nonisolated static var developmentToken: String {
+        #if DEBUG
+        return "cadence-dev-device-writer-token-2026"
+        #else
+        return ""
+        #endif
+    }
+
+    /// Server address baked into the build (`CadenceServerURL` in Info.plist),
+    /// or the local development server.
+    public nonisolated static var bundledServerURL: String {
+        let configured = (Bundle.main.object(forInfoDictionaryKey: "CadenceServerURL") as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        return configured.isEmpty || configured.hasPrefix("$(") ? "http://localhost:8000" : configured
+    }
+    /// The voice prompts are spoken in. Nil picks the most natural installed.
+    @Published public var preferredVoiceIdentifier: String? {
+        didSet { defaults.set(preferredVoiceIdentifier, forKey: Key.preferredVoice); apply() }
+    }
+    /// Muse Voice Transcribe listens alongside the on-device recognizer when online.
+    @Published public var cloudListeningEnabled: Bool {
+        didSet { defaults.set(cloudListeningEnabled, forKey: Key.cloudListening) }
+    }
+
+    /// The name printed at the top of shared summaries. Optional.
+    @Published public var summaryName: String {
+        didSet { defaults.set(summaryName, forKey: Key.summaryName) }
     }
     @Published public var caregiverName: String {
         didSet { defaults.set(caregiverName, forKey: Key.caregiverName) }
@@ -60,6 +101,7 @@ public final class AppSettings: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    private let tokenStore: TokenStoring
     /// The offline queue every event goes through.
     public let sync: EventSyncManager
     private weak var fallAlert: FallAlertCoordinator?
@@ -68,13 +110,25 @@ public final class AppSettings: ObservableObject {
     public init(
         defaults: UserDefaults = .standard,
         sync: EventSyncManager = .shared,
-        developerMode: Bool = AppSettings.defaultDeveloperMode
+        developerMode: Bool = AppSettings.defaultDeveloperMode,
+        tokenStore: TokenStoring? = nil,
+        defaultToken: String = AppSettings.developmentToken
     ) {
+        let store = tokenStore ?? (NSClassFromString("XCTestCase") != nil ? InMemoryTokenStore() : KeychainTokenStore())
         self.defaults = defaults
+        self.tokenStore = store
         self.sync = sync
         self.developerModeEnabled = developerMode
-        backendBaseURL = defaults.string(forKey: Key.backendBaseURL) ?? "http://localhost:8000"
-        deviceToken = defaults.string(forKey: Key.deviceToken) ?? "cadence-dev-device-writer-token-2026"
+        backendBaseURL = defaults.string(forKey: Key.backendBaseURL) ?? AppSettings.bundledServerURL
+        if let legacy = defaults.string(forKey: Key.legacyDeviceToken), store.read() == nil {
+            store.write(legacy)
+        }
+        defaults.removeObject(forKey: Key.legacyDeviceToken)
+        deviceToken = store.read() ?? defaultToken
+        signedInUsername = defaults.string(forKey: Key.signedInUsername)
+        summaryName = defaults.string(forKey: Key.summaryName) ?? ""
+        preferredVoiceIdentifier = defaults.string(forKey: Key.preferredVoice)
+        cloudListeningEnabled = defaults.object(forKey: Key.cloudListening) as? Bool ?? true
         caregiverName = defaults.string(forKey: Key.caregiverName) ?? ""
         caregiverPhone = defaults.string(forKey: Key.caregiverPhone) ?? ""
         emergencyNumber = defaults.string(forKey: Key.emergencyNumber) ?? "911"
@@ -113,6 +167,7 @@ public final class AppSettings: ObservableObject {
     }
 
     private func apply() {
+        AudioCueEngine.shared.preferredVoiceIdentifier = preferredVoiceIdentifier
         sync.backendBaseURL = trimmedBaseURL
         sync.deviceBearerToken = deviceToken
         exam?.backendBaseURL = trimmedBaseURL

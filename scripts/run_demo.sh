@@ -27,10 +27,26 @@ fi
 echo "Running Cadence automated test suite..."
 .venv/bin/python3 -m pytest -q
 
+# A demo sign-in for the dashboard, created once per database with a fresh
+# random password. Nothing is hardcoded; the password is shown only here.
+DEMO_USER="demo-care-team"
+if ! .venv/bin/python3 -c "
+from app.db import init_db_sync, fetch_one_sync
+init_db_sync()
+raise SystemExit(0 if fetch_one_sync('SELECT 1 FROM users WHERE username = ?', ('$DEMO_USER',)) else 1)
+" 2>/dev/null; then
+  DEMO_PASSWORD="$(.venv/bin/python3 -c 'import secrets; print(secrets.token_urlsafe(12))')"
+  CADENCE_NEW_USER_PASSWORD="$DEMO_PASSWORD" .venv/bin/python3 -m app.manage create-user \
+    --username "$DEMO_USER" --role device_writer >/dev/null
+  DEMO_NOTE="Dashboard sign-in: $DEMO_USER / $DEMO_PASSWORD  (shown once; save it)"
+else
+  DEMO_NOTE="Dashboard sign-in: $DEMO_USER (created earlier; add another with python -m app.manage create-user)"
+fi
+
 echo ""
 echo "=================================================================="
-echo "Starting Cadence Clinical Orchestrator on http://127.0.0.1:8000"
-echo "Neurologist Dashboard: http://127.0.0.1:8000/dashboard"
-echo "Default Clinician Token: cadence-dev-clinician-reader-token-2026"
+echo "Starting Cadence on http://127.0.0.1:8000"
+echo "Care-team summary: http://127.0.0.1:8000/dashboard"
+echo "$DEMO_NOTE"
 echo "=================================================================="
 exec .venv/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload

@@ -206,6 +206,7 @@ public final class DeveloperToolsModel: ObservableObject {
         app.recordDiary(.cue, detail: "A steady beat helped you step again", at: todayAt(hour: 12, minute: 0))
         app.recordDiary(.environmentCheck, detail: "Everything looks clear. Only a coat on the chair.", at: todayAt(hour: 13, minute: 0))
         app.recordDiary(.mealLogged, detail: "About 28 g protein", at: todayAt(hour: 13, minute: 30))
+        app.recordDiary(.motorCheck, detail: "Letters 22% smaller across the line · 96 steps a minute", at: todayAt(hour: 14, minute: 0))
         app.recordDiary(.checkInAnswered, detail: "You said you were okay", at: todayAt(hour: 15, minute: 0))
         app.recordDiary(.helpSent, detail: "Your caregiver was contacted", at: todayAt(hour: 16, minute: 0))
         app.recordDiary(.protectionOff, detail: "", at: todayAt(hour: 17, minute: 0))

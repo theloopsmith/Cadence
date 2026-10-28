@@ -22,6 +22,13 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: CadenceTheme.tapGap) {
+                    if app.auth.needsSignIn {
+                        InlineNotice(
+                            text: "Cadence is keeping today's events on this phone until it's signed in. A care partner can sign in from Help, then Care partner setup.",
+                            color: CadenceTheme.accent,
+                            systemName: "info.circle.fill"
+                        )
+                    }
                     statusCard
                     medicationCard
                     if !simple {

@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,10 +12,40 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Role-Based Bearer Tokens & Patient Binding
+    # "development" or "production". Production turns off every convenience below
+    # unless it is explicitly re-enabled, and refuses to start without a JWT secret.
+    cadence_env: str = "development"
+
+    # Login tokens (HS256). Required in production; at least 32 characters.
+    jwt_secret: str = ""
+    jwt_access_ttl_minutes: int = 720
+    # The phone is signed in once by a care partner; a short token would leave
+    # falls waiting on the phone every night.
+    jwt_device_ttl_days: int = 30
+
+    # Shared bearer tokens for local development and the demo. Never enabled in
+    # production unless CADENCE_ALLOW_STATIC_TOKENS=true is set on purpose.
+    allow_static_tokens: Optional[bool] = None
     cadence_device_token: str = "cadence-dev-device-writer-token-2026"
     cadence_clinician_token: str = "cadence-dev-clinician-reader-token-2026"
     cadence_default_patient_id: str = "default_patient"
+
+    # Demo seed endpoint and `simulated_*` request fields. Off in production.
+    demo_mode: Optional[bool] = None
+
+    @property
+    def is_production(self) -> bool:
+        return self.cadence_env.strip().lower() == "production"
+
+    @property
+    def demo_mode_enabled(self) -> bool:
+        return self.demo_mode if self.demo_mode is not None else not self.is_production
+
+    @property
+    def static_tokens_enabled(self) -> bool:
+        if self.allow_static_tokens is not None:
+            return self.allow_static_tokens
+        return not self.is_production
 
     # SQLite & Retention
     sqlite_db_path: str = "./cadence_clinical.db"
@@ -32,8 +64,8 @@ class Settings(BaseSettings):
     meta_api_key: str = ""
     meta_api_base_url: str = "https://api.llama.com/v1"
     meta_sam_model: str = "sam-3.1"
-    meta_stt_model: str = "muse-transcribe"
-    meta_tts_model: str = "muse-voice"
+    meta_stt_model: str = "muse-voice-transcribe-1.0"
+    meta_asr_base_url: str = "https://api.meta.ai/v1"
 
     # Baseten ($100 Credits • 2M TPM)
     baseten_api_key: str = ""

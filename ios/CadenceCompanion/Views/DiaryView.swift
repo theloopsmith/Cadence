@@ -37,13 +37,13 @@ struct DiaryView: View {
                     Button {
                         showingReport = true
                     } label: {
-                        Image(systemName: "waveform.path.ecg")
-                            .accessibilityLabel("Clinical Report")
+                        Image(systemName: "square.and.arrow.up")
+                            .accessibilityLabel("Share a summary")
                     }
                 }
             }
             .sheet(isPresented: $showingReport) {
-                ClinicalReportView(app: app)
+                ShareSummaryView(app: app)
             }
             .onAppear(perform: reload)
             .onChange(of: app.diaryVersion) { _ in reload() }
@@ -107,12 +107,12 @@ struct DiaryView: View {
             showingReport = true
         } label: {
             HStack(spacing: 12) {
-                IconBadge(systemName: "waveform.path.ecg", color: CadenceTheme.accent, size: 36)
+                IconBadge(systemName: "square.and.arrow.up", color: CadenceTheme.accent, size: 36)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("24-Hour Clinical Report")
+                    Text("Share a summary")
                         .font(.headline)
                         .foregroundColor(.primary)
-                    Text("Objective motor summary & AI narrative for your neurologist")
+                    Text("A PDF of your diary to send, print, or save")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -169,7 +169,7 @@ struct DiaryView: View {
         case .helpSent: return CadenceTheme.danger
         case .protectionOn: return CadenceTheme.calm
         case .protectionOff: return .secondary
-        case .environmentCheck: return CadenceTheme.accent
+        case .environmentCheck, .motorCheck: return CadenceTheme.accent
         }
     }
 
