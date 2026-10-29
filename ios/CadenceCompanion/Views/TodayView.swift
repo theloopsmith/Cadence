@@ -31,12 +31,13 @@ struct TodayView: View {
                             systemName: "info.circle.fill"
                         )
                     }
-                    statusCard
-                    glassesCard
+                    protectionCard
+                    if !isGlassesConnected {
+                        glassesCard
+                    }
                     medicationCard
                     if !simple {
                         checksCard
-                        protectionCard
                     } else {
                         // In simple mode, offer the motor check directly
                         simpleChecksCard
@@ -75,29 +76,80 @@ struct TodayView: View {
         }
     }
 
-    // MARK: - Status
+    // MARK: - Protection & Status
+
+    private var isGlassesConnected: Bool {
+        app.glasses.connectionState == .connected || audioRoute.isGlassesMicActive
+    }
+
+    private var glassesDisplayName: String {
+        if let name = app.glasses.deviceName, !name.isEmpty {
+            return name
+        }
+        if audioRoute.isGlassesMicActive {
+            return audioRoute.activeInputName.isEmpty ? "Meta Glasses" : audioRoute.activeInputName
+        }
+        return "Meta Gen 3 AI Glasses"
+    }
 
     private var statusColor: Color {
         if walking.isCueing { return CadenceTheme.accent }
         return walking.isProtectionOn ? CadenceTheme.calm : .secondary
     }
 
-    private var statusCard: some View {
+    private var protectionCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            StatusBadge(
-                systemImage: walking.isCueing ? "metronome.fill" : (walking.isProtectionOn ? "shield.fill" : "shield.slash"),
-                word: walking.headline,
-                color: statusColor
-            )
+            HStack(alignment: .center) {
+                StatusBadge(
+                    systemImage: walking.isCueing ? "metronome.fill" : (walking.isProtectionOn ? "shield.fill" : "shield.slash"),
+                    word: walking.headline,
+                    color: statusColor
+                )
+                Spacer()
+                Button {
+                    let next = !walking.isProtectionOn
+                    app.settings.protectionEnabled = next
+                    walking.setProtection(enabled: next)
+                    Haptics.tap()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: walking.isProtectionOn ? "checkmark.circle.fill" : "circle")
+                        Text(walking.isProtectionOn ? "Protection On" : "Protection Off")
+                            .fontWeight(.semibold)
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(walking.isProtectionOn ? CadenceTheme.calm : .secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule().fill(walking.isProtectionOn ? CadenceTheme.calm.opacity(0.14) : Color.secondary.opacity(0.12))
+                    )
+                }
+                .disabled(walking.isDemoRunning)
+                .accessibilityLabel(walking.isProtectionOn ? "Turn protection off" : "Turn protection on")
+            }
+
             Text(walking.detail)
                 .font(simple ? .title3 : .body)
                 .foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
+
             if walking.isProtectionOn, !walking.sourceSentence.isEmpty, !simple {
                 Text(walking.sourceSentence)
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }
+
+            if isGlassesConnected {
+                HStack(spacing: 6) {
+                    Image(systemName: "eyeglasses")
+                        .foregroundColor(CadenceTheme.calm)
+                    Text("\(glassesDisplayName) · \(audioRoute.isGlassesMicActive ? "Glasses Mic" : "Glasses") Active")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
+
             if simple {
                 Text("Things are kept simple for now. Everything else is a tab away.")
                     .font(.footnote)
@@ -239,22 +291,6 @@ struct TodayView: View {
             }
         }
         .card()
-    }
-
-    // MARK: - Protection
-
-    private var protectionCard: some View {
-        SwitchCard(
-            title: "Protection",
-            detail: "Listens for freezes and hard falls while the phone or glasses are with you.",
-            isOn: walking.isProtectionOn,
-            onColor: CadenceTheme.calm
-        ) {
-            let next = !walking.isProtectionOn
-            app.settings.protectionEnabled = next
-            walking.setProtection(enabled: next)
-        }
-        .disabled(walking.isDemoRunning)
     }
 
     // MARK: - Quick Checks
