@@ -153,10 +153,10 @@ public final class WalkingModel: ObservableObject {
 
     // MARK: - Text
 
-    /// Which device is listening right now, for the status line.
+    /// Which device is sensing motion right now, for the status line.
     public var sourceSentence: String {
         guard let label = motion.activeSourceLabel else { return "" }
-        return label == "iPhone" ? "Listening through your iPhone." : "Listening through \(label)."
+        return label == "iPhone" ? "Motion protection: iPhone (in pocket)." : "Motion protection: \(label) (head motion)."
     }
 
     private func refreshText(armingMode: String, cueing: Bool, running: Bool) {

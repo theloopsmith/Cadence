@@ -13,6 +13,7 @@ struct TodayView: View {
     @State private var showRealityCheck = false
     @State private var showMealCheck = false
     @State private var showSettings = false
+    @ObservedObject private var audioRoute = AudioRouteManager.shared
 
     private var walking: WalkingModel { app.walking }
     private var doses: DoseLogModel { app.doses }
@@ -108,6 +109,18 @@ struct TodayView: View {
 
     // MARK: - Glasses
 
+    private var glassesSubtitle: String {
+        switch app.glasses.connectionState {
+        case .connected:
+            let micLabel = audioRoute.isGlassesMicActive ? "Glasses Mic" : audioRoute.activeInputName
+            return "60 Hz IMU · \(micLabel) Active"
+        case .connecting:
+            return "Connecting to glasses…"
+        case .disconnected, .notPaired:
+            return "Tap to connect for head motion, mic & cues"
+        }
+    }
+
     private var glassesCard: some View {
         HStack(spacing: 12) {
             IconBadge(
@@ -118,7 +131,7 @@ struct TodayView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.glasses.connectionState == .connected ? (app.glasses.deviceName ?? "Meta Glasses Connected") : "Meta Gen 3 AI Glasses")
                     .font(.headline)
-                Text(app.glasses.connectionState == .connected ? "60 Hz IMU · Glasses Mic & Audio Active" : "Tap to connect for head motion, mic & cues")
+                Text(glassesSubtitle)
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }

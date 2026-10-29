@@ -256,6 +256,7 @@ public final class CadenceAppModel: ObservableObject {
         glasses.attach(device)
         isUsingMockGlasses = false
         realGlasses = device
+        glasses.connect()
     }
 
     /// The real device handed in by the host app, kept so the mock toggle
