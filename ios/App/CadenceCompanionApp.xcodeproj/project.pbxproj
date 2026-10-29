@@ -19,7 +19,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		AA0000000000000000000005 /* CadenceCompanionApp */ = {isa = PBXFileSystemSynchronizedRootGroup; path = CadenceCompanionApp; sourceTree = "<group>"; };
+		AA0000000000000000000005 /* CadenceCompanionApp */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CadenceCompanionApp;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -176,6 +180,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3MV78XV6K9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -196,6 +201,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3MV78XV6K9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -255,6 +261,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		AA0000000000000000000011 /* CadenceCompanion */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000010 /* XCLocalSwiftPackageReference ".." */;
 			productName = CadenceCompanion;
 		};
 		AA0000000000000000000021 /* MWDATCore */ = {

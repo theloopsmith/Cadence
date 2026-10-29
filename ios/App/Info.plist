@@ -10,12 +10,14 @@
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>UILaunchScreen</key>
-	<dict/>
-	<!-- Meta Wearables Device Access Toolkit. The Meta AI app calls back on
-	     the URL scheme after registration. MetaAppID and ClientToken come from
-	     the project in the Wearables Developer Center; set them as build
-	     settings (META_APP_ID, CLIENT_TOKEN) or paste them here. -->
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>CadenceCompanion</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -29,42 +31,46 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CadenceServerURL</key>
+	<string>$(CADENCE_SERVER_URL)</string>
 	<key>MWDAT</key>
 	<dict>
 		<key>AppLinkURLScheme</key>
 		<string>cadencecompanion://</string>
-		<key>MetaAppID</key>
-		<string>$(META_APP_ID)</string>
 		<key>ClientToken</key>
 		<string>$(CLIENT_TOKEN)</string>
+		<key>MetaAppID</key>
+		<string>$(META_APP_ID)</string>
 		<key>TeamID</key>
 		<string>$(DEVELOPMENT_TEAM)</string>
 	</dict>
-	<!-- Cadence server for this build. Set the CADENCE_SERVER_URL build setting;
-	     left unset, the app talks to a local development server. -->
-	<key>CadenceServerURL</key>
-	<string>$(CADENCE_SERVER_URL)</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Cadence uses the local network only to receive a photo from your glasses when you ask it to look around.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_bonjour._tcp</string>
-	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>CadenceCompanion</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
-	<key>CFBundleVersion</key>
-	<string>1</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Cadence maintains a continuous Bluetooth connection to your Meta Gen 3 AI Glasses for Freeze-of-Gait rhythmic auditory cueing and fall detection.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_bonjour._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Cadence uses the camera only when you ask it to look at your surroundings or a meal. Photos are checked and never stored.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Cadence uses the local network only to receive a photo from your glasses when you ask it to look around.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Cadence attaches your GPS coordinates to caregiver SOS alerts if a fall occurs while the app is running in the background.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Cadence attaches your GPS coordinates to caregiver SOS alerts only when a fall is confirmed.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cadence uses the Meta AI Glasses and iPhone microphone for voice check-ins after a suspected fall, vocal volume tracking, and the Guided Home Motor Exam.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Cadence reads iPhone motion to detect freezing of gait and falls when the glasses motion stream is not available.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Cadence uses on-device Apple Speech recognition to listen for "I'm okay" or "Help" during the 12-second post-fall safety check-in even when offline.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
@@ -72,19 +78,7 @@
 		<string>location</string>
 		<string>processing</string>
 	</array>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Cadence uses the Meta AI Glasses and iPhone microphone for voice check-ins after a suspected fall, vocal volume tracking, and the Guided Home Motor Exam.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Cadence uses on-device Apple Speech recognition to listen for "I'm okay" or "Help" during the 12-second post-fall safety check-in even when offline.</string>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Cadence maintains a continuous Bluetooth connection to your Meta Gen 3 AI Glasses for Freeze-of-Gait rhythmic auditory cueing and fall detection.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Cadence attaches your GPS coordinates to caregiver SOS alerts only when a fall is confirmed.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Cadence attaches your GPS coordinates to caregiver SOS alerts if a fall occurs while the app is running in the background.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Cadence uses the camera only when you ask it to look at your surroundings or a meal. Photos are checked and never stored.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>Cadence reads iPhone motion to detect freezing of gait and falls when the glasses motion stream is not available.</string>
+	<key>UILaunchScreen</key>
+	<dict/>
 </dict>
 </plist>
