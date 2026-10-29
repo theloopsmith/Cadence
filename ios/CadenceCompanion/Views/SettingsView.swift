@@ -21,6 +21,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 signInSection
+                serverSection
                 glassesSection
                 Section {
                     TextField("Name on summaries (optional)", text: $settings.summaryName)
@@ -89,6 +90,25 @@ struct SettingsView: View {
             Text("Phone sign-in")
         } footer: {
             Text("Use the account made for this phone. The password is not stored; the phone keeps a sign-in key in its secure storage.")
+        }
+    }
+
+    // MARK: - Server Connection
+
+    private var serverSection: some View {
+        Section {
+            TextField("Server address", text: $settings.backendBaseURL)
+                #if os(iOS)
+                .textContentType(.URL)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                #endif
+                .autocorrectionDisabled()
+                .frame(minHeight: CadenceTheme.minimumTapHeight)
+        } header: {
+            Text("Backend server")
+        } footer: {
+            Text("For local Wi-Fi testing, use your Mac's IP (e.g. http://192.168.86.206:8000).")
         }
     }
 

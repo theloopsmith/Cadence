@@ -43,10 +43,14 @@ else
   DEMO_NOTE="Dashboard sign-in: $DEMO_USER (created earlier; add another with python -m app.manage create-user)"
 fi
 
+HOST="${CADENCE_HOST:-0.0.0.0}"
+PORT="${CADENCE_PORT:-8000}"
+
 echo ""
 echo "=================================================================="
-echo "Starting Cadence on http://127.0.0.1:8000"
-echo "Care-team summary: http://127.0.0.1:8000/dashboard"
+echo "Starting Cadence on http://$HOST:$PORT"
+echo "Local network address: http://$(ipconfig getifaddr en0 2>/dev/null || echo "127.0.0.1"):$PORT"
+echo "Care-team summary: http://127.0.0.1:$PORT/dashboard"
 echo "$DEMO_NOTE"
 echo "=================================================================="
-exec .venv/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+exec .venv/bin/python3 -m uvicorn app.main:app --host "$HOST" --port "$PORT" --reload
