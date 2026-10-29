@@ -72,7 +72,7 @@ public final class DATGlassesDevice: GlassesDevice {
     private func openSession() async {
         do {
             // Registration is a one-time hand-off to the Meta AI app.
-            if await !isRegistered() {
+            if !isRegistered() {
                 try await wearables.startRegistration()
             }
             let selector = AutoDeviceSelector(wearables: wearables)
@@ -109,12 +109,8 @@ public final class DATGlassesDevice: GlassesDevice {
         }
     }
 
-    private func isRegistered() async -> Bool {
-        for await state in wearables.registrationStateStream() {
-            if case .registered = state { return true }
-            return false
-        }
-        return false
+    private func isRegistered() -> Bool {
+        return wearables.registrationState == .registered
     }
 
     /// `donState` is device metadata, delivered before and during a session.

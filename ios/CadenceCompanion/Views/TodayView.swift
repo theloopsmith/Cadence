@@ -30,6 +30,7 @@ struct TodayView: View {
                         )
                     }
                     statusCard
+                    glassesCard
                     medicationCard
                     if !simple {
                         checksCard
@@ -87,6 +88,46 @@ struct TodayView: View {
             }
         }
         .card()
+    }
+
+    // MARK: - Glasses
+
+    private var glassesCard: some View {
+        HStack(spacing: 12) {
+            IconBadge(
+                systemName: "eyeglasses",
+                color: app.glasses.connectionState == .connected ? CadenceTheme.calm : CadenceTheme.accent,
+                size: 36
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.glasses.connectionState == .connected ? (app.glasses.deviceName ?? "Meta Glasses Connected") : "Meta Gen 3 AI Glasses")
+                    .font(.headline)
+                Text(app.glasses.connectionState == .connected ? "60 Hz IMU · Open-Ear Audio Active" : "Tap to connect for head motion & cues")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            if app.glasses.connectionState == .connecting {
+                ProgressView().tint(CadenceTheme.accent)
+            } else if app.glasses.connectionState == .connected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(CadenceTheme.calm)
+            } else {
+                Button {
+                    app.glasses.connect()
+                } label: {
+                    Text("Connect")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(CadenceTheme.accent)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(CadenceTheme.accent.opacity(0.14))
+                        )
+                }
+            }
+        }
+        .card(padding: 14)
     }
 
     // MARK: - Medication
