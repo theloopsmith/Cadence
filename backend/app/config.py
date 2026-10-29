@@ -47,6 +47,9 @@ class Settings(BaseSettings):
             return self.allow_static_tokens
         return not self.is_production
 
+    # Legacy experimental derived metrics are excluded from the accessibility API by default.
+    enable_research_metrics: bool = False
+
     # SQLite & Retention
     sqlite_db_path: str = "./cadence_clinical.db"
     sqlite_encryption_key: str = ""
@@ -93,6 +96,11 @@ class Settings(BaseSettings):
     # Hard wall-clock cap on caregiver call-out, measured from dispatch. The
     # 90s secondary delay is inside this window, so the loop cannot overrun it.
     retry_window_sec: float = 900.0
+
+    dispatch_lease_sec: float = 60.0
+    dispatch_timeout_sec: float = 20.0
+    fall_check_in_sec: float = 30.0
+    recovery_poll_sec: float = 1.0
 
     # Safety Calibration Gate (Disabled by default until Day-2 supine-vs-table verification)
     enable_unworn_drop_suppression: bool = False

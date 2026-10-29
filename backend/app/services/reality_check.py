@@ -49,17 +49,17 @@ LIVING_DENY_WORDS = {
 
 def render_grounded_template(template_id: str, label: Optional[str] = None) -> str:
     if template_id == "CONFIRM_LIVING_SUBJECT" and label:
-        return f"Yes, I see a {label} in front of you."
+        return f"I can identify a {label} in this photo. I cannot verify the whole scene."
     if template_id == "REASSURE_SHADOW_OR_LIGHT" and label:
-        return f"Everything looks clear and safe. No one is there—I only see a {label} in that area."
+        return f"I can identify a {label} in this photo. I cannot confirm whether someone else is present."
     if template_id == "REASSURE_OBJECT_ON_SEAT" and label:
-        return f"Everything looks clear. No one is sitting there—there is only a {label} on the seat."
+        return f"I can identify a {label} in this photo. I cannot confirm whether someone else is present."
     if template_id == "UNVERIFIED_LIGHTING_FALLBACK":
         return (
             "I couldn't get a clear view of the room right now. "
             "Please turn on a light or ask someone nearby."
         )
-    return "Everything looks clear and safe. No one is in that area."
+    return "I cannot identify any clear objects in this frame. Try another view or ask someone nearby."
 
 
 def contains_denied_living_word(sentence: str) -> bool:
@@ -160,7 +160,7 @@ async def run_reality_check_pipeline(
                     else "REASSURE_OBJECT_ON_SEAT"
                 )
             spoken = render_grounded_template(template_id, chosen_label)
-            if contains_denied_living_word(spoken):
+            if contains_denied_living_word(chosen_label):
                 template_id = "REASSURE_EMPTY_SPACE"
                 chosen_label = None
                 spoken = render_grounded_template(template_id)

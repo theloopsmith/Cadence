@@ -141,8 +141,8 @@
         <p>Logged events and raw task measurements from the Cadence companion. Cadence is not a medical device and does not assess health.</p>
       </div>
       <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn" style="background:#16a34a;" onclick="seedDemoTimeline()">⚡ Seed 24h Demo Patient</button>
-        <button class="btn" style="background:#dc2626;" onclick="wipePatientData()">Reset Patient Data</button>
+        <button class="btn" style="background:#16a34a;" onclick="seedDemoTimeline()">⚡ Seed Sample Routine</button>
+        <button class="btn" style="background:#dc2626;" onclick="wipePatientData()">Reset Diary Data</button>
         <button class="btn" onclick="window.print()">Export / Print PDF</button>
       </div>
     </header>
@@ -168,7 +168,7 @@
     <div class="card" style="margin-bottom: 20px;">
       <div class="metric-label">Summary of the Last 24 Hours</div>
       <p id="narrativeText" style="margin: 8px 0 0; font-size: 15px; line-height: 1.5;">
-        Click "Seed 24h Demo Patient" above to fill in a sample day, or use the buttons to log individual events.
+        Click "Seed Sample Routine" above to fill in a sample day, or use the buttons to log individual events.
       </p>
     </div>
 
@@ -182,7 +182,7 @@
         <div class="metric-value" id="beatCount" style="color: var(--wearing-off);">—</div>
       </div>
       <div class="card">
-        <div class="metric-label">Falls (caregiver contacted)</div>
+        <div class="metric-label">Fall alerts recorded</div>
         <div class="metric-value" id="fallCount" style="color: var(--off);">—</div>
       </div>
       <div class="card">
@@ -211,7 +211,7 @@
           </tr>
         </thead>
         <tbody id="examTableBody">
-          <tr><td colspan="7">No exam rows loaded yet. Click "⚡ Seed 24h Demo Patient" above!</td></tr>
+          <tr><td colspan="7">No exam rows loaded yet. Click "⚡ Seed Sample Routine" above!</td></tr>
         </tbody>
       </table>
     </div>
@@ -358,7 +358,7 @@
             : "";
           const resolved = f.status === "canceled_false_alarm";
           const badge = resolved ? "badge-ON" : "badge-OFF";
-          const words = resolved ? "Answered okay" : (f.status === "suppressed_unworn_drop" ? "Glasses dropped" : "Caregiver contacted");
+          const words = resolved ? "Answered okay" : (f.status === "suppressed_unworn_drop" ? "Glasses dropped" : (f.status === "escalated_twilio" ? "Alert accepted by provider" : "Alert pending"));
           return `<div style="margin-bottom:8px;">
             <span class="badge ${badge}">${words}</span>
             ${f.timestamp_utc} • impact ${Number(f.peak_impact_g).toFixed(1)}g
@@ -386,7 +386,7 @@
       const tbody = document.getElementById("examTableBody");
       tbody.innerHTML = "";
       if (!data.motor_exams || data.motor_exams.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7">No motor checks recorded yet. Click "⚡ Seed 24h Demo Patient" above!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7">No motor checks recorded yet. Click "⚡ Seed Sample Routine" above!</td></tr>';
       } else {
         for (const ex of data.motor_exams) {
           const tr = document.createElement("tr");
@@ -437,7 +437,7 @@
         method: "DELETE",
         headers: { "Authorization": "Bearer " + token }
       });
-      setGlassesBanner("Patient telemetry wiped.");
+      setGlassesBanner("Diary data wiped.");
       await loadReport();
     }
 

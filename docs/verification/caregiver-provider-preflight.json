@@ -1,0 +1,20 @@
+{
+  "stage": "provider_preflight",
+  "verified_at_utc": "2026-10-29T07:53:30.975995+00:00",
+  "checks": {
+    "recipient_e164": true,
+    "credentials_configured": true,
+    "public_https_callback": false
+  },
+  "recipient_last4": "2704",
+  "sent": false,
+  "caregiver_acknowledged": false,
+  "device_mode": "not_part_of_this_transport_drill",
+  "provider_preflight": {
+    "account_active": true,
+    "account_type": "Trial",
+    "owned_sender_sms_voice_ready": false,
+    "trial_recipient_ready": false
+  },
+  "result": "provider_setup_required"
+}

@@ -33,7 +33,7 @@ public enum DiaryEventKind: String, Codable, CaseIterable {
         case .cue: return "Beat played"
         case .doseTaken: return "Dose taken"
         case .checkInAnswered: return "Check-in answered"
-        case .helpSent: return "Help contacted"
+        case .helpSent: return "Help requested"
         case .environmentCheck: return "Looked around"
         case .mealLogged: return "Meal noted"
         case .motorCheck: return "Motor check"
@@ -112,7 +112,7 @@ public struct DiaryStore {
         }
         let help = today.filter { $0.kind == .helpSent }.count
         if help > 0 {
-            facts.append("Help was contacted \(help == 1 ? "once" : "\(help) times") today")
+            facts.append("Help was requested \(help == 1 ? "once" : "\(help) times") today")
         }
         return facts
     }

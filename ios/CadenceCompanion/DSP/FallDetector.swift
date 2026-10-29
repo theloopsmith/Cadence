@@ -57,7 +57,8 @@ public final class FallDetector {
         let collapsed = lowered.map { ch -> Character in
             (ch.isLetter || ch == "'") ? ch : " "
         }
-        return " " + String(collapsed).split(separator: " ").joined(separator: " ") + " "
+        let words = String(collapsed).split(separator: " ").map { $0 == "ok" ? "okay" : String($0) }
+        return " " + words.joined(separator: " ") + " "
     }
 
     /// Whole-word containment test.
@@ -94,6 +95,7 @@ public final class FallDetector {
     private var previousAccelMagG: Double = 1.0
     private var previousSampleTime: TimeInterval?
 
+    public var eventSync: EventSyncManager = .shared
     public init() {}
 
     /// Processes incoming 6-axis IMU sample through the 3-stage biomechanical impact state machine.
@@ -168,7 +170,7 @@ public final class FallDetector {
                     if let acc = horizontalAccuracyM {
                         localPayload["horizontal_accuracy_m"] = acc
                     }
-                    EventSyncManager.shared.saveLocalImmediate(
+                    eventSync.saveLocalImmediate(
                         eventUUID: eventUUID,
                         endpoint: "/api/v1/events/fall",
                         payload: localPayload
@@ -186,6 +188,12 @@ public final class FallDetector {
         case .stage3CheckInActive:
             return nil
         }
+    }
+
+    public func resetAfterResolution() {
+        stage = .monitoring
+        previousSampleTime = nil
+        previousAccelMagG = 1.0
     }
 
     private func computePreImpactWearRmsG(beforeTimestamp: TimeInterval) -> Double {

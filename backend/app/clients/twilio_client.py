@@ -2,6 +2,8 @@ import asyncio
 import os
 import sys
 from typing import Dict, Optional, Tuple
+from urllib.parse import urlencode
+from xml.sax.saxutils import escape
 
 from app.config import settings
 
@@ -34,17 +36,19 @@ class TwilioEscalationClient:
             body += f" GPS Location: https://maps.google.com/?q={latitude:.6f},{longitude:.6f}"
         return body
 
-    def build_gather_twiml(self, event_uuid: str) -> str:
+    def build_gather_twiml(self, event_uuid: str, attempt_id: Optional[str] = None, test_only: bool = False) -> str:
         gather_url = (
             f"{settings.public_webhook_base_url.rstrip('/')}"
-            f"/api/v1/webhooks/twilio/gather?event_uuid={event_uuid}"
+            "/api/v1/webhooks/twilio/gather?" + urlencode({"event_uuid": event_uuid, **({"attempt_id": attempt_id} if attempt_id else {})})
         )
+        gather_url = escape(gather_url, {'"': '&quot;'})
+        message = ("This is a scheduled Cadence test only. There is no emergency. " if test_only else "Fall alert from Cadence accessibility companion. ")
         return (
             '<?xml version="1.0" encoding="UTF-8"?>'
             "<Response>"
             f'<Gather numDigits="1" timeout="20" action="{gather_url}" method="POST">'
             "<Say voice=\"Polly.Joanna\">"
-            "Emergency fall alert from Cadence Parkinson companion. "
+            f"{message}"
             "Press 1 now to acknowledge this alert and confirm you are responding."
             "</Say>"
             "</Gather>"
@@ -60,6 +64,8 @@ class TwilioEscalationClient:
         timestamp_utc: str,
         latitude: Optional[float] = None,
         longitude: Optional[float] = None,
+        attempt_id: Optional[str] = None,
+        test_only: bool = False,
     ) -> Dict[str, str]:
         """Dispatches SMS + Voice call via Twilio REST API (or simulated SIDs in test/dev)."""
         sms_body = self.format_fall_sms_body(
@@ -68,7 +74,9 @@ class TwilioEscalationClient:
             latitude=latitude,
             longitude=longitude,
         )
-        twiml = self.build_gather_twiml(event_uuid)
+        if test_only:
+            sms_body = "CADENCE SCHEDULED TEST ONLY: No emergency. Please answer the test call and press 1 to verify acknowledgment."
+        twiml = self.build_gather_twiml(event_uuid, attempt_id, test_only)
 
         if not (
             settings.twilio_account_sid
@@ -76,6 +84,9 @@ class TwilioEscalationClient:
             and settings.twilio_from_phone
             and to_phone
         ):
+            if settings.is_production or not settings.demo_mode_enabled:
+                return {"sms_sid": "", "call_sid": "", "sms_body": sms_body,
+                        "twiml": twiml, "delivery_status": "unconfigured"}
             return {
                 "sms_sid": f"SM_SIM_{event_uuid[:8]}",
                 "call_sid": f"CA_SIM_{event_uuid[:8]}",
@@ -91,7 +102,7 @@ class TwilioEscalationClient:
             twiml,
             (
                 f"{settings.public_webhook_base_url.rstrip('/')}"
-                f"/api/v1/webhooks/twilio/status?event_uuid={event_uuid}"
+                "/api/v1/webhooks/twilio/status?" + urlencode({"event_uuid": event_uuid, **({"attempt_id": attempt_id} if attempt_id else {})})
             ),
         )
         return {
@@ -118,6 +129,8 @@ class TwilioEscalationClient:
             and settings.twilio_from_phone
             and to_phone
         ):
+            if settings.is_production or not settings.demo_mode_enabled:
+                return {"sms_sid": "", "body": body, "delivery_status": "unconfigured"}
             return {
                 "sms_sid": f"SM_CLEAR_{event_uuid[:8]}",
                 "body": body,
@@ -127,7 +140,7 @@ class TwilioEscalationClient:
             from twilio.rest import Client
 
             client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
-            msg = client.messages.create(
+            msg = await asyncio.to_thread(client.messages.create,
                 body=body,
                 from_=settings.twilio_from_phone,
                 to=to_phone,
@@ -146,7 +159,8 @@ def _place_sms_and_call(
     """Places SMS and the voice call independently. A dead SMS path must not skip the call."""
     from twilio.rest import Client
 
-    client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
+    from twilio.http.http_client import TwilioHttpClient
+    client = Client(settings.twilio_account_sid, settings.twilio_auth_token, http_client=TwilioHttpClient(timeout=5))
     sms_sid = ""
     call_sid = ""
     errors = []

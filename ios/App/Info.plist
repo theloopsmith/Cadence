@@ -70,7 +70,7 @@
 	<key>NSMotionUsageDescription</key>
 	<string>Cadence reads iPhone motion to detect freezing of gait and falls when the glasses motion stream is not available.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Cadence uses on-device Apple Speech recognition to listen for "I'm okay" or "Help" during the 12-second post-fall safety check-in even when offline.</string>
+	<string>Cadence uses on-device Apple Speech recognition to listen for "I'm okay" or "Help" during the 30-second post-fall check-in when recognition is available.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

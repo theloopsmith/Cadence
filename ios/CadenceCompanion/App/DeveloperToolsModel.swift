@@ -167,7 +167,7 @@ public final class DeveloperToolsModel: ObservableObject {
             let result = try await app.settings.api.logMeal(jpeg: jpeg)
             lastMeal = result
             AudioCueEngine.shared.speakPrompt(result.spokenResponse, priority: 2)
-            app.recordDiary(.mealLogged, detail: String(format: "About %.0f g protein", result.estimatedProteinGrams))
+            app.recordDiary(.mealLogged, detail: "Meal time logged")
             lastMessage = nil
         } catch {
             lastMessage = "Couldn't check the meal: \(describe(error))"
@@ -204,8 +204,8 @@ public final class DeveloperToolsModel: ObservableObject {
         app.recordDiary(.doseTaken, detail: app.settings.schedule.medicationName, at: todayAt(hour: 8, minute: 30))
         app.recordDiary(.cue, detail: "A steady beat helped you step again", at: todayAt(hour: 10, minute: 0))
         app.recordDiary(.cue, detail: "A steady beat helped you step again", at: todayAt(hour: 12, minute: 0))
-        app.recordDiary(.environmentCheck, detail: "Everything looks clear. Only a coat on the chair.", at: todayAt(hour: 13, minute: 0))
-        app.recordDiary(.mealLogged, detail: "About 28 g protein", at: todayAt(hour: 13, minute: 30))
+        app.recordDiary(.environmentCheck, detail: "A coat was identified in the sample photo; the whole scene was not verified.", at: todayAt(hour: 13, minute: 0))
+        app.recordDiary(.mealLogged, detail: "Meal time logged", at: todayAt(hour: 13, minute: 30))
         app.recordDiary(.motorCheck, detail: "Letters 22% smaller across the line · 96 steps a minute", at: todayAt(hour: 14, minute: 0))
         app.recordDiary(.checkInAnswered, detail: "You said you were okay", at: todayAt(hour: 15, minute: 0))
         app.recordDiary(.helpSent, detail: "Your caregiver was contacted", at: todayAt(hour: 16, minute: 0))

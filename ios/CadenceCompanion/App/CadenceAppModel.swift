@@ -4,6 +4,7 @@ import Foundation
 /// Everything the screens share. Built once at launch by `CadenceRootView`.
 @MainActor
 public final class CadenceAppModel: ObservableObject {
+    @Published public private(set) var persistenceWarning: String?
     public let settings: AppSettings
     public let motion: MotionFeed
     public let fallAlert: FallAlertCoordinator
@@ -153,6 +154,19 @@ public final class CadenceAppModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        settings.sync.onPersistenceFailure = { [weak self, weak fallAlert] error in
+            Task { @MainActor in
+                self?.persistenceWarning = error.message
+                fallAlert?.persistenceWarning = error.message
+            }
+        }
+        settings.sync.onPersistenceRecovered = { [weak self, weak fallAlert] in
+            Task { @MainActor in self?.persistenceWarning = nil; fallAlert?.persistenceWarning = nil }
+        }
+        if let error = settings.sync.persistenceError {
+            persistenceWarning = error.message
+            fallAlert.persistenceWarning = error.message
+        }
         // Diary lines for the moments the glasses handle.
         motion.$isFoGActive
             .removeDuplicates()
@@ -180,7 +194,7 @@ public final class CadenceAppModel: ObservableObject {
                 case "canceled_by_user_button":
                     self?.record(.checkInAnswered, detail: "You tapped I'm OK")
                 case "confirmed_waiting_dispatch":
-                    self?.record(.helpSent, detail: "Your caregiver was contacted")
+                    self?.record(.helpSent, detail: "Alert saved on device; trying to contact caregiver")
                 default:
                     break
                 }
@@ -266,6 +280,18 @@ public final class CadenceAppModel: ObservableObject {
     /// Attaches the mock glasses, which loop reference walking motion and
     /// report "worn" on connect. Useful without hardware; turning it off
     /// restores the real device if one was attached.
+    public func attachMockKit(samples: [IMUSample]) {
+        settings.backendBaseURL = "http://127.0.0.1:18063"
+        settings.deviceToken = ""
+        settings.cloudListeningEnabled = false
+        settings.protectionEnabled = false
+        walking.setProtection(enabled: false)
+        glasses.attach(MockGlassesDevice(name: "Cadence Mock Kit — simulated sensors", loopSamples: samples))
+        isUsingMockGlasses = true
+        glasses.connect()
+        // A mock launch must not start audible cues without a deliberate action.
+    }
+
     public func useMockGlasses(_ enabled: Bool) {
         if enabled {
             let walking = LabeledCaptureLibrary.referenceCaptures().first { $0.label == .walking }?.samples ?? []

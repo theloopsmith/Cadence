@@ -76,9 +76,9 @@ public struct RealityCheckView: View {
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             IconBadge(systemName: "eye.fill", color: CadenceTheme.accent, size: 48)
-            Text("Vision Reality Check")
+            Text("Describe Surroundings")
                 .font(.title2.weight(.bold))
-            Text("In dim light or when tired, shadows and coats can look like people or animals. Cadence checks the room with vision AI and tells you what is really there.")
+            Text("Cadence describes objects it can identify in a photo when you ask. It cannot verify the whole scene or confirm that an area is safe.")
                 .font(.body)
                 .foregroundColor(.secondary)
         }
@@ -197,7 +197,7 @@ public struct RealityCheckView: View {
                 .tint(CadenceTheme.accent)
             Text("Looking at the scene…")
                 .font(.headline)
-            Text("Analyzing objects with SAM 3.1 and Llama 3.2 Vision.")
+            Text("Identifying objects in this photo with Meta models.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }
@@ -212,7 +212,7 @@ public struct RealityCheckView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 StatusPill(
-                    text: result.livingSubjectPresent ? "Person or pet seen" : "Clear & Safe",
+                    text: result.detectedLabels.isEmpty ? "No clear objects" : "Photo observations",
                     color: result.livingSubjectPresent ? CadenceTheme.caution : CadenceTheme.calm,
                     filled: true
                 )

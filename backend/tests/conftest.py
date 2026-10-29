@@ -9,6 +9,7 @@ def default_test_settings(monkeypatch):
     by default, so they do not make real outbound phone calls or network
     calls unless a test explicitly configures credentials.
     """
+    monkeypatch.setattr(settings, "enable_research_metrics", True)
     monkeypatch.setattr(settings, "twilio_account_sid", "")
     monkeypatch.setattr(settings, "twilio_auth_token", "")
     monkeypatch.setattr(settings, "twilio_from_phone", "")

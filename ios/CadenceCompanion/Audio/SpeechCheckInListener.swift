@@ -19,6 +19,8 @@ public final class MockSpeechCheckInListener: SpeechCheckInListenerProtocol {
     public var latestTranscript: String = ""
     public var isListening: Bool = false
 
+    private var evidence = DualRecognizerCheckIn()
+
     public var onTranscriptUpdate: ((String, Double) -> Void)?
     public var onEarlyResolution: ((String) -> Void)?
 
@@ -32,33 +34,24 @@ public final class MockSpeechCheckInListener: SpeechCheckInListenerProtocol {
         onEarlyResolution: @escaping (String) -> Void
     ) {
         self.isListening = true
+        evidence = DualRecognizerCheckIn()
+        evidence.record(latestTranscript, from: .local)
         self.onTranscriptUpdate = onTranscriptUpdate
         self.onEarlyResolution = onEarlyResolution
     }
 
-    public func simulateUtterance(_ text: String, peakDbfs: Double = -20.0) {
-        latestTranscript = text
-        maxVocalLevelDbfs = max(maxVocalLevelDbfs, peakDbfs)
-        onTranscriptUpdate?(text, maxVocalLevelDbfs)
-
-        let normalized = FallDetector.normalizeTranscript(text)
-        for kw in FallDetector.distressAndNegationKeywords {
-            if FallDetector.containsDistressPhrase(normalized, kw) {
-                onEarlyResolution?("confirmed_waiting_dispatch")
-                return
-            }
-        }
-        for phrase in FallDetector.affirmativeCancelPhrases {
-            if FallDetector.containsPhrase(normalized, phrase) {
-                onEarlyResolution?("canceled_false_alarm")
-                return
-            }
-        }
+    public func simulateUtterance(_ text: String, peakDbfs: Double = -20, source: CheckInRecognizer = .local) {
+        guard isListening else { return }
+        if source == .local { latestTranscript = text }
+        evidence.record(text, from: source)
+        maxVocalLevelDbfs = max(maxVocalLevelDbfs,peakDbfs)
+        onTranscriptUpdate?(text,maxVocalLevelDbfs)
+        if evidence.distressHeard { onEarlyResolution?("confirmed_waiting_dispatch") }
     }
 
     public func stopListening() -> (transcript: String, maxDbfs: Double) {
         isListening = false
-        return (latestTranscript, maxVocalLevelDbfs)
+        return (evidence.transcriptForResolution, maxVocalLevelDbfs)
     }
 }
 
@@ -93,6 +86,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
     /// on-device recognizer. Nil (the default) means on-device only.
     public var cloudEarFactory: ((@escaping (String) -> Void) -> CloudEar)?
     private var cloudEar: CloudEar?
+    private var evidence = DualRecognizerCheckIn()
 
     public override init() {
         self.recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -121,10 +115,11 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
         self.transcriptCallback = onTranscriptUpdate
         self.earlyResolutionCallback = onEarlyResolution
         self.echoFilter = EchoFilteredTranscript()
+        self.evidence = DualRecognizerCheckIn()
         self.cloudEar = cloudEarFactory? { [weak self] text in
             // Either listener can resolve the check-in; the same rules apply.
-            guard let self, self.isListening else { return }
-            self.evaluateEarlyPhrases(text)
+            guard let self, self.isListening, self.session == session else { return }
+            self.acceptTranscript(text, source: .cloud)
         }
         audioQueue.async { [weak self] in
             self?.openMicrophone(session: session)
@@ -226,10 +221,11 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
                     let text = result.bestTranscription.formattedString
                     let echo = self.echoGuard.isInEchoWindow(at: Date())
                     DispatchQueue.main.async {
+                        guard self.isListening, self.session == session else { return }
                         guard let fresh = self.echoFilter.update(fullTranscript: text, echoActive: echo) else { return }
                         self.latestTranscript = fresh
                         self.transcriptCallback?(fresh, self.maxVocalLevelDbfs)
-                        self.evaluateEarlyPhrases(fresh)
+                        self.acceptTranscript(fresh, source: .local)
                     }
                 }
                 if error != nil || (result?.isFinal ?? false) {
@@ -242,28 +238,15 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
         }
     }
 
-    private func evaluateEarlyPhrases(_ transcript: String) {
-        let normalized = FallDetector.normalizeTranscript(transcript)
-
-        for kw in FallDetector.distressAndNegationKeywords {
-            if FallDetector.containsDistressPhrase(normalized, kw) {
-                earlyResolutionCallback?("confirmed_waiting_dispatch")
-                return
-            }
-        }
-
-        for phrase in FallDetector.affirmativeCancelPhrases {
-            if FallDetector.containsPhrase(normalized, phrase) {
-                earlyResolutionCallback?("canceled_false_alarm")
-                return
-            }
-        }
+    private func acceptTranscript(_ text: String, source: CheckInRecognizer) {
+        evidence.record(text, from: source)
+        if evidence.distressHeard { earlyResolutionCallback?("confirmed_waiting_dispatch") }
     }
 
     @discardableResult
     public func stopListening() -> (transcript: String, maxDbfs: Double) {
         session += 1
-        let result = (latestTranscript, maxVocalLevelDbfs)
+        let result = (evidence.transcriptForResolution, maxVocalLevelDbfs)
         isListening = false
         cloudEar?.stop()
         cloudEar = nil

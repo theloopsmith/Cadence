@@ -192,3 +192,50 @@ final class EventSyncQueueTests: XCTestCase {
         XCTAssertEqual(mgr.pendingCount(), 1)
     }
 }
+
+final class FallAcknowledgmentTests: XCTestCase {
+    private func outcome(_ json: String, status: Int = 200) -> DeliveryOutcome {
+        URLSessionEventTransport.outcome(forStatus: status, endpoint: "/api/v1/events/fall", responseData: Data(json.utf8))
+    }
+    func testFailedDispatchIsRetriedEvenWithHTTP200() {
+        XCTAssertEqual(outcome(#"{"status":"confirmed_waiting_dispatch","twilio_dispatched":false}"#), .retryLater)
+        XCTAssertEqual(outcome("{}"), .retryLater)
+        XCTAssertEqual(outcome("bad JSON"), .retryLater)
+        XCTAssertEqual(outcome("{}", status: 503), .retryLater)
+    }
+    func testCandidateCancellationAndProviderAcceptanceAreAcknowledged() {
+        XCTAssertEqual(outcome(#"{"status":"candidate_check_in_pending"}"#), .delivered)
+        XCTAssertEqual(outcome(#"{"status":"canceled_false_alarm"}"#), .delivered)
+        XCTAssertEqual(outcome(#"{"status":"escalated_twilio","provider_accepted":true,"duplicate":true}"#), .delivered)
+        XCTAssertEqual(outcome(#"{"status":"escalated_twilio","provider_accepted":false}"#), .retryLater)
+    }
+}
+
+private final class ReplacementTransport: EventTransport {
+    var onSend: (() async -> Void)?
+    func send(endpoint: String, jsonData: Data, bearerToken: String) async -> DeliveryOutcome {
+        await onSend?()
+        return .delivered
+    }
+}
+
+final class FallQueueRevisionTests: XCTestCase {
+    func testOldCandidateResponseCannotAcknowledgeANewerEscalation() async {
+        let path = NSTemporaryDirectory() + "revision-\(UUID().uuidString).sqlite"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let transport = ReplacementTransport()
+        let queue = EventSyncManager(transport: transport, databasePath: path, startPeriodicDrain: false)
+        queue.saveLocalImmediate(eventUUID: "revision-fall", endpoint: "/api/v1/events/fall", payload: ["status": "candidate_check_in_pending"])
+        transport.onSend = {
+            queue.saveLocalImmediate(eventUUID: "revision-fall", endpoint: "/api/v1/events/fall", payload: ["status": "confirmed_waiting_dispatch"])
+            let overlapping = await queue.drainPendingEvents()
+            XCTAssertEqual(overlapping.delivered, 0, "only one drain owns the queue")
+        }
+        _ = await queue.drainPendingEvents()
+        XCTAssertEqual(queue.pendingCount(), 1, "the newer payload still needs delivery")
+        XCTAssertTrue(queue.peekNext()?.payloadJSON.contains("confirmed_waiting_dispatch") == true)
+        transport.onSend = nil
+        _ = await queue.drainPendingEvents()
+        XCTAssertEqual(queue.pendingCount(), 0)
+    }
+}

@@ -119,7 +119,8 @@ def test_object_resting_on_a_seat_still_uses_the_seat_template():
         )
     )
     assert res["template_id"] == "REASSURE_OBJECT_ON_SEAT"
-    assert "on the seat" in res["spoken_response"]
+    assert "in this photo" in res["spoken_response"]
+    assert "cannot confirm" in res["spoken_response"]
 
 
 # --------------------------------------------------------------------------

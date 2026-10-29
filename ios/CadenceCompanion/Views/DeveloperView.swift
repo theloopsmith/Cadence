@@ -172,9 +172,9 @@ struct DeveloperView: View {
                         .font(.footnote).foregroundColor(.secondary)
                 }
             }
-            Button("Check a meal (phone camera)") { cameraPurpose = .meal }
-            if let meal = tools.lastMeal {
-                Text(String(format: "About %.0f g protein%@", meal.estimatedProteinGrams, meal.conflictDetected ? " · near a dose" : ""))
+            Button("Log a meal time") { Task { await tools.runMealCheck(jpeg: Data()) } }
+            if tools.lastMeal != nil {
+                Text("Meal time logged")
                     .font(.footnote).foregroundColor(.secondary)
             }
             if tools.isBusy { ProgressView() }

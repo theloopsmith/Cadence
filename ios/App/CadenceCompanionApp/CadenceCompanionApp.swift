@@ -23,6 +23,13 @@ struct CadenceCompanionApp: App {
     var body: some Scene {
         WindowGroup {
             CadenceRootView(onReady: { app in
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-cadence-mock-kit") {
+                    let samples = LabeledCaptureLibrary.referenceCaptures().first { $0.label == .walking }?.samples ?? []
+                    app.attachMockKit(samples: samples)
+                    return
+                }
+                #endif
                 #if canImport(MWDATCore) && canImport(MWDATMotion) && canImport(MWDATCamera)
                 app.attachGlasses(DATGlassesDevice())
                 #endif

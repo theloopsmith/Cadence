@@ -51,7 +51,7 @@ final class CadenceAPIClientTests: XCTestCase {
                 """
                 {"event_uuid":"rc-1","sam_verified":true,"living_subject_present":false,
                  "chosen_inanimate_label":"coat","template_id":"REASSURE_OBJECT_ON_SEAT",
-                 "spoken_response":"Everything looks clear. No one is sitting there.",
+                 "spoken_response":"I can identify a coat in this photo. I cannot verify the whole scene.",
                  "verified_masks":[{"label":"coat","confidence":0.91,"area_ratio":0.08}],
                  "tts_source":"ios_avspeech_fallback","latency_ms":412}
                 """.utf8
@@ -76,7 +76,7 @@ final class CadenceAPIClientTests: XCTestCase {
         XCTAssertFalse(result.livingSubjectPresent)
         XCTAssertEqual(result.chosenInanimateLabel, "coat")
         XCTAssertEqual(result.detectedLabels, ["coat"])
-        XCTAssertTrue(result.spokenResponse.hasPrefix("Everything looks clear"))
+        XCTAssertTrue(result.spokenResponse.hasPrefix("I can identify"))
     }
 
     func testHandwritingAnalysisSendsThePhotoAndReadsTheDecay() async throws {
@@ -128,24 +128,16 @@ final class CadenceAPIClientTests: XCTestCase {
         XCTAssertNil(result.opencvDecayPct)
     }
 
-    func testMealLogSendsThePhotoAndReadsTheConflict() async throws {
+    func testMealLogSendsOnlyATimestamp() async throws {
         let transport = RecordingJSONTransport()
-        transport.responses = [
-            Data(
-                """
-                {"event_uuid":"meal-1","estimated_protein_grams":31.0,"plate_detected":true,
-                 "plate_area_ratio":0.42,"items":[{"label":"steak","scale":1.1,"estimated_grams":31.0}],
-                 "conflict_detected":true,
-                 "spoken_response":"High-protein meal logged near your Levodopa window."}
-                """.utf8
-            )
-        ]
-
+        transport.responses = [Data(#"{"event_uuid":"meal-1","estimated_protein_grams":null,"plate_detected":false,"items":[],"conflict_detected":false,"spoken_response":"Meal time logged in your routine diary."}"#.utf8)]
         let result = try await makeClient(transport).logMeal(jpeg: Data([0xFF]))
-        XCTAssertEqual(transport.requests.first?.url.path, "/api/v1/medication/meal-protein")
-        XCTAssertEqual(result.estimatedProteinGrams, 31.0)
-        XCTAssertTrue(result.conflictDetected)
-        XCTAssertEqual(result.items.first?.label, "steak")
+        XCTAssertEqual(transport.requests.first?.url.path, "/api/v1/meals/log")
+        let body = try json(transport.requests.first?.body)
+        XCTAssertNil(body["image_base64"])
+        XCTAssertNotNil(body["timestamp_utc"])
+        XCTAssertNil(result.estimatedProteinGrams)
+        XCTAssertFalse(result.conflictDetected)
     }
 
     func testDoseLogPostsATimestampedEvent() async throws {

@@ -1,0 +1,18 @@
+{
+  "stage": "finished",
+  "verified_at_utc": "2026-10-29T07:47:35.175088+00:00",
+  "checks": {
+    "recipient_e164": true,
+    "credentials_configured": true,
+    "public_https_callback": true
+  },
+  "recipient_last4": "2704",
+  "sent": false,
+  "caregiver_acknowledged": false,
+  "device_mode": "not_part_of_this_transport_drill",
+  "readiness_resolution": "validated_public_dns",
+  "event_uuid": "cadence-test-dc387a2e7dba74b25c6930e99fa164ec",
+  "sms_sid": null,
+  "call_sid": null,
+  "result": "not_verified"
+}

@@ -24,12 +24,21 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: CadenceTheme.tapGap) {
+                    if app.isUsingMockGlasses {
+                        InlineNotice(text: "Mock kit: sensor inputs are simulated. This does not verify physical glasses or audio routing.", color: CadenceTheme.caution, systemName: "testtube.2")
+                    }
                     if app.auth.needsSignIn {
                         InlineNotice(
                             text: "Cadence is keeping today's events on this phone until it's signed in. You can sign in anytime in Settings.",
                             color: CadenceTheme.accent,
                             systemName: "info.circle.fill"
                         )
+                    }
+                    if app.settings.sync.quarantinedCount() > 0 {
+                        InlineNotice(text: "Older events with an unknown account are held on this phone and will not be sent under a new sign-in.", color: CadenceTheme.caution, systemName: "person.crop.circle.badge.exclamationmark")
+                    }
+                    if let warning = app.persistenceWarning {
+                        InlineNotice(text: warning, color: CadenceTheme.danger, systemName: "exclamationmark.triangle.fill")
                     }
                     protectionCard
                     if !isGlassesConnected {
@@ -325,8 +334,8 @@ struct TodayView: View {
                 Divider().padding(.vertical, 2)
 
                 actionRow(
-                    title: "Check Meal for Protein",
-                    subtitle: "Avoid Levodopa absorption delay",
+                    title: "Log a Meal",
+                    subtitle: "Save a meal time in your routine diary",
                     icon: "fork.knife",
                     tint: CadenceTheme.caution
                 ) {

@@ -67,6 +67,11 @@ class DoseLogCreate(BaseModel):
     scheduled_time_utc: Optional[str] = None
 
 
+class MealLogCreate(BaseModel):
+    event_uuid: str = Field(..., min_length=4)
+    timestamp_utc: str = Field(default_factory=utc_now_iso)
+
+
 class MealProteinAnalyzeRequest(BaseModel):
     event_uuid: str = Field(..., min_length=4)
     timestamp_utc: str = Field(default_factory=utc_now_iso)

@@ -26,6 +26,14 @@ from app.services.fall_escalation import FallEscalationManager  # noqa: E402
 init_db_sync()
 
 
+@pytest.fixture(autouse=True)
+def isolated_dispatch_database(monkeypatch, tmp_path):
+    # The durable recovery sweep intentionally scans all jobs, so each scenario
+    # needs its own database rather than inheriting jobs from earlier scenarios.
+    monkeypatch.setattr(settings, "sqlite_db_path", str(tmp_path / "scenario.db"))
+    init_db_sync()
+
+
 @pytest.fixture
 def dispatches(monkeypatch):
     """Records every caregiver dispatch while still running the simulated client."""
@@ -274,7 +282,7 @@ def test_an_sms_failure_still_places_the_voice_call(monkeypatch):
             return types.SimpleNamespace(sid="CA_OK")
 
     class _Client:
-        def __init__(self, sid, token):
+        def __init__(self, sid, token, **kwargs):
             self.messages = _Messages()
             self.calls = _Calls()
 
@@ -426,6 +434,8 @@ def test_resume_does_not_revive_a_window_that_already_elapsed(dispatches, monkey
             "UPDATE caregiver_alerts SET timestamp_utc = ? WHERE fall_event_uuid = ?",
             ("2020-01-01T00:00:00+00:00", "stale-001"),
         )
+        # The persisted job deadline, not an editable audit timestamp, owns the retry window.
+        await execute_write("UPDATE fall_jobs SET deadline=0 WHERE event_uuid=?", ("stale-001",))
         restarted = FallEscalationManager()
         await restarted.resume_open_escalations()
         task = restarted._active_tasks.get("stale-001")

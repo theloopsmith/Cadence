@@ -46,11 +46,11 @@ public struct HomeMotorExamMeasurements {
 /// What the backend returns from `POST /api/v1/exam/complete`.
 public struct HomeMotorExamResult: Decodable {
     public let examUUID: String
-    public let medicationStateLabel: String
-    public let voiceScore: Double
-    public let handwritingScore: Double
-    public let gaitScore: Double
-    public let compositeMotorScore: Double
+    public let medicationStateLabel: String?
+    public let voiceScore: Double?
+    public let handwritingScore: Double?
+    public let gaitScore: Double?
+    public let compositeMotorScore: Double?
     public let clinicalSummary: String
 
     enum CodingKeys: String, CodingKey {
@@ -254,11 +254,14 @@ public final class HomeMotorExamManager: ObservableObject {
         }
 
         // Offline: queue it so the care team still receives it later.
-        sync.saveLocalImmediate(
-            eventUUID: examUUID,
-            endpoint: "/api/v1/exam/complete",
-            payload: payload
-        )
+        if case let .failure(error) = sync.saveLocalImmediate(
+            eventUUID: examUUID, endpoint: "/api/v1/exam/complete", payload: payload
+        ) {
+            lastResultSummary = error.message
+            currentStep = .completed
+            audio.speakPrompt("Your check could not be saved safely. Keep Cadence open and try again.", priority: 2)
+            return nil
+        }
         lastResultSummary = "Saved on the phone. It will be sent when you're back online."
         currentStep = .completed
         audio.speakPrompt(

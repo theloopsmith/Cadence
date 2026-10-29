@@ -110,7 +110,7 @@ public struct MealProteinResult: Decodable {
     }
 
     public let eventUUID: String
-    public let estimatedProteinGrams: Double
+    public let estimatedProteinGrams: Double?
     public let plateDetected: Bool
     public let conflictDetected: Bool
     public let items: [Item]
@@ -127,10 +127,10 @@ public struct MealProteinResult: Decodable {
 }
 
 public struct ReportSummary: Decodable {
-    public let onPct: Double
-    public let wearingOffPct: Double
-    public let offPct: Double
-    public let noDosePct: Double
+    public let onPct: Double?
+    public let wearingOffPct: Double?
+    public let offPct: Double?
+    public let noDosePct: Double?
     public let fogCount: Int
     public let fallCount: Int
     public let fallCandidateResolvedCount: Int
@@ -154,8 +154,8 @@ public struct ReportSummary: Decodable {
 public struct DiaryBucket: Decodable, Identifiable {
     public var id: String { labelHHMM }
     public let labelHHMM: String
-    public let clinicalState: String
-    public let symptomBurdenScore: Double
+    public let clinicalState: String?
+    public let symptomBurdenScore: Double?
     public let fogCount: Int?
     public let fallOccurred: Bool?
     public let hasExam: Bool?
@@ -243,11 +243,10 @@ public struct CadenceAPIClient {
 
     public func logMeal(jpeg: Data) async throws -> MealProteinResult {
         try await post(
-            "/api/v1/medication/meal-protein",
+            "/api/v1/meals/log",
             body: [
                 "event_uuid": UUID().uuidString,
                 "timestamp_utc": Self.nowISO(),
-                "image_base64": jpeg.base64EncodedString(),
             ]
         )
     }

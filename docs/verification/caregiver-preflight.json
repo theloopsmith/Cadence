@@ -1,0 +1,12 @@
+{
+  "verified_at_utc": "2026-10-29T05:26:09.724181+00:00",
+  "checks": {
+    "recipient_e164": true,
+    "credentials_configured": true,
+    "public_https_callback": false
+  },
+  "recipient_last4": "2704",
+  "sent": false,
+  "caregiver_acknowledged": false,
+  "device_mode": "not_part_of_this_transport_drill"
+}

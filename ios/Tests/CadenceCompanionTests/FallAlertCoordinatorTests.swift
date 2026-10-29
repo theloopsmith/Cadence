@@ -246,6 +246,35 @@ final class FallAlertCoordinatorTests: XCTestCase {
         XCTAssertNotNil(second, "a second fall must still be detected")
     }
 
+    func testButtonCancelRearmsBeforeTheOriginalTimerExpires() {
+        let c = makeCoordinator()
+        let first = Self.driveHardFall(c.detector, startingAt: 1)!
+        c.beginCheckIn(eventUUID: first)
+        c.cancelByUser()
+        XCTAssertNotNil(Self.driveHardFall(c.detector, startingAt: 60))
+    }
+
+    func testTrailingDistressOverridesProvisionalAffirmative() {
+        let listener = MockSpeechCheckInListener()
+        let c = makeCoordinator(speechListener: listener)
+        c.beginCheckIn(eventUUID: "trailing-distress")
+        listener.simulateUtterance("I'm okay")
+        XCTAssertTrue(c.isAlertVisible)
+        XCTAssertFalse(c.isDispatched)
+        listener.simulateUtterance("I'm okay but I can't get up")
+        XCTAssertTrue(c.isDispatched)
+        c.cancelByUser()
+    }
+
+    func testEarlyDistressAndCancelRearmForAnotherSensorFall() {
+        let listener = MockSpeechCheckInListener()
+        let c = makeCoordinator(speechListener: listener)
+        c.beginCheckIn(eventUUID: Self.driveHardFall(c.detector, startingAt: 1)!)
+        listener.simulateUtterance("help")
+        c.cancelByUser()
+        XCTAssertNotNil(Self.driveHardFall(c.detector, startingAt: 60))
+    }
+
     /// Stage 1 free-fall, Stage 2 impact, Stage 3 stillness.
     private static func driveHardFall(_ detector: FallDetector, startingAt t: Double) -> String? {
         _ = detector.processIMUSample(
@@ -273,14 +302,16 @@ final class FallAlertCoordinatorTests: XCTestCase {
 
     /// Spoken "I am fine" streamed into the speech listener immediately resolves
     /// the check-in and cancels the alert without requiring a manual button tap.
-    func testSpeechListenerUtteranceCancelsCheckIn() {
+    func testSpeechListenerUtteranceCancelsCheckIn() async throws {
         let mockListener = MockSpeechCheckInListener()
-        let c = makeCoordinator(speechListener: mockListener)
+        let c = makeCoordinator(checkInWindow: 0.03, speechListener: mockListener)
         c.beginCheckIn(eventUUID: "fall-speech-cancel")
         XCTAssertTrue(c.isAlertVisible)
         XCTAssertTrue(mockListener.isListening)
 
         mockListener.simulateUtterance("I am fine, just dropped something")
+        XCTAssertTrue(c.isAlertVisible, "affirmatives stay provisional")
+        try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertFalse(c.isAlertVisible)
         XCTAssertEqual(c.lastOutcome, "canceled_false_alarm")
         XCTAssertFalse(AudioCueEngine.shared.isSirenActive)
@@ -288,12 +319,14 @@ final class FallAlertCoordinatorTests: XCTestCase {
 
     /// "I'm fine now" contains the letters of the distress word "no". Matching
     /// has to be on whole words, or the spoken cancel escalates instead.
-    func testSpokenFineNowCancelsInsteadOfEscalating() {
+    func testSpokenFineNowCancelsInsteadOfEscalating() async throws {
         let mockListener = MockSpeechCheckInListener()
-        let c = makeCoordinator(speechListener: mockListener)
+        let c = makeCoordinator(checkInWindow: 0.03, speechListener: mockListener)
         c.beginCheckIn(eventUUID: "fall-fine-now")
 
         mockListener.simulateUtterance("I'm fine now")
+        XCTAssertTrue(c.isAlertVisible, "affirmatives stay provisional")
+        try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertFalse(c.isDispatched)
         XCTAssertEqual(c.lastOutcome, "canceled_false_alarm")
         XCTAssertFalse(c.isAlertVisible)

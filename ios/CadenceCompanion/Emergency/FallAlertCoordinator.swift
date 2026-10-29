@@ -116,6 +116,7 @@ public final class RecordingPhoneDialer: PhoneDialer {
 @MainActor
 public final class FallAlertCoordinator: ObservableObject {
     @Published public private(set) var phase: FallAlertPhase = .idle
+    @Published public var persistenceWarning: String?
     @Published public private(set) var lastOutcome: String?
 
     /// Caregiver number offered as a one-tap call on the SOS screen. Falls back
@@ -154,6 +155,7 @@ public final class FallAlertCoordinator: ObservableObject {
         checkInWindow: TimeInterval = FallAlertCoordinator.checkInWindowSec
     ) {
         self.detector = detector
+        detector.eventSync = sync
         self.audio = audio
         self.sync = sync
         self.checkInWindow = checkInWindow
@@ -210,6 +212,7 @@ public final class FallAlertCoordinator: ObservableObject {
     /// Called when `FallDetector` completes Stage 3. Opens the check-in window
     /// and starts the countdown that escalates on silence.
     public func beginCheckIn(eventUUID: String, now: Date = Date()) {
+        persistenceWarning = sync.persistenceError?.message
         checkInTask?.cancel()
         phase = .checkIn(
             eventUUID: eventUUID,
@@ -307,9 +310,12 @@ public final class FallAlertCoordinator: ObservableObject {
             payload["longitude"] = lon
         }
         if let acc = resolvedAcc { payload["horizontal_accuracy_m"] = acc }
-        sync.saveLocalImmediate(
+        if case let .failure(error) = persist(
             eventUUID: uuid, endpoint: "/api/v1/events/fall", payload: payload
-        )
+        ) {
+            persistenceWarning = error.message
+            lastOutcome = "local_persistence_failed"
+        }
     }
 
     /// Resolves the alert from the spoken check-in, applying the detector's
@@ -360,7 +366,7 @@ public final class FallAlertCoordinator: ObservableObject {
         if wasDispatched {
             // Caregivers are already being called: cancelling must reach the
             // backend so the retry loop stops and the All-Clear SMS goes out.
-            sync.saveLocalImmediate(
+            persist(
                 eventUUID: "\(uuid)-cancel",
                 endpoint: "/api/v1/events/fall/\(uuid)/cancel",
                 payload: ["event_uuid": uuid]
@@ -368,7 +374,7 @@ public final class FallAlertCoordinator: ObservableObject {
         } else {
             // Cancelled inside the check-in window: no caregiver was contacted,
             // so the event is recorded as a resolved false alarm.
-            sync.saveLocalImmediate(
+            persist(
                 eventUUID: uuid,
                 endpoint: "/api/v1/events/fall",
                 payload: [
@@ -385,11 +391,19 @@ public final class FallAlertCoordinator: ObservableObject {
         }
     }
 
+    @discardableResult
+    private func persist(eventUUID: String, endpoint: String, payload: [String: Any]) -> Result<Void, QueueStorageError> {
+        let result = sync.saveLocalImmediate(eventUUID: eventUUID, endpoint: endpoint, payload: payload)
+        if case let .failure(error) = result { persistenceWarning = error.message }
+        return result
+    }
+
     /// Clears the alert: siren off, brightness and idle timer restored.
     private func standDown(outcome: String) {
         checkInTask?.cancel()
         checkInTask = nil
         _ = speechListener.stopListening()
+        detector.resetAfterResolution()
         phase = .idle
         lastOutcome = outcome
         audio.deactivateBystanderSiren()

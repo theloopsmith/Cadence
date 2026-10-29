@@ -168,8 +168,7 @@ public final class AppSettings: ObservableObject {
 
     private func apply() {
         AudioCueEngine.shared.preferredVoiceIdentifier = preferredVoiceIdentifier
-        sync.backendBaseURL = trimmedBaseURL
-        sync.deviceBearerToken = deviceToken
+        sync.configureSession(baseURL: trimmedBaseURL, bearerToken: deviceToken)
         exam?.backendBaseURL = trimmedBaseURL
         exam?.deviceBearerToken = deviceToken
         fallAlert?.caregiverPhoneNumber = hasCaregiver ? caregiverPhone : nil

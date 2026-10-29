@@ -33,6 +33,7 @@ from app.models import (
     LoginRequest,
     SpeechTranscribeRequest,
     MealProteinAnalyzeRequest,
+    MealLogCreate,
     RealityCheckRequest,
     VoiceLogCreate,
 )
@@ -71,12 +72,11 @@ async def lifespan(app: FastAPI):
     await purge_expired_telemetry()
     await fall_escalation_manager.resume_open_escalations()
     yield
-    for task in list(fall_escalation_manager._active_tasks.values()):
-        task.cancel()
+    await fall_escalation_manager.close()
 
 
 app = FastAPI(
-    title="Cadence Companion API",
+    title="Cadence Accessibility Companion API",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -87,7 +87,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 @app.get("/health")
 async def health_check() -> Dict[str, str]:
-    return {"status": "ok", "service": "cadence-clinical-orchestrator", "version": "1.0.0"}
+    return {"status": "ok", "service": "cadence-accessibility-companion", "version": "1.0.0"}
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -202,11 +202,21 @@ async def log_and_escalate_fall(
     payload: FallEventCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    return await fall_escalation_manager.ingest_fall_event(
+    result = await fall_escalation_manager.ingest_fall_event(
         patient_id=auth.patient_id,
         payload=payload,
         start_background_retry=True,
     )
+    if result.get("status") == "confirmed_waiting_dispatch" or (
+        result.get("status") == "escalated_twilio" and not result.get("provider_accepted")
+    ):
+        raise HTTPException(status_code=503, detail="Alert saved; caregiver contact unavailable. Retrying is required.")
+    return result
+
+
+@app.get("/api/v1/events/fall/{event_uuid}/delivery")
+async def get_fall_delivery(event_uuid: str, auth: AuthContext = Depends(require_any_authenticated_role)):
+    return await fall_escalation_manager.delivery_status(auth.patient_id, event_uuid)
 
 
 @app.post("/api/v1/events/fall/{event_uuid}/cancel")
@@ -225,11 +235,12 @@ async def twilio_gather_webhook(
     request: Request,
     event_uuid: str = Query(...),
     params: dict = Depends(verify_twilio_signature),
+    attempt_id: Optional[str] = Query(None),
 ) -> Response:
     digits = str(params.get("Digits", ""))
     res = await fall_escalation_manager.handle_gather_webhook(
         event_uuid=event_uuid,
-        digits=digits,
+        digits=digits, call_sid=params.get("CallSid"), attempt_id=attempt_id,
     )
     if res["acknowledged"]:
         twiml = (
@@ -249,11 +260,12 @@ async def twilio_status_webhook(
     request: Request,
     event_uuid: str = Query(...),
     params: dict = Depends(verify_twilio_signature),
+    attempt_id: Optional[str] = Query(None),
 ) -> Dict[str, Any]:
     call_status = str(params.get("CallStatus", ""))
     return await fall_escalation_manager.handle_status_webhook(
         event_uuid=event_uuid,
-        call_status=call_status,
+        call_status=call_status, call_sid=params.get("CallSid"), attempt_id=attempt_id,
     )
 
 
@@ -282,11 +294,26 @@ async def log_medication_dose(
     return {"status": "logged", "event_uuid": payload.event_uuid, "event_type": "dose_taken"}
 
 
-@app.post("/api/v1/medication/meal-protein")
+@app.post("/api/v1/meals/log")
+async def log_meal_time(payload: MealLogCreate, auth: AuthContext = Depends(require_device_writer)) -> Dict[str, Any]:
+    await execute_write(
+        """INSERT INTO medication_logs (patient_id, event_uuid, timestamp_utc, event_type)
+           VALUES (?, ?, ?, 'meal_logged') ON CONFLICT(event_uuid) DO NOTHING""",
+        (auth.patient_id, payload.event_uuid, payload.timestamp_utc),
+    )
+    return {"event_uuid": payload.event_uuid, "timestamp_utc": payload.timestamp_utc,
+            "estimated_protein_grams": None, "plate_detected": False,
+            "conflict_detected": False, "items": [],
+            "spoken_response": "Meal time logged in your routine diary."}
+
+
+@app.post("/api/v1/medication/meal-protein", deprecated=True)
 async def analyze_meal_protein(
     payload: MealProteinAnalyzeRequest,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
+    if not settings.enable_research_metrics:
+        return await log_meal_time(MealLogCreate(event_uuid=payload.event_uuid, timestamp_utc=payload.timestamp_utc), auth)
     reject_simulated_inputs(simulated_masks=payload.simulated_masks)
     deadline = RequestDeadlineContext()
     img_bytes = (
@@ -451,6 +478,9 @@ async def analyze_handwriting_endpoint(
     else:
         spoken = "Your handwriting stroke height looks steady."
 
+    if not settings.enable_research_metrics:
+        res.pop("handwriting_score", None)
+        res["micrographia_detected"] = False
     return {"event_uuid": payload.event_uuid, **res, "spoken_response": spoken}
 
 
@@ -565,6 +595,8 @@ async def complete_home_motor_exam(
         ),
     )
 
+    if not settings.enable_research_metrics:
+        return {"exam_uuid": payload.exam_uuid, "clinical_summary": clinical_summary}
     return {
         "exam_uuid": payload.exam_uuid,
         "medication_state_label": diary_eval["clinical_state"],
@@ -583,6 +615,10 @@ async def get_exam_history(
         "SELECT * FROM motor_exams WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 50",
         (auth.patient_id,),
     )
+    if not settings.enable_research_metrics:
+        for exam in exams:
+            for key in ("medication_state_label", "voice_score", "handwriting_score", "gait_score", "composite_motor_score"):
+                exam.pop(key, None)
     return {"patient_id": auth.patient_id, "exams": exams}
 
 
@@ -688,6 +724,19 @@ async def get_neurologist_report(
     if not narrative:
         narrative = await baseten_client.summarize_clinical_diary(summary_stats)
 
+    if not settings.enable_research_metrics:
+        for key in ("on_pct", "wearing_off_pct", "off_pct", "no_dose_pct", "latest_exam_score", "exam_on_vs_off_delta"):
+            summary_stats.pop(key, None)
+        hidden = {"medication_state_label", "voice_score", "handwriting_score", "gait_score",
+                  "composite_motor_score", "estimated_protein_grams", "conflict_detected",
+                  "micrographia_detected"}
+        for rows in (exam_rows, med_rows, writing_rows):
+            for row in rows:
+                for key in hidden:
+                    row.pop(key, None)
+        for bucket in timeline["buckets"]:
+            for key in ("clinical_state", "symptom_burden_score", "exam_composite_score", "protein_conflict_active"):
+                bucket.pop(key, None)
     return {
         "patient_id": pid,
         "summary_stats": summary_stats,

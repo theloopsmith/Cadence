@@ -43,7 +43,7 @@ public struct EmergencySOSView: View {
                     .font(.system(size: 56, weight: .semibold))
                     .foregroundColor(isDispatched ? foregroundColor : CadenceTheme.caution)
                     .accessibilityHidden(true)
-                Text(isDispatched ? "Help is being contacted" : "Are you OK?")
+                Text(isDispatched ? "Trying to contact caregiver" : "Are you OK?")
                     .font(.system(size: 40, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundColor(foregroundColor)
@@ -84,7 +84,7 @@ public struct EmergencySOSView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
             isDispatched
-                ? "Help is being contacted. Siren sounding. Tap I'm OK now to stop."
+                ? "Trying to contact caregiver. Siren sounding. Tap I'm OK now to stop."
                 : "Are you OK? Say I am okay, or tap I'm OK. Say help, or tap I need help."
         )
     }
@@ -111,7 +111,7 @@ public struct EmergencySOSView: View {
                     Label("I'm OK now — stop", systemImage: "checkmark")
                         .foregroundColor(backgroundColor)
                 }
-                .accessibilityHint("Stops the siren and tells your caregiver you are okay")
+                .accessibilityHint("Stops the siren and queues a cancellation for your caregiver")
             }
         } else {
             VStack(spacing: CadenceTheme.tapGap) {
@@ -124,14 +124,15 @@ public struct EmergencySOSView: View {
                 }) {
                     Label("I need help", systemImage: "phone.fill")
                 }
-                .accessibilityHint("Contacts your caregiver now")
+                .accessibilityHint("Saves an alert and tries to contact your caregiver")
             }
         }
     }
 
     private var statusLine: String {
+        if let warning = coordinator.persistenceWarning { return warning }
         if isDispatched {
-            return "A loud sound is playing so people nearby can find you. Your caregiver is being called."
+            return "A loud sound is playing so people nearby can find you. Saved on device; retrying caregiver alert. Use the call buttons if you need help now."
         }
         return "You can say “I'm okay” or “help”, or tap below. Take your time — \(secondsRemaining) seconds left before anyone is contacted."
     }

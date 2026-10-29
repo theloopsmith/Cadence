@@ -3,15 +3,17 @@ import AVFoundation
 /// Launch-configured priority audio engine (P0 Fall > P1 FoG Metronome > P2 Exam/Reality > P3 Nudge).
 public final class AudioCueEngine: EchoGuarding {
     public static let shared = AudioCueEngine()
-    private let engine = AVAudioEngine()
-    private let playerNode = AVAudioPlayerNode()
-    private let synthesizer = AVSpeechSynthesizer()
+    private lazy var engine = AVAudioEngine()
+    private lazy var playerNode = AVAudioPlayerNode()
+    private lazy var synthesizer = AVSpeechSynthesizer()
     private let pcmFormat = AVAudioFormat(standardFormatWithSampleRate: 44100.0, channels: 1)!
     public private(set) var isSirenActive: Bool = false
     public private(set) var isMetronomeActive: Bool = false
 
     /// Keeps the app alive in the background while protection runs.
-    public private(set) lazy var keepAlive: SilentAudioKeepAlive = SilentAudioKeepAlive(engine: engine)
+    public private(set) lazy var keepAlive: BackgroundKeepAliving = playbackEnabled ? SilentAudioKeepAlive(engine: engine) : TestKeepAlive()
+    // Only explicit unit-test runs suppress hardware playback, never the normal app.
+    private let playbackEnabled = !(ProcessInfo.processInfo.environment["CADENCE_TEST_SILENT_AUDIO"] == "1" && NSClassFromString("XCTestCase") != nil)
 
     /// A voice chosen in setup. Nil, or a voice that has been deleted, means
     /// "the most natural English voice installed".
@@ -27,6 +29,7 @@ public final class AudioCueEngine: EchoGuarding {
     private lazy var speechObserver = SpeechObserver(engine: self)
 
     private init() {
+        guard playbackEnabled else { return }
         configureLaunchAudioSession()
         synthesizer.delegate = speechObserver
         engine.attach(playerNode)
@@ -37,6 +40,7 @@ public final class AudioCueEngine: EchoGuarding {
     }
 
     private func ensureEngineRunning() {
+        guard playbackEnabled else { return }
         guard !engine.isRunning else { return }
         do {
             try engine.start()
@@ -47,6 +51,7 @@ public final class AudioCueEngine: EchoGuarding {
 
     /// Configured ONCE at app launch so siren activation never changes the session category.
     public func configureLaunchAudioSession() {
+        guard playbackEnabled else { return }
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         #if targetEnvironment(simulator)
@@ -78,6 +83,7 @@ public final class AudioCueEngine: EchoGuarding {
     public func activateBystanderSiren() {
         isMetronomeActive = false
         isSirenActive = true
+        guard playbackEnabled else { return }
         ensureEngineRunning()
         playerNode.stop()
 
@@ -95,6 +101,7 @@ public final class AudioCueEngine: EchoGuarding {
     /// Restores normal Bluetooth glasses routing after local siren cancellation.
     public func deactivateBystanderSiren() {
         isSirenActive = false
+        guard playbackEnabled else { return }
         playerNode.stop()
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
@@ -104,8 +111,9 @@ public final class AudioCueEngine: EchoGuarding {
 
     /// Priority 1: Starts 100 BPM (1.67 Hz) Rhythmic Auditory Stimulation (RAS) metronome on glasses.
     public func startRASMetronome(bpm: Int = 100) {
-        guard !isSirenActive else { return }
+        guard !isSirenActive, !isMetronomeActive else { return }
         isMetronomeActive = true
+        guard playbackEnabled else { return }
         ensureEngineRunning()
         playerNode.stop()
 
@@ -118,11 +126,13 @@ public final class AudioCueEngine: EchoGuarding {
 
     public func stopRASMetronome() {
         isMetronomeActive = false
+        guard playbackEnabled else { return }
         playerNode.stop()
     }
 
     /// Test tone and spoken confirmation to verify audio pipeline is audible.
     public func playAudioTest() {
+        guard playbackEnabled else { return }
         ensureEngineRunning()
         playerNode.stop()
         if let clickBuffer = buildMetronomeClickPCMBuffer(bpm: 100) {
@@ -134,6 +144,7 @@ public final class AudioCueEngine: EchoGuarding {
 
     /// Speaks a calm open-ear prompt respecting the 4-level priority hierarchy.
     public func speakPrompt(_ text: String, priority: Int = 2) {
+        guard playbackEnabled else { return }
         if isSirenActive && priority > 0 { return }
         if isMetronomeActive && priority > 1 { return }
         let utterance = AVSpeechUtterance(string: text)
@@ -201,6 +212,7 @@ public final class AudioCueEngine: EchoGuarding {
 
     /// Plays a short sample in a given voice, for choosing one in setup.
     public func speakSample(voiceIdentifier: String) {
+        guard playbackEnabled else { return }
         let utterance = AVSpeechUtterance(string: "Hello. This is how Cadence will sound. Step with the beat.")
         utterance.voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) ?? currentVoice()
         utterance.rate = 0.48
@@ -214,7 +226,7 @@ public final class AudioCueEngine: EchoGuarding {
 
     public func isInEchoWindow(at date: Date) -> Bool {
         echoLock.lock(); defer { echoLock.unlock() }
-        return synthesizer.isSpeaking || echoWindow.isActive(at: date)
+        return (playbackEnabled && synthesizer.isSpeaking) || echoWindow.isActive(at: date)
     }
 
     fileprivate func speechDidStart() {
@@ -245,4 +257,11 @@ private final class SpeechObserver: NSObject, AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         engine.speechDidEnd()
     }
+}
+
+/// State-only keepalive selected exclusively by the explicit unit-test flag.
+private final class TestKeepAlive: BackgroundKeepAliving {
+    private(set) var isActive = false
+    func start() { isActive = true }
+    func stop() { isActive = false }
 }

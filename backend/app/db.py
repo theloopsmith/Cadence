@@ -216,7 +216,8 @@ def _connect_sync(db_path: Optional[str] = None) -> sqlite3.Connection:
 def init_db_sync(db_path: Optional[str] = None) -> None:
     conn = _connect_sync(db_path)
     try:
-        conn.executescript(SCHEMA_SQL)
+        from app.services.fall_durability import SCHEMA as FALL_OUTBOX_SCHEMA
+        conn.executescript(SCHEMA_SQL + FALL_OUTBOX_SCHEMA)
         conn.commit()
     finally:
         conn.close()
@@ -406,7 +407,7 @@ def purge_expired_telemetry_sync(db_path: Optional[str] = None) -> Dict[str, int
 
         # Canceled false-alarm falls expire at 30d; confirmed falls & caregiver_alerts at 365d
         cur_false_falls = conn.execute(
-            "DELETE FROM fall_events WHERE status = 'canceled_false_alarm' AND timestamp_utc < ?",
+            "DELETE FROM fall_events WHERE status = 'canceled_false_alarm' AND timestamp_utc < ? AND NOT EXISTS (SELECT 1 FROM caregiver_alerts a WHERE a.fall_event_uuid=fall_events.event_uuid) AND NOT EXISTS (SELECT 1 FROM fall_jobs j WHERE j.event_uuid=fall_events.event_uuid)",
             (cutoff_routine,),
         )
         purged["fall_events_false_alarm"] = cur_false_falls.rowcount
@@ -440,6 +441,7 @@ def wipe_patient_data_sync(
     try:
         # Delete child caregiver_alerts first due to foreign key
         tables_ordered = [
+            "fall_clear_jobs", "fall_attempts", "fall_jobs",
             "caregiver_alerts",
             "fall_events",
             "fog_events",

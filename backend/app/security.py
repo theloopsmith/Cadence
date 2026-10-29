@@ -99,6 +99,8 @@ async def verify_twilio_signature(request: Request) -> dict:
     # If no auth token is configured in local dev/test without signature enforcement,
     # still require X-Twilio-Signature when twilio_auth_token is non-empty.
     if not settings.twilio_auth_token:
+        if settings.is_production or not settings.demo_mode_enabled:
+            raise HTTPException(status_code=503, detail="Caregiver callback verification is unavailable.")
         return params
 
     signature = request.headers.get("X-Twilio-Signature", "")
