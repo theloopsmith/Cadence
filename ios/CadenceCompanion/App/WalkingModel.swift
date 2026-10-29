@@ -136,6 +136,7 @@ public final class WalkingModel: ObservableObject {
     }
 
     public func stopFreezeDemo() {
+        guard isDemoRunning else { return }
         demoTask?.cancel()
         demoTask = nil
         finishDemo(summary: "Demo stopped.")

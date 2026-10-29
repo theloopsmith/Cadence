@@ -34,9 +34,6 @@ struct TodayView: View {
                     if !simple {
                         checksCard
                         protectionCard
-                        if walking.isDemoRunning || walking.lastDemoSummary != nil {
-                            demoStatus
-                        }
                     } else {
                         // In simple mode, offer the motor check directly
                         simpleChecksCard
@@ -188,28 +185,6 @@ struct TodayView: View {
             walking.setProtection(enabled: next)
         }
         .disabled(walking.isDemoRunning)
-    }
-
-    private var demoStatus: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                StatusPill(text: walking.demoLabel, color: CadenceTheme.caution, filled: true)
-                Text(walking.isDemoRunning ? "Freeze demo playing" : "Freeze demo")
-                    .font(.headline)
-            }
-            if walking.isDemoRunning {
-                ProgressView(value: walking.demoProgress).tint(CadenceTheme.caution)
-                GuardedButton(size: .big, style: .tinted(CadenceTheme.caution), action: { walking.stopFreezeDemo() }) {
-                    Text("Stop demo")
-                }
-            } else if let summary = walking.lastDemoSummary {
-                Text(summary)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .card()
     }
 
     // MARK: - Quick Checks
