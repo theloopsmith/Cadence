@@ -74,8 +74,21 @@ struct MedicationSetupView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                Button(app.pillPhoto == nil ? "Take photo" : "Replace") { showPillCamera = true }
-                    .frame(minHeight: CadenceTheme.minimumTapHeight)
+                Button(app.pillPhoto == nil ? (app.glasses.connectionState == .connected ? "Take with glasses" : "Take photo") : "Replace") {
+                    if app.glasses.connectionState == .connected {
+                        app.glasses.capturePhoto { result in
+                            switch result {
+                            case let .success(jpeg):
+                                app.setPillPhoto(jpeg)
+                            case .failure:
+                                showPillCamera = true
+                            }
+                        }
+                    } else {
+                        showPillCamera = true
+                    }
+                }
+                .frame(minHeight: CadenceTheme.minimumTapHeight)
             }
             if app.pillPhoto != nil {
                 Button("Remove pill photo", role: .destructive) { app.setPillPhoto(nil) }

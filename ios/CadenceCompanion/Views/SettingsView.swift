@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var password = ""
     @State private var confirmSignOut = false
 
+    @Environment(\.dismiss) private var dismiss
+
     init(app: CadenceAppModel) {
         self.app = app
         self.settings = app.settings
@@ -20,28 +22,42 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                signInSection
-                serverSection
-                glassesSection
-                Section {
-                    TextField("Name on summaries (optional)", text: $settings.summaryName)
-                        .frame(minHeight: CadenceTheme.minimumTapHeight)
-                } header: {
-                    Text("Shared summaries")
-                } footer: {
-                    Text("Printed at the top of summaries shared from the Diary.")
-                }
-                caregiverSection
                 voiceSection
+                glassesSection
+                serverSection
+                caregiverSection
+                summariesSection
+                signInSection
                 aboutSection
             }
-            .navigationTitle("Care partner setup")
+            .navigationTitle("Settings")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
             .confirmationDialog("Sign this phone out?", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Sign out", role: .destructive) { auth.signOut() }
                 Button("Keep signed in", role: .cancel) {}
             } message: {
                 Text("Events will stay on the phone until someone signs in again.")
             }
+        }
+    }
+
+    // MARK: - Summaries
+
+    private var summariesSection: some View {
+        Section {
+            TextField("Name on summaries (optional)", text: $settings.summaryName)
+                .frame(minHeight: CadenceTheme.minimumTapHeight)
+        } header: {
+            Text("Shared summaries")
+        } footer: {
+            Text("Printed at the top of summaries shared from the Diary.")
         }
     }
 
@@ -256,9 +272,9 @@ struct SettingsView: View {
                 )
             }
         } header: {
-            Text("Voice")
+            Text("Voice & Audio Cues")
         } footer: {
-            Text("Tap a voice to hear it and use it for all of Cadence's spoken prompts.")
+            Text("Tap a voice to test it. Cadence uses this voice for rhythmic gait prompts, fall safety check-ins, and reminders.")
         }
     }
 

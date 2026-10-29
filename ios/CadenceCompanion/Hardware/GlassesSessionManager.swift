@@ -83,6 +83,31 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
         }
     }
 
+    /// Whether connected glasses can capture a photo.
+    public var canCapturePhoto: Bool {
+        device != nil && connectionState == .connected && (capabilities?.camera ?? false)
+    }
+
+    /// Captures a photo using the connected glasses device.
+    /// Delivers the result to `completion` on the main thread.
+    public func capturePhoto(completion: @escaping (Result<Data, GlassesError>) -> Void) {
+        guard let device, connectionState == .connected else {
+            DispatchQueue.main.async { completion(.failure(.notConnected)) }
+            return
+        }
+        guard capabilities?.camera ?? false else {
+            DispatchQueue.main.async { completion(.failure(.cameraUnavailable)) }
+            return
+        }
+        device.captureFrame { result in
+            if Thread.isMainThread {
+                completion(result)
+            } else {
+                DispatchQueue.main.async { completion(result) }
+            }
+        }
+    }
+
     private func mirror(_ device: GlassesDevice) {
         connectionState = device.connectionState
         wearState = device.wearState

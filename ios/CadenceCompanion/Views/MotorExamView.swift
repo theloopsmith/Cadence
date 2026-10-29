@@ -242,10 +242,24 @@ public struct MotorExamView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 8)
             } else {
-                GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
-                    showCamera = true
-                }) {
-                    Label("Take Photo of Writing", systemImage: "camera.fill")
+                if app.glasses.connectionState == .connected {
+                    GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
+                        captureHandwritingWithGlasses()
+                    }) {
+                        Label("Take Photo with Glasses", systemImage: "eyeglasses")
+                    }
+
+                    Button("Or use phone camera") {
+                        showCamera = true
+                    }
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                } else {
+                    GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
+                        showCamera = true
+                    }) {
+                        Label("Take Photo of Writing", systemImage: "camera.fill")
+                    }
                 }
 
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
@@ -257,6 +271,20 @@ public struct MotorExamView: View {
             }
         }
         .card()
+    }
+
+    private func captureHandwritingWithGlasses() {
+        isAnalyzingHandwriting = true
+        handwritingStatus = nil
+        app.glasses.capturePhoto { result in
+            switch result {
+            case let .success(jpeg):
+                self.analyzeHandwriting(jpeg: jpeg)
+            case let .failure(error):
+                self.isAnalyzingHandwriting = false
+                self.handwritingStatus = "Glasses camera: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func analyzeHandwriting(jpeg: Data) {

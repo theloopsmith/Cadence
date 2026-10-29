@@ -12,6 +12,7 @@ struct TodayView: View {
     @State private var showMotorCheck = false
     @State private var showRealityCheck = false
     @State private var showMealCheck = false
+    @State private var showSettings = false
 
     private var walking: WalkingModel { app.walking }
     private var doses: DoseLogModel { app.doses }
@@ -24,7 +25,7 @@ struct TodayView: View {
                 VStack(spacing: CadenceTheme.tapGap) {
                     if app.auth.needsSignIn {
                         InlineNotice(
-                            text: "Cadence is keeping today's events on this phone until it's signed in. A care partner can sign in from Help, then Care partner setup.",
+                            text: "Cadence is keeping today's events on this phone until it's signed in. You can sign in anytime in Settings.",
                             color: CadenceTheme.accent,
                             systemName: "info.circle.fill"
                         )
@@ -46,6 +47,21 @@ struct TodayView: View {
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle(simple ? "Right now" : "Today")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(CadenceTheme.accent)
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView(app: app)
+            }
             .sheet(isPresented: $showMotorCheck) {
                 MotorExamView(app: app)
             }

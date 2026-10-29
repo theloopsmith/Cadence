@@ -84,10 +84,24 @@ public struct MealCheckView: View {
 
     private var actionCard: some View {
         VStack(spacing: 12) {
-            GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
-                showCamera = true
-            }) {
-                Label("Take Photo of Plate", systemImage: "camera.fill")
+            if app.glasses.connectionState == .connected {
+                GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
+                    captureWithGlasses()
+                }) {
+                    Label("Take Photo with Glasses", systemImage: "eyeglasses")
+                }
+
+                Button("Or use phone camera") {
+                    showCamera = true
+                }
+                .font(.footnote)
+                .foregroundColor(.secondary)
+            } else {
+                GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
+                    showCamera = true
+                }) {
+                    Label("Take Photo of Plate", systemImage: "camera.fill")
+                }
             }
         }
         .card()
@@ -198,6 +212,22 @@ public struct MealCheckView: View {
     }
 
     // MARK: - Logic
+
+    private func captureWithGlasses() {
+        isAnalyzing = true
+        errorMessage = nil
+        mealResult = nil
+
+        app.glasses.capturePhoto { result in
+            switch result {
+            case let .success(jpeg):
+                self.analyzeMeal(jpeg: jpeg)
+            case let .failure(error):
+                self.isAnalyzing = false
+                self.errorMessage = "Glasses camera: \(error.localizedDescription)"
+            }
+        }
+    }
 
     private func analyzeMeal(jpeg: Data) {
         isAnalyzing = true

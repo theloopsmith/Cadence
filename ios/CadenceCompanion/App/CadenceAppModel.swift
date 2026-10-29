@@ -268,7 +268,11 @@ public final class CadenceAppModel: ObservableObject {
     public func useMockGlasses(_ enabled: Bool) {
         if enabled {
             let walking = LabeledCaptureLibrary.referenceCaptures().first { $0.label == .walking }?.samples ?? []
-            let device = MockGlassesDevice(name: "Ray-Ban Meta (mock)", loopSamples: walking)
+            let device = MockGlassesDevice(
+                name: "Ray-Ban Meta (mock)",
+                loopSamples: walking,
+                frame: MockGlassesDevice.sampleFrameJPEG
+            )
             glasses.attach(device)
             isUsingMockGlasses = true
         } else if let realGlasses {

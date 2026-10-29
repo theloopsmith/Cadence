@@ -170,16 +170,20 @@ public struct RealityCheckView: View {
                 GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
                     captureWithGlasses()
                 }) {
-                    Label("Check with Glasses Camera", systemImage: "eyeglasses")
+                    Label("Check Scene with Glasses", systemImage: "eyeglasses")
                 }
-            }
 
-            GuardedButton(
-                size: app.glasses.connectionState == .connected ? .big : .giant,
-                style: app.glasses.connectionState == .connected ? .tinted(CadenceTheme.accent) : .filled(CadenceTheme.accent),
-                action: { showCamera = true }
-            ) {
-                Label("Take Photo with Phone", systemImage: "camera.fill")
+                Button("Or use phone camera") {
+                    showCamera = true
+                }
+                .font(.footnote)
+                .foregroundColor(.secondary)
+            } else {
+                GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
+                    showCamera = true
+                }) {
+                    Label("Take Photo with Phone", systemImage: "camera.fill")
+                }
             }
         }
         .card()

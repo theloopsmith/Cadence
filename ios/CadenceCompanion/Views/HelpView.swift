@@ -56,7 +56,7 @@ struct HelpView: View {
                         Label("Medication setup", systemImage: "pills.fill")
                     }
                     GuardedButton(size: .big, style: .tinted(.secondary), action: { pendingSetup = .carePartner }) {
-                        Label("Care partner setup", systemImage: "person.2.fill")
+                        Label("Settings", systemImage: "gearshape.fill")
                     }
                 }
                 .padding(.horizontal, 16)
@@ -65,7 +65,7 @@ struct HelpView: View {
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle("Help")
             .confirmationDialog(
-                pendingSetup == .medication ? "Open medication setup?" : "Open care partner setup?",
+                pendingSetup == .medication ? "Open medication setup?" : "Open settings?",
                 isPresented: Binding(get: { pendingSetup != nil }, set: { if !$0 { pendingSetup = nil } }),
                 titleVisibility: .visible
             ) {
@@ -78,7 +78,7 @@ struct HelpView: View {
                 Text(
                     pendingSetup == .medication
                         ? "Medication name, dose times, and the pill photo."
-                        : "Contacts, glasses, and connection. Nothing here changes on its own."
+                        : "Voice, glasses, server connection, and contacts."
                 )
             }
             .sheet(item: $openSetup) { setup in
