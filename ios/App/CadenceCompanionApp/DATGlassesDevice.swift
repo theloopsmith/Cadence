@@ -89,7 +89,10 @@ public final class DATGlassesDevice: GlassesDevice {
                 case .started:
                     motionSource.bind(session: session)
                     observeDeviceState(session.device)
-                    await MainActor.run { self.setConnection(.connected) }
+                    await MainActor.run {
+                        self.setConnection(.connected)
+                        AudioRouteManager.shared.routeToGlassesIfAvailable()
+                    }
                 case .paused:
                     break
                 case .stopped:

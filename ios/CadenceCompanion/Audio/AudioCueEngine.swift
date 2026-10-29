@@ -58,12 +58,13 @@ public final class AudioCueEngine: EchoGuarding {
         }
         #else
         do {
-            try session.setCategory(
-                .playAndRecord,
-                mode: .default,
-                options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
-            )
+            var options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+            #if swift(>=5.9)
+            options.insert(.allowBluetoothHFP)
+            #endif
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
             try session.setActive(true)
+            AudioRouteManager.shared.routeToGlassesIfAvailable()
         } catch {
             // Fallback for devices without bluetooth or microphone permissions
             try? session.setCategory(.playback, mode: .default)

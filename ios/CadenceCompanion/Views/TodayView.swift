@@ -118,7 +118,7 @@ struct TodayView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.glasses.connectionState == .connected ? (app.glasses.deviceName ?? "Meta Glasses Connected") : "Meta Gen 3 AI Glasses")
                     .font(.headline)
-                Text(app.glasses.connectionState == .connected ? "60 Hz IMU · Open-Ear Audio Active" : "Tap to connect for head motion & cues")
+                Text(app.glasses.connectionState == .connected ? "60 Hz IMU · Glasses Mic & Audio Active" : "Tap to connect for head motion, mic & cues")
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }

@@ -79,12 +79,18 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
         }
         #else
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP])
+            var options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+            #if swift(>=5.9)
+            options.insert(.allowBluetoothHFP)
+            #endif
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: options)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            AudioRouteManager.shared.routeToGlassesIfAvailable()
         } catch {
             do {
-                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
                 try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                AudioRouteManager.shared.routeToGlassesIfAvailable()
             } catch {
                 isListening = false
                 return
