@@ -3,31 +3,21 @@ import SwiftUI
 import UIKit
 #endif
 
+/// Focused user settings: Voice selection and About information.
 struct SettingsView: View {
     @ObservedObject var app: CadenceAppModel
     @ObservedObject private var settings: AppSettings
-    @ObservedObject private var auth: AuthSession
-    @State private var username = ""
-    @State private var password = ""
-    @State private var confirmSignOut = false
-
     @Environment(\.dismiss) private var dismiss
 
     init(app: CadenceAppModel) {
         self.app = app
         self.settings = app.settings
-        self.auth = app.auth
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 voiceSection
-                glassesSection
-                serverSection
-                caregiverSection
-                summariesSection
-                signInSection
                 aboutSection
             }
             .navigationTitle("Settings")
@@ -39,200 +29,6 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .confirmationDialog("Sign this phone out?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-                Button("Sign out", role: .destructive) { auth.signOut() }
-                Button("Keep signed in", role: .cancel) {}
-            } message: {
-                Text("Events will stay on the phone until someone signs in again.")
-            }
-        }
-    }
-
-    // MARK: - Summaries
-
-    private var summariesSection: some View {
-        Section {
-            TextField("Name on summaries (optional)", text: $settings.summaryName)
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-        } header: {
-            Text("Shared summaries")
-        } footer: {
-            Text("Printed at the top of summaries shared from the Diary.")
-        }
-    }
-
-    // MARK: - Sign-in
-
-    private var signInSection: some View {
-        Section {
-            if auth.isSignedIn, let name = auth.username {
-                HStack {
-                    Label("Signed in as \(name)", systemImage: "checkmark.shield.fill")
-                        .foregroundColor(CadenceTheme.calm)
-                    Spacer()
-                }
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-                Button("Sign out", role: .destructive) { confirmSignOut = true }
-                    .frame(minHeight: CadenceTheme.minimumTapHeight)
-            } else {
-                if auth.isExpired {
-                    InlineNotice(text: "The phone needs to sign in again. Nothing is lost; events are waiting on the phone.")
-                }
-                TextField("Username", text: $username)
-                    .textContentType(.username)
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    #endif
-                    .autocorrectionDisabled()
-                    .frame(minHeight: CadenceTheme.minimumTapHeight)
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-                    .frame(minHeight: CadenceTheme.minimumTapHeight)
-                if let message = auth.errorMessage {
-                    Text(message).font(.footnote).foregroundColor(CadenceTheme.danger)
-                }
-                Button {
-                    Task {
-                        await auth.signIn(username: username, password: password)
-                        if auth.isSignedIn { password = "" }
-                    }
-                } label: {
-                    if auth.isWorking { ProgressView() } else { Text("Sign in") }
-                }
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-                .disabled(auth.isWorking)
-            }
-        } header: {
-            Text("Phone sign-in")
-        } footer: {
-            Text("Use the account made for this phone. The password is not stored; the phone keeps a sign-in key in its secure storage.")
-        }
-    }
-
-    // MARK: - Server Connection
-
-    private var serverSection: some View {
-        Section {
-            TextField("Server address", text: $settings.backendBaseURL)
-                #if os(iOS)
-                .textContentType(.URL)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                #endif
-                .autocorrectionDisabled()
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-        } header: {
-            Text("Backend server")
-        } footer: {
-            Text("For local Wi-Fi testing, use your Mac's IP (e.g. http://192.168.86.206:8000).")
-        }
-    }
-
-    // MARK: - Meta AI Glasses
-
-    private var glassesSection: some View {
-        Section {
-            HStack(spacing: 12) {
-                IconBadge(
-                    systemName: "eyeglasses",
-                    color: app.glasses.connectionState == .connected ? CadenceTheme.calm : .secondary,
-                    size: 36
-                )
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(app.glasses.deviceName ?? "Meta Gen 3 AI Glasses")
-                        .font(.headline)
-                    Text(glassesStatusText)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                if app.glasses.connectionState == .connecting {
-                    ProgressView().tint(CadenceTheme.accent)
-                } else if app.glasses.connectionState == .connected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(CadenceTheme.calm)
-                }
-            }
-            .frame(minHeight: CadenceTheme.minimumTapHeight)
-
-            if app.glasses.connectionState == .connected {
-                HStack {
-                    Text("Wear State")
-                    Spacer()
-                    Text(app.glasses.wearState.rawValue.capitalized)
-                        .foregroundColor(.secondary)
-                }
-                HStack {
-                    Text("Motion Stream")
-                    Spacer()
-                    Text("60 Hz IMU (Active)")
-                        .foregroundColor(CadenceTheme.calm)
-                }
-                Button("Disconnect Glasses", role: .destructive) {
-                    app.glasses.disconnect()
-                }
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-            } else {
-                Button {
-                    app.glasses.connect()
-                } label: {
-                    HStack {
-                        Text(app.glasses.connectionState == .connecting ? "Connecting to Meta Glasses…" : "Connect Meta Glasses")
-                            .font(.headline)
-                        Spacer()
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                    }
-                }
-                .disabled(app.glasses.connectionState == .connecting)
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-
-                Toggle(
-                    "Simulate Meta Glasses (Mock)",
-                    isOn: Binding(
-                        get: { app.isUsingMockGlasses },
-                        set: { app.useMockGlasses($0) }
-                    )
-                )
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-            }
-        } header: {
-            Text("Meta AI Glasses")
-        } footer: {
-            Text("Streams 60 Hz head motion for Freeze of Gait detection, triggers open-ear audio cueing, and provides ground-level vision checks.")
-        }
-    }
-
-    private var glassesStatusText: String {
-        switch app.glasses.connectionState {
-        case .connected:
-            return "Connected · " + (app.glasses.wearState == .worn ? "Worn on head" : "Not worn")
-        case .connecting:
-            return "Connecting through Meta Wearables SDK…"
-        case .disconnected:
-            return "Disconnected"
-        case .notPaired:
-            return "Not paired yet"
-        }
-    }
-
-    // MARK: - Caregiver
-
-    private var caregiverSection: some View {
-        Section {
-            TextField("Caregiver's name", text: $settings.caregiverName)
-            TextField("Caregiver's phone", text: $settings.caregiverPhone)
-                #if os(iOS)
-                .textContentType(.telephoneNumber)
-                .keyboardType(.phonePad)
-                #endif
-            TextField("Emergency number", text: $settings.emergencyNumber)
-                #if os(iOS)
-                .keyboardType(.phonePad)
-                #endif
-        } header: {
-            Text("Caregiver")
-        } footer: {
-            Text("Contacted only if you fall and do not answer the voice check-in.")
         }
     }
 
@@ -277,6 +73,8 @@ struct SettingsView: View {
             Text("Tap a voice to test it. Cadence uses this voice for rhythmic gait prompts, fall safety check-ins, and reminders.")
         }
     }
+
+    // MARK: - About
 
     private var aboutSection: some View {
         Section {

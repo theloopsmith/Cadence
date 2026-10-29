@@ -44,15 +44,14 @@ public struct MealCheckView: View {
                     Button("Close") { dismiss() }
                 }
             }
-            .sheet(isPresented: $showCamera) {
-                CameraPicker(
-                    onCapture: { jpeg in
-                        showCamera = false
-                        analyzeMeal(jpeg: jpeg)
-                    },
-                    onCancel: { showCamera = false }
-                )
-            }
+            .cameraPresentation(
+                isPresented: $showCamera,
+                onCapture: { jpeg in
+                    showCamera = false
+                    analyzeMeal(jpeg: jpeg)
+                },
+                onCancel: { showCamera = false }
+            )
         }
     }
 

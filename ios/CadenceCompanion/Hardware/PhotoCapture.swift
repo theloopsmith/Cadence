@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 
 #if os(iOS)
+import AVFoundation
 import UIKit
 
 /// Resizes and compresses a captured frame for upload: longest edge 1280 px,
@@ -24,6 +25,10 @@ public enum CameraAvailability {
     public static var hasCamera: Bool {
         UIImagePickerController.isSourceTypeAvailable(.camera)
     }
+
+    public static var isAuthorized: Bool {
+        AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+    }
 }
 
 /// Presents the system camera and hands back a JPEG ready for upload. Falls
@@ -43,10 +48,19 @@ public struct CameraPicker: UIViewControllerRepresentable {
 
     public func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
-        picker.sourceType = CameraAvailability.hasCamera ? .camera : .photoLibrary
-        if picker.sourceType == .camera {
+        let hasCam = UIImagePickerController.isSourceTypeAvailable(.camera)
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+
+        if hasCam && (status == .authorized || status == .notDetermined) {
+            picker.sourceType = .camera
             picker.cameraCaptureMode = .photo
             picker.cameraDevice = .rear
+            picker.showsCameraControls = true
+            if status == .notDetermined {
+                AVCaptureDevice.requestAccess(for: .video) { _ in }
+            }
+        } else {
+            picker.sourceType = .photoLibrary
         }
         picker.allowsEditing = false
         picker.delegate = context.coordinator
@@ -105,3 +119,23 @@ public struct CameraPicker: View {
     }
 }
 #endif
+
+extension View {
+    @ViewBuilder
+    public func cameraPresentation(
+        isPresented: Binding<Bool>,
+        onCapture: @escaping (Data) -> Void,
+        onCancel: @escaping () -> Void
+    ) -> some View {
+        #if os(iOS)
+        self.fullScreenCover(isPresented: isPresented) {
+            CameraPicker(onCapture: onCapture, onCancel: onCancel)
+                .ignoresSafeArea()
+        }
+        #else
+        self.sheet(isPresented: isPresented) {
+            CameraPicker(onCapture: onCapture, onCancel: onCancel)
+        }
+        #endif
+    }
+}

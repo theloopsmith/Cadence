@@ -60,15 +60,14 @@ public struct RealityCheckView: View {
             .onDisappear {
                 stopVoiceInput()
             }
-            .sheet(isPresented: $showCamera) {
-                CameraPicker(
-                    onCapture: { jpeg in
-                        showCamera = false
-                        runRealityCheck(jpeg: jpeg)
-                    },
-                    onCancel: { showCamera = false }
-                )
-            }
+            .cameraPresentation(
+                isPresented: $showCamera,
+                onCapture: { jpeg in
+                    showCamera = false
+                    runRealityCheck(jpeg: jpeg)
+                },
+                onCancel: { showCamera = false }
+            )
         }
     }
 

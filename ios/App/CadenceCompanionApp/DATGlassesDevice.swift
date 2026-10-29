@@ -37,6 +37,8 @@ public final class DATGlassesDevice: GlassesDevice {
     private var sessionTask: Task<Void, Never>?
     private var deviceStateToken: (any AnyListenerToken)?
     private let motionSource: DATMotionSource
+    private let activeCaptureTokens = ListenerTokenBag()
+    private var activeCamera: Camera?
 
     public init(name: String = "Ray-Ban Meta") {
         self.name = name
@@ -153,7 +155,8 @@ public final class DATGlassesDevice: GlassesDevice {
         guard connectionState == .connected, let session else {
             return completion(.failure(.notConnected))
         }
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             do {
                 var status = try await wearables.checkPermissionStatus(.camera)
                 if status != .granted {
@@ -162,35 +165,56 @@ public final class DATGlassesDevice: GlassesDevice {
                 guard status == .granted else {
                     return await MainActor.run { completion(.failure(.cameraUnavailable)) }
                 }
+
+                // Stop any previous camera instance
+                self.activeCamera?.stop()
+                self.activeCaptureTokens.clear()
+
                 guard let camera = try session.addCamera(config: StreamConfiguration()) else {
                     return await MainActor.run { completion(.failure(.cameraUnavailable)) }
                 }
+                self.activeCamera = camera
                 let photo = camera.photo
-                let tokens = ListenerTokenBag()
                 let once = OnceFlag()
 
-                photo.photoDataPublisher.listen { capture in
+                // Safety timeout after 15 seconds
+                let timeoutTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    if once.claim() {
+                        photo.stop()
+                        camera.stop()
+                        self?.activeCaptureTokens.clear()
+                        self?.activeCamera = nil
+                        await MainActor.run { completion(.failure(.captureFailed)) }
+                    }
+                }
+
+                photo.photoDataPublisher.listen { [weak self] capture in
                     guard once.claim() else { return }
+                    timeoutTask.cancel()
                     let data = capture.imageData
                     photo.stop()
                     camera.stop()
-                    tokens.clear()
+                    self?.activeCaptureTokens.clear()
+                    self?.activeCamera = nil
                     Task { @MainActor in completion(.success(data)) }
-                }.store(in: tokens)
+                }.store(in: self.activeCaptureTokens)
 
-                photo.errorPublisher.listen { _ in
+                photo.errorPublisher.listen { [weak self] _ in
                     guard once.claim() else { return }
+                    timeoutTask.cancel()
                     photo.stop()
                     camera.stop()
-                    tokens.clear()
+                    self?.activeCaptureTokens.clear()
+                    self?.activeCamera = nil
                     Task { @MainActor in completion(.failure(.captureFailed)) }
-                }.store(in: tokens)
+                }.store(in: self.activeCaptureTokens)
 
                 photo.statePublisher.listen { state in
                     if state == .started {
                         photo.capturePhoto(resolution: .medium, quality: .medium)
                     }
-                }.store(in: tokens)
+                }.store(in: self.activeCaptureTokens)
 
                 photo.start()
             } catch {

@@ -40,11 +40,11 @@
 		<key>AppLinkURLScheme</key>
 		<string>cadencecompanion://</string>
 		<key>ClientToken</key>
-		<string>$(CLIENT_TOKEN)</string>
+		<string>RfDFPzHlO2pG9krzoAONo0chUkI</string>
 		<key>MetaAppID</key>
-		<string>$(META_APP_ID)</string>
+		<string>1211184641853598</string>
 		<key>TeamID</key>
-		<string>$(DEVELOPMENT_TEAM)</string>
+		<string>3MV78XV6K9</string>
 	</dict>
 	<key>NSAppTransportSecurity</key>
 	<dict>

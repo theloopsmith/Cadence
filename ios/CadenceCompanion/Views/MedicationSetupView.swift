@@ -29,15 +29,14 @@ struct MedicationSetupView: View {
                 timesSection
             }
             .navigationTitle("Medication setup")
-            .sheet(isPresented: $showPillCamera) {
-                CameraPicker(
-                    onCapture: { jpeg in
-                        app.setPillPhoto(jpeg)
-                        showPillCamera = false
-                    },
-                    onCancel: { showPillCamera = false }
-                )
-            }
+            .cameraPresentation(
+                isPresented: $showPillCamera,
+                onCapture: { jpeg in
+                    app.setPillPhoto(jpeg)
+                    showPillCamera = false
+                },
+                onCancel: { showPillCamera = false }
+            )
         }
     }
 
