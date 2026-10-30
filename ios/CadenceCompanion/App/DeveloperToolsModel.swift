@@ -147,10 +147,14 @@ public final class DeveloperToolsModel: ObservableObject {
     // MARK: - Camera checks (phone or glasses)
 
     public func runEnvironmentCheck(jpeg: Data, question: String) async {
+        guard !isBusy, !app.settings.restartRequired else { return }
         isBusy = true
         defer { isBusy = false }
+        let client = app.settings.api
         do {
-            let result = try await app.settings.api.realityCheck(question: question, jpeg: jpeg)
+            let result = try await client.realityCheck(question: question, jpeg: jpeg)
+            guard !Task.isCancelled, !app.settings.restartRequired, app.settings.deviceToken == client.bearerToken,
+                  app.settings.api.baseURL == client.baseURL else { return }
             lastEnvironmentCheck = result
             AudioCueEngine.shared.speakPrompt(result.spokenResponse, priority: 2)
             app.recordDiary(.environmentCheck, detail: result.spokenResponse)
@@ -176,18 +180,17 @@ public final class DeveloperToolsModel: ObservableObject {
 
     /// A still from the glasses camera, when connected.
     public func captureFromGlasses(_ completion: @escaping (Data?) -> Void) {
-        guard let device = app.glasses.device, app.glasses.connectionState == .connected else {
-            lastMessage = "Glasses are not connected."
-            return completion(nil)
-        }
-        device.captureFrame { [weak self] result in
-            Task { @MainActor in
-                switch result {
-                case let .success(data): completion(data)
-                case let .failure(error):
-                    self?.lastMessage = error.errorDescription
-                    completion(nil)
-                }
+        guard !isBusy else { return completion(nil) }
+        isBusy = true
+        app.glasses.capturePhoto { [weak self] result in
+            guard let self else { return }
+            self.isBusy = false
+            guard !self.app.settings.restartRequired else { return completion(nil) }
+            switch result {
+            case let .success(data): completion(data)
+            case let .failure(error):
+                self.lastMessage = error.errorDescription
+                completion(nil)
             }
         }
     }

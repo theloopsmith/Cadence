@@ -2,6 +2,8 @@
 
 The local-history portion of review item 8 is implemented as **one wearer and one server per installation**, with an explicit reset before reassignment. This is not a multi-account device switcher.
 
+Follow-up: [authenticated address repair](PHONE_AND_GLASSES_JOURNEY_2026-10-29.md) now permits correcting a localhost/LAN address without erasing the phone. A first-time legacy localhost repair requires explicit destination confirmation; subsequent moves must match the learned server ID. Queue/profile migration is journaled. Changing wearer still requires reset. The text below records the original implementation snapshot.
+
 ## Behavior
 
 - A durable, atomically written profile manifest binds the installation to a local identity key and normalized server destination. JWT subject/patient claims identify the local partition; opaque credentials use their hash. Credentials and passwords are not stored in the manifest. The backend still verifies authorization independently.

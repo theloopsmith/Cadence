@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var password = ""
     @State private var server = ""
     @State private var confirmReset = false
+    @State private var confirmServerRepair = false
 
     init(app: CadenceAppModel) {
         self.app = app
@@ -22,11 +23,20 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 accountSection
+                glassesSection
                 voiceSection
                 aboutSection
             }
             .onAppear { server = settings.backendBaseURL }
             .onDisappear { password = "" }
+            .confirmationDialog("Use this Mac development server?", isPresented: $confirmServerRepair, titleVisibility: .visible) {
+                Button("Connect and preserve this phone's records") {
+                    Task { await settings.connectServer(to: server, repairLocalhost: true) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This repairs the existing localhost connection. Queued records will be sent to the Mac address you entered. Existing records on the old server stay there. Use only your own Cadence server.")
+            }
             .confirmationDialog("Erase this phone's local profile?", isPresented: $confirmReset, titleVisibility: .visible) {
                 Button("Erase local profile and queued uploads", role: .destructive) { _ = app.resetLocalProfile() }
                 Button("Cancel", role: .cancel) {}
@@ -50,13 +60,26 @@ struct SettingsView: View {
     private var accountSection: some View {
         Section {
             Text("One wearer per installation")
-            if settings.profile.isBound {
-                Text(settings.api.baseURL).font(.footnote)
-            } else {
-                TextField("Server address", text: $server)
-                    .autocorrectionDisabled()
+            TextField("Mac server address", text: $server)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                #endif
+            if !settings.profile.isBound {
                 Button("Use server address") { settings.backendBaseURL = server }
+            } else {
+                Button(settings.isConnecting ? "Connecting…" : "Connect to this Cadence server") {
+                    if DeviceProfile.isLoopback(settings.api.baseURL), DeviceProfile.normalize(server) != settings.api.baseURL {
+                        confirmServerRepair = true
+                    } else { Task { await settings.connectServer(to: server) } }
+                }.disabled(settings.isConnecting || app.fallAlert.isAlertVisible)
             }
+            if DeviceProfile.isLoopback(settings.api.baseURL) {
+                Text("On an iPhone, localhost points to the phone. Run scripts/run_phone_backend.py on your Mac and enter the .local address it prints. For an existing localhost profile, Connect repairs the address for the same Mac server without erasing your history.")
+                    .font(.footnote)
+            }
+            if let message = settings.connectionMessage { Text(message).font(.footnote) }
             if app.auth.isSignedIn {
                 Text("Signed in as \(app.auth.username ?? "")")
                 Button("Sign out") { app.auth.signOut() }
@@ -65,7 +88,7 @@ struct SettingsView: View {
                 SecureField("Password", text: $password)
                 Button(app.auth.isWorking ? "Signing in…" : "Sign in") {
                     Task {
-                        await app.auth.signIn(username: username, password: password)
+                        await app.auth.signIn(username: username, password: password, serverAddress: server)
                         password = ""
                     }
                 }.disabled(app.auth.isWorking)
@@ -76,6 +99,18 @@ struct SettingsView: View {
             Button("Erase local profile for a new wearer", role: .destructive) { confirmReset = true }
         } header: { Text("Account and local history") }
         footer: { Text("Signing out pauses uploads and keeps this wearer's offline history. A different account or server requires a local reset. Earlier unassigned files are kept separate and are never adopted into this profile.") }
+    }
+
+    private var glassesSection: some View {
+        Section {
+            Text(app.glasses.deviceName ?? "Meta glasses")
+            Text(app.glasses.canCapturePhoto ? "Connected — glasses camera ready" : "Glasses camera not connected")
+            Button("Connect Meta glasses") { app.glasses.connect() }
+                .disabled(app.glasses.connectionState == .connecting)
+            if let error = app.glasses.connectionError { Text(error).foregroundColor(CadenceTheme.caution) }
+            if app.isUsingMockGlasses { Text("Mock glasses: photos and sensors are simulated.") }
+        } header: { Text("Photo source") }
+        footer: { Text("Pair in the Meta AI app and allow camera access. Photo actions use the glasses; the iPhone camera is an explicit alternative.") }
     }
 
     private var voiceSection: some View {

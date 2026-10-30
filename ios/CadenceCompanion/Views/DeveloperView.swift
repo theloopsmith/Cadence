@@ -157,14 +157,14 @@ struct DeveloperView: View {
     private var cameraSection: some View {
         Section {
             TextField("Question", text: $question)
-            Button("Look around (phone camera)") { cameraPurpose = .environment }
-            Button("Look around (glasses camera)") {
+            Button("Look around with Meta glasses") {
                 tools.captureFromGlasses { jpeg in
                     guard let jpeg else { return }
                     Task { await tools.runEnvironmentCheck(jpeg: jpeg, question: question) }
                 }
             }
-            .disabled(app.glasses.connectionState != .connected)
+            .disabled(!app.glasses.canCapturePhoto || tools.isBusy)
+            Button("Use iPhone camera instead") { cameraPurpose = .environment }.disabled(tools.isBusy)
             if let result = tools.lastEnvironmentCheck {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(result.spokenResponse).font(.body)

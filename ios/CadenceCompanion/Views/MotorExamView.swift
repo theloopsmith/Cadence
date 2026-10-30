@@ -56,6 +56,7 @@ public struct MotorExamView: View {
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle("Motor Check")
+            .onDisappear { app.glasses.cancelPhotoCapture(); cleanUpTimers() }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -246,7 +247,7 @@ public struct MotorExamView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 8)
             } else {
-                if app.glasses.connectionState == .connected {
+                if app.glasses.canCapturePhoto {
                     GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
                         captureHandwritingWithGlasses()
                     }) {
@@ -260,12 +261,16 @@ public struct MotorExamView: View {
                     .foregroundColor(.secondary)
                 } else {
                     GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
-                        showCamera = true
+                        app.glasses.connect()
+                        handwritingStatus = "Connect Meta glasses, then take a photo of your writing."
                     }) {
-                        Label("Take Photo of Writing", systemImage: "camera.fill")
+                        Label("Connect Meta Glasses", systemImage: "eyeglasses")
                     }
                 }
 
+                if !app.glasses.canCapturePhoto {
+                    Button("Use iPhone camera instead") { showCamera = true }
+                }
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
                     exam.measurements.handwritingStatus = .skipped
                     exam.advanceToTimedWalk()

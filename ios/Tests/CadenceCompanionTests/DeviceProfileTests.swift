@@ -228,4 +228,74 @@ final class DeviceProfileTests: XCTestCase {
         XCTAssertTrue(center.added.isEmpty)
         XCTAssertEqual(reminders.status, .none)
     }
+
+    func testAuthenticatedLANRepairPreservesProfileAndQueuedRowsAndPinsServerIdentity() async throws {
+        let profile = DeviceProfile(root: root()); let app = settings(profile)
+        app.deviceToken = token(); app.summaryName = "Existing wearer"
+        _ = app.sync.saveLocalImmediate(eventUUID: "offline-record", endpoint: "/fixture", payload: ["value":1])
+        let transport = RecordingJSONTransport(); app.apiTransport = transport
+        let server = UUID().uuidString
+        func info(_ id: String) throws -> Data {
+            try JSONSerialization.data(withJSONObject: ["service":"cadence-accessibility-companion","server_id":id,"patient_id":"wearer-a"])
+        }
+        transport.responses = [try info(server)]
+        let repaired = await app.connectServer(to: "http://my-mac.local:8001/", repairLocalhost: true)
+        XCTAssertTrue(repaired)
+        XCTAssertEqual(app.api.baseURL, "http://my-mac.local:8001")
+        XCTAssertEqual(app.summaryName, "Existing wearer")
+        XCTAssertEqual(app.profile.id, profile.id)
+        XCTAssertEqual(app.sync.dueEvents().map(\.eventUUID), ["offline-record"])
+        transport.responses = [try info(UUID().uuidString)]
+        let changed = await app.connectServer(to: "http://other-mac.local:8001", repairLocalhost: true)
+        XCTAssertFalse(changed)
+        XCTAssertEqual(app.api.baseURL, "http://my-mac.local:8001")
+    }
+
+    func testAddressRepairJournalRecoversAfterQueueCommitBeforeProfileCommit() throws {
+        let profile = DeviceProfile(root: root())
+        let defaults = UserDefaults(suiteName: "move-\(UUID())")!
+        let store = InMemoryTokenStore()
+        let app = settings(profile, defaults: defaults, store: store); app.deviceToken = token()
+        _ = app.sync.saveLocalImmediate(eventUUID: "queued-before-crash", endpoint: "/fixture", payload: [:])
+        let info = ServerConnectionInfo(service: "cadence-accessibility-companion", serverID: UUID().uuidString, patientID: "wearer-a")
+        XCTAssertTrue(try profile.stageServerMove(to: "http://mac.local:8001", info: info, token: token(), repairLocalhost: true))
+        let move = try XCTUnwrap(profile.pendingServerMove)
+        try app.sync.relocateDestination(from: move.from, to: move.to, owner: move.owner)
+        // Simulate process loss before the second durable commit.
+        let next = settings(DeviceProfile(root: profile.root), defaults: defaults, store: store)
+        XCTAssertEqual(next.api.baseURL, "http://mac.local:8001")
+        XCTAssertNil(next.profile.pendingServerMove)
+        XCTAssertEqual(next.sync.dueEvents().map(\.eventUUID), ["queued-before-crash"])
+    }
+
+    func testBootstrapRepairRequiresExplicitLANIntentAndCannotMoveOtherOwnersRows() throws {
+        let profile = DeviceProfile(root: root()); let app = settings(profile); app.deviceToken = token()
+        let info = ServerConnectionInfo(service: "cadence-accessibility-companion", serverID: UUID().uuidString, patientID: "wearer-a")
+        XCTAssertFalse(try profile.stageServerMove(to: "https://outside.test", info: info, token: token(), repairLocalhost: true))
+        XCTAssertFalse(try profile.stageServerMove(to: "http://mac.local:8001", info: info, token: token(), repairLocalhost: false))
+        let queue = app.sync
+        _ = queue.saveLocalImmediate(eventUUID: "a", endpoint: "/fixture", payload: [:])
+        queue.configureSession(baseURL: app.api.baseURL, bearerToken: token("phone-b"))
+        _ = queue.saveLocalImmediate(eventUUID: "b", endpoint: "/fixture", payload: [:])
+        try queue.relocateDestination(from: app.api.baseURL, to: "http://mac.local:8001", owner: EventSyncManager.owner(for: token())!)
+        queue.configureSession(baseURL: "http://mac.local:8001", bearerToken: token())
+        XCTAssertEqual(queue.dueEvents().map(\.eventUUID), ["a"])
+        queue.configureSession(baseURL: app.api.baseURL, bearerToken: token("phone-b"))
+        XCTAssertEqual(queue.dueEvents().map(\.eventUUID), ["b"])
+    }
+
+    func testAStaleConnectionResponseCannotRebindAfterSignOut() async throws {
+        let profile = DeviceProfile(root: root()); let app = settings(profile); app.deviceToken = token()
+        let started = expectation(description: "connection check started")
+        let transport = HeldProfileLogin(started); app.apiTransport = transport
+        let connect = Task { await app.connectServer(to: "http://mac.local:8001", repairLocalhost: true) }
+        await fulfillment(of: [started], timeout: 2)
+        app.deviceToken = ""
+        transport.reply?.resume(returning: try JSONSerialization.data(withJSONObject: ["service":"cadence-accessibility-companion","server_id":UUID().uuidString,"patient_id":"wearer-a"]))
+        let repaired = await connect.value
+        XCTAssertFalse(repaired)
+        XCTAssertEqual(app.api.baseURL, "http://localhost:8000")
+        XCTAssertEqual(app.deviceToken, "")
+        XCTAssertNil(profile.pendingServerMove)
+    }
 }

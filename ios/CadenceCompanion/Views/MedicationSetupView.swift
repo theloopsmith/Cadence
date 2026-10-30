@@ -10,6 +10,9 @@ struct MedicationSetupView: View {
     @ObservedObject var app: CadenceAppModel
     @ObservedObject private var settings: AppSettings
     @State private var showPillCamera = false
+    @State private var isCapturing = false
+    @State private var photoError: String?
+    @State private var photoRequestID = UUID()
 
     private static let presets = [
         DoseTime(hour: 8, minute: 0), DoseTime(hour: 12, minute: 0),
@@ -29,6 +32,7 @@ struct MedicationSetupView: View {
                 timesSection
             }
             .navigationTitle("Medication setup")
+            .onDisappear { photoRequestID = UUID(); app.glasses.cancelPhotoCapture() }
             .cameraPresentation(
                 isPresented: $showPillCamera,
                 onCapture: { jpeg in
@@ -73,22 +77,31 @@ struct MedicationSetupView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                Button(app.pillPhoto == nil ? (app.glasses.connectionState == .connected ? "Take with glasses" : "Take photo") : "Replace") {
-                    if app.glasses.connectionState == .connected {
+                Button(isCapturing ? "Taking photo…" : "Take with glasses") {
+                    photoError = nil
+                    if app.glasses.canCapturePhoto {
+                        isCapturing = true
+                        let id = UUID(); photoRequestID = id
                         app.glasses.capturePhoto { result in
+                            guard photoRequestID == id, !settings.restartRequired else { return }
+                            isCapturing = false
                             switch result {
                             case let .success(jpeg):
                                 app.setPillPhoto(jpeg)
-                            case .failure:
-                                showPillCamera = true
+                            case .failure(let error):
+                                photoError = error.localizedDescription
                             }
                         }
                     } else {
-                        showPillCamera = true
+                        app.glasses.connect()
+                        photoError = "Connect Meta glasses, then try taking the photo again."
                     }
                 }
+                .disabled(isCapturing)
                 .frame(minHeight: CadenceTheme.minimumTapHeight)
             }
+            if let photoError { Text(photoError).foregroundColor(CadenceTheme.caution) }
+            Button("Use iPhone camera instead") { showPillCamera = true }.disabled(isCapturing)
             if app.pillPhoto != nil {
                 Button("Remove pill photo", role: .destructive) { app.setPillPhoto(nil) }
                     .frame(minHeight: CadenceTheme.minimumTapHeight)

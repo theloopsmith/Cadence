@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sqlite3
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -14,6 +15,10 @@ SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
 PRAGMA foreign_keys=ON;
+
+CREATE TABLE IF NOT EXISTS server_identity (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1), server_id TEXT NOT NULL
+);
 
 -- 1. Freezing of Gait (FoG) Events
 CREATE TABLE IF NOT EXISTS fog_events (
@@ -246,6 +251,7 @@ def init_db_sync(db_path: Optional[str] = None) -> None:
     try:
         from app.services.fall_durability import SCHEMA as FALL_OUTBOX_SCHEMA
         conn.executescript(SCHEMA_SQL + FALL_OUTBOX_SCHEMA)
+        conn.execute('INSERT OR IGNORE INTO server_identity(singleton,server_id) VALUES(1,?)', (str(uuid.uuid4()),))
         _migrate_exam_validity(conn)
         conn.commit()
     finally:

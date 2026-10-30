@@ -58,9 +58,9 @@
 		<string>_bonjour._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Cadence uses the camera only when you ask it to look at your surroundings or a meal. Photos are checked and never stored.</string>
+	<string>Cadence uses the iPhone camera only when you choose it. Pill reference photos are saved on this phone; surroundings photos are sent to your Cadence server for a description.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Cadence uses the local network only to receive a photo from your glasses when you ask it to look around.</string>
+	<string>Cadence connects to the Cadence server on your Mac and receives photos from your Meta glasses when you request them.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Cadence attaches your GPS coordinates to caregiver SOS alerts if a fall occurs while the app is running in the background.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

@@ -3,6 +3,7 @@ import Foundation
 /// One wearer and destination per installation. Credentials may refresh, but
 /// changing the wearer requires an explicit erase and a fresh app launch.
 public final class DeviceProfile {
+    struct ServerMove: Codable { let from: String; let to: String; let serverID: String; let owner: String }
     public static let shared: DeviceProfile = {
         if NSClassFromString("XCTestCase") != nil {
             return DeviceProfile(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("shared-profile-\(UUID())"))
@@ -16,6 +17,8 @@ public final class DeviceProfile {
         var resetPending = false
         var allowDevelopmentDefault = true
         var erasedProfiles: [String]?
+        var serverID: String?
+        var serverMove: ServerMove?
     }
     public let root: URL
     private var manifest: Manifest
@@ -26,6 +29,7 @@ public final class DeviceProfile {
     public var isBound: Bool { manifest.owner != nil }
     public var resetPending: Bool { manifest.resetPending }
     public var erasedProfileIDs: [String] { manifest.erasedProfiles ?? [] }
+    var pendingServerMove: ServerMove? { manifest.serverMove }
     private var manifestURL: URL { root.appendingPathComponent("profile.json") }
 
     public static var `default`: DeviceProfile {
@@ -62,6 +66,7 @@ public final class DeviceProfile {
     public func accept(token: String, destination: String) throws -> Bool {
         guard failure == nil, !manifest.resetPending else { return false }
         let destination = Self.normalize(destination)
+        if manifest.serverMove != nil { return token.isEmpty && destination == manifest.destination }
         guard let url = URLComponents(string: destination),
               ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
               url.host?.isEmpty == false, url.user == nil, url.password == nil,
@@ -79,6 +84,47 @@ public final class DeviceProfile {
 
     public func beginReset() throws {
         var next = manifest; next.resetPending = true
+        try persist(next); manifest = next
+    }
+
+    static func isLoopback(_ address: String) -> Bool {
+        ["localhost", "127.0.0.1", "::1"].contains(URLComponents(string: address)?.host?.lowercased() ?? "")
+    }
+
+    static func isLAN(_ address: String) -> Bool {
+        guard let host = URLComponents(string: address)?.host?.lowercased() else { return false }
+        if host.hasSuffix(".local") { return true }
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return false }
+        return parts[0] == 10 || (parts[0] == 192 && parts[1] == 168) || (parts[0] == 172 && (16...31).contains(parts[1]))
+    }
+
+    /// Authenticated same-backend address repair. A legacy localhost binding
+    /// has no prior server ID; its one-time LAN repair requires explicit intent.
+    func stageServerMove(to address: String, info: ServerConnectionInfo, token: String, repairLocalhost: Bool) throws -> Bool {
+        let target = Self.normalize(address)
+        guard failure == nil, !manifest.resetPending, manifest.serverMove == nil,
+              info.service == "cadence-accessibility-companion", UUID(uuidString: info.serverID) != nil,
+              let owner = manifest.owner, EventSyncManager.owner(for: token) == owner,
+              let source = manifest.destination,
+              let url = URLComponents(string: target), ["http", "https"].contains(url.scheme ?? ""),
+              url.host?.isEmpty == false, url.user == nil, url.password == nil, url.query == nil, url.fragment == nil
+        else { return false }
+        if let serverID = manifest.serverID {
+            guard serverID == info.serverID else { return false }
+        } else if source != target {
+            guard repairLocalhost, Self.isLoopback(source), Self.isLAN(target) else { return false }
+        }
+        var next = manifest
+        if source == target { next.serverID = info.serverID }
+        else { next.serverMove = ServerMove(from: source, to: target, serverID: info.serverID, owner: owner) }
+        try persist(next); manifest = next
+        return true
+    }
+
+    func finishServerMove() throws {
+        guard let move = manifest.serverMove else { return }
+        var next = manifest; next.destination = move.to; next.serverID = move.serverID; next.serverMove = nil
         try persist(next); manifest = next
     }
 

@@ -57,12 +57,14 @@ public enum GlassesError: Error, Equatable, LocalizedError {
     case notConnected
     case cameraUnavailable
     case captureFailed
+    case captureInProgress
 
     public var errorDescription: String? {
         switch self {
         case .notConnected: return "The glasses are not connected."
-        case .cameraUnavailable: return "These glasses cannot take a photo right now."
+        case .cameraUnavailable: return "The glasses camera is unavailable. Check the connection and allow camera access in the Meta AI app."
         case .captureFailed: return "The photo could not be taken. Try again."
+        case .captureInProgress: return "A glasses photo is already being taken. Please wait."
         }
     }
 }
@@ -73,6 +75,8 @@ public enum GlassesError: Error, Equatable, LocalizedError {
 /// access is granted. Until then `MockGlassesDevice` stands in, and the
 /// Settings screen says so. Nothing here names a toolkit API.
 public protocol GlassesDevice: AnyObject {
+    var connectionError: String? { get }
+    func cancelPhotoCapture()
     var name: String { get }
     var connectionState: GlassesConnectionState { get }
     var wearState: GlassesWearState { get }
@@ -89,6 +93,11 @@ public protocol GlassesDevice: AnyObject {
     func captureFrame(_ completion: @escaping (Result<Data, GlassesError>) -> Void)
     /// Vibrates the frames, when `capabilities.haptics` is true.
     func playHaptic(_ pattern: HapticPattern)
+}
+
+public extension GlassesDevice {
+    var connectionError: String? { nil }
+    func cancelPhotoCapture() {}
 }
 
 /// Lets the fall check-in ask whether the glasses are on a head without

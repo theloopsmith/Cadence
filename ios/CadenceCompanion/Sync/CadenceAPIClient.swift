@@ -72,7 +72,14 @@ public struct RealityCheckResult: Decodable {
 
 public struct DetectedMask: Decodable {
     public let label: String
-    public let confidence: Double
+    public let confidence: Double?
+}
+
+public struct ServerConnectionInfo: Decodable {
+    public let service: String
+    public let serverID: String
+    public let patientID: String
+    enum CodingKeys: String, CodingKey { case service, serverID = "server_id", patientID = "patient_id" }
 }
 
 public struct HandwritingResult: Decodable {
@@ -368,6 +375,12 @@ public struct CadenceAPIClient {
         request.httpMethod = "GET"
         let data = try await transport.send(request, bearerToken: bearerToken)
         return try decoder.decode(FallDeliveryStatus.self, from: data)
+    }
+
+    public func connectionInfo() async throws -> ServerConnectionInfo {
+        guard let url = URL(string: "\(baseURL)/api/v1/device/connection") else { throw CadenceAPIError.badURL }
+        var request = URLRequest(url: url); request.httpMethod = "GET"
+        return try decoder.decode(ServerConnectionInfo.self, from: await transport.send(request, bearerToken: bearerToken))
     }
 
     public func fetchReport() async throws -> NeurologistReport {

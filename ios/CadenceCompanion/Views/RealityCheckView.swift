@@ -13,6 +13,10 @@ public struct RealityCheckView: View {
     @State private var isChecking: Bool = false
     @State private var checkResult: RealityCheckResult?
     @State private var errorMessage: String?
+    @State private var requestID = UUID()
+    @State private var requestTask: Task<Void, Never>?
+    @State private var fromGlasses = true
+    @State private var photoSource: String?
 
     private let sampleQuestions = [
         "Is someone standing there, or is it just an object?",
@@ -58,12 +62,17 @@ public struct RealityCheckView: View {
                 }
             }
             .onDisappear {
+                requestID = UUID()
+                requestTask?.cancel()
+                app.glasses.cancelPhotoCapture()
                 stopVoiceInput()
             }
             .cameraPresentation(
                 isPresented: $showCamera,
                 onCapture: { jpeg in
                     showCamera = false
+                    fromGlasses = false
+                    photoSource = "iPhone camera"
                     runRealityCheck(jpeg: jpeg)
                 },
                 onCancel: { showCamera = false }
@@ -165,26 +174,24 @@ public struct RealityCheckView: View {
 
     private var actionsCard: some View {
         VStack(spacing: 12) {
-            if app.glasses.connectionState == .connected {
-                GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
-                    captureWithGlasses()
-                }) {
-                    Label("Check Scene with Glasses", systemImage: "eyeglasses")
+            if app.glasses.canCapturePhoto {
+                GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: captureWithGlasses) {
+                    Label("Take Photo with Meta Glasses", systemImage: "eyeglasses")
                 }
-
-                Button("Or use phone camera") {
-                    showCamera = true
-                }
-                .font(.footnote)
-                .foregroundColor(.secondary)
             } else {
-                GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
-                    showCamera = true
-                }) {
-                    Label("Take Photo with Phone", systemImage: "camera.fill")
-                }
+                Text(app.glasses.connectionState == .connecting ? "Connecting to Meta glasses…" : "Connect your Meta glasses to take a photo from what you are looking at.")
+                Button("Connect Meta glasses") { app.glasses.connect() }
+                    .disabled(app.glasses.connectionState == .connecting)
+                if let error = app.glasses.connectionError { Text(error).font(.footnote) }
             }
+            Button("Use iPhone camera instead") {
+                stopVoiceInput()
+                fromGlasses = false
+                showCamera = true
+            }.font(.footnote)
+            if let photoSource { Text("Photo source: \(photoSource)").font(.footnote).foregroundColor(.secondary) }
         }
+        .disabled(isChecking)
         .card()
     }
 
@@ -263,7 +270,9 @@ public struct RealityCheckView: View {
             Text(error)
                 .font(.body)
                 .foregroundColor(.secondary)
-            GuardedButton(size: .big, style: .tinted(.secondary), action: { showCamera = true }) {
+            GuardedButton(size: .big, style: .tinted(.secondary), action: {
+                if fromGlasses { captureWithGlasses() } else { showCamera = true }
+            }) {
                 Text("Try Again")
             }
         }
@@ -293,23 +302,21 @@ public struct RealityCheckView: View {
     }
 
     private func captureWithGlasses() {
+        guard !isChecking else { return }
         stopVoiceInput()
         isChecking = true
         errorMessage = nil
-        guard let device = app.glasses.device, app.glasses.connectionState == .connected else {
-            isChecking = false
-            errorMessage = "Glasses are not connected."
-            return
-        }
-        device.captureFrame { result in
-            Task { @MainActor in
-                switch result {
-                case let .success(jpeg):
-                    self.runRealityCheck(jpeg: jpeg)
-                case let .failure(error):
-                    self.isChecking = false
-                    self.errorMessage = "Glasses camera error: \(error.localizedDescription)"
-                }
+        checkResult = nil
+        fromGlasses = true
+        photoSource = app.isUsingMockGlasses ? "Mock glasses (simulated)" : "Meta glasses"
+        let id = UUID(); requestID = id
+        app.glasses.capturePhoto { result in
+            guard requestID == id, !app.settings.restartRequired else { return }
+            switch result {
+            case let .success(jpeg): runRealityCheck(jpeg: jpeg)
+            case let .failure(error):
+                isChecking = false
+                errorMessage = error.localizedDescription
             }
         }
     }
@@ -319,23 +326,25 @@ public struct RealityCheckView: View {
         isChecking = true
         errorMessage = nil
         checkResult = nil
-
-        Task {
+        let id = UUID(); requestID = id
+        let client = app.settings.api
+        let profileID = app.settings.profile.id
+        requestTask?.cancel()
+        requestTask = Task { @MainActor in
             do {
-                let client = app.settings.api
                 let result = try await client.realityCheck(question: question, jpeg: jpeg)
-                await MainActor.run {
-                    self.isChecking = false
-                    self.checkResult = result
-                    app.recordDiary(.environmentCheck, detail: result.spokenResponse)
-                    AudioCueEngine.shared.speakPrompt(result.spokenResponse, priority: 2)
-                    Haptics.success()
-                }
+                guard !Task.isCancelled, requestID == id, !app.settings.restartRequired,
+                      app.settings.profile.id == profileID, app.settings.deviceToken == client.bearerToken,
+                      app.settings.api.baseURL == client.baseURL else { return }
+                isChecking = false
+                checkResult = result
+                app.recordDiary(.environmentCheck, detail: result.spokenResponse)
+                AudioCueEngine.shared.speakPrompt(result.spokenResponse, priority: 2)
+                Haptics.success()
             } catch {
-                await MainActor.run {
-                    self.isChecking = false
-                    self.errorMessage = "Could not verify scene: \(error.localizedDescription)"
-                }
+                guard !Task.isCancelled, requestID == id, !app.settings.restartRequired else { return }
+                isChecking = false
+                errorMessage = "Could not check this photo: \(error.localizedDescription). Check the server connection in Settings."
             }
         }
     }

@@ -94,6 +94,13 @@ async def health_check() -> Dict[str, str]:
     return {"status": "ok", "service": "cadence-accessibility-companion", "version": "1.0.0"}
 
 
+@app.get('/api/v1/device/connection')
+async def device_connection(auth: AuthContext = Depends(require_device_writer)):
+    identity = await fetch_one('SELECT server_id FROM server_identity WHERE singleton=1')
+    return {'service': 'cadence-accessibility-companion', 'server_id': identity['server_id'],
+            'patient_id': auth.patient_id}
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def get_neurologist_dashboard_shell() -> HTMLResponse:
     """

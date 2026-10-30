@@ -34,7 +34,7 @@ public final class AuthSession: ObservableObject {
         settings.deviceToken.isEmpty || isExpired
     }
 
-    public func signIn(username rawUsername: String, password: String) async {
+    public func signIn(username rawUsername: String, password: String, serverAddress: String? = nil) async {
         guard !isWorking, !settings.restartRequired, settings.profile.failure == nil else { return }
         let username = rawUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !username.isEmpty, !password.isEmpty else {
@@ -45,15 +45,24 @@ public final class AuthSession: ObservableObject {
         errorMessage = nil
         defer { isWorking = false }
         let generation = self.generation
-        let client = settings.api
+        let original = settings.api
+        let client = CadenceAPIClient(baseURL: serverAddress.map(DeviceProfile.normalize) ?? original.baseURL,
+            bearerToken: original.bearerToken, transport: settings.apiTransport)
         do {
             let result = try await client.login(username: username, password: password)
             guard self.generation == generation, !settings.restartRequired,
-                  settings.api.baseURL == client.baseURL, settings.deviceToken == client.bearerToken else { return }
+                  settings.api.baseURL == original.baseURL, settings.deviceToken == original.bearerToken else { return }
             guard result.role == "device_writer" else {
                 errorMessage = "That account is for viewing summaries. Use the account made for this phone."
                 return
             }
+            if client.baseURL != original.baseURL, settings.profile.isBound {
+                guard await settings.connectServer(to: client.baseURL, repairLocalhost: true, newToken: result.accessToken,
+                    isCurrent: { self.generation == generation }) else {
+                    errorMessage = settings.connectionMessage
+                    return
+                }
+            } else if !settings.profile.isBound { settings.backendBaseURL = client.baseURL }
             guard settings.acceptSession(token: result.accessToken, destination: client.baseURL) else {
                 errorMessage = settings.profileNotice
                 return

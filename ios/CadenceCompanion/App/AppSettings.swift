@@ -8,6 +8,8 @@ public final class AppSettings: ObservableObject {
     public let profile: DeviceProfile
     @Published public private(set) var profileNotice: String?
     @Published public private(set) var restartRequired = false
+    @Published public private(set) var isConnecting = false
+    @Published public private(set) var connectionMessage: String?
     private var changingCredentials = false
     private enum Key {
         static let backendBaseURL = "cadence.backendBaseURL"
@@ -167,6 +169,14 @@ public final class AppSettings: ObservableObject {
         } else {
             schedule = MedicationSchedule(medicationName: "Levodopa", doseTimes: [])
         }
+        if let move = profile.pendingServerMove {
+            do {
+                try sync.relocateDestination(from: move.from, to: move.to, owner: move.owner)
+                try profile.finishServerMove()
+                changingCredentials = true; backendBaseURL = move.to; changingCredentials = false
+                defaults.set(move.to, forKey: Key.backendBaseURL)
+            } catch { connectionMessage = "The server address repair is pending. Finish any upload, then close and reopen Cadence to retry." }
+        }
         if !acceptSession(token: deviceToken, destination: backendBaseURL) {
             changingCredentials = true; deviceToken = ""; changingCredentials = false
         } else { store.write(deviceToken) }
@@ -198,6 +208,49 @@ public final class AppSettings: ObservableObject {
     }
 
     private func scoped(_ key: String) -> String { "cadence.profile.\(profile.id).\(key)" }
+
+    @discardableResult
+    public func connectServer(to address: String, repairLocalhost: Bool = false, newToken: String? = nil, isCurrent: () -> Bool = { true }) async -> Bool {
+        guard !isConnecting, !restartRequired, fallAlert?.isAlertVisible != true else { return false }
+        let oldToken = deviceToken; let oldURL = api.baseURL
+        let token = newToken ?? oldToken
+        let target = DeviceProfile.normalize(address)
+        guard !token.isEmpty else { connectionMessage = "Sign in with this phone's account to verify the server."; return false }
+        isConnecting = true; connectionMessage = "Connecting…"
+        defer { isConnecting = false }
+        do {
+            let client = CadenceAPIClient(baseURL: target, bearerToken: token, transport: apiTransport)
+            let info = try await client.connectionInfo()
+            guard isCurrent(), !Task.isCancelled, deviceToken == oldToken, api.baseURL == oldURL,
+                  !restartRequired, fallAlert?.isAlertVisible != true else { return false }
+            guard !sync.isUploading else { connectionMessage = "An event upload is in progress. Wait for it to finish, then connect again."; return false }
+            guard try profile.stageServerMove(to: target, info: info, token: token, repairLocalhost: repairLocalhost) else {
+                connectionMessage = "This is a different server or account. Use the original Cadence server; changing wearer still requires a local reset."
+                return false
+            }
+            if let move = profile.pendingServerMove {
+                try sync.relocateDestination(from: move.from, to: move.to, owner: move.owner)
+                try profile.finishServerMove()
+            }
+            changingCredentials = true
+            backendBaseURL = target; deviceToken = token
+            changingCredentials = false
+            defaults.set(target, forKey: Key.backendBaseURL); tokenStore.write(token)
+            apply()
+            profileNotice = nil
+            connectionMessage = "Connected to Cadence. This phone's queued records are preserved."
+            return true
+        } catch {
+            if profile.pendingServerMove != nil {
+                connectionMessage = "Address repair saved but not complete. Wait for uploads to finish, then close and reopen Cadence."
+            } else if DeviceProfile.isLoopback(target) {
+                connectionMessage = "On an iPhone, localhost is the iPhone itself. Enter your Mac's .local address from the phone-server script."
+            } else {
+                connectionMessage = "Could not connect: \(error.localizedDescription). Start the Mac backend, keep both devices on the same Wi-Fi, and allow Local Network access for Cadence."
+            }
+            return false
+        }
+    }
 
     @discardableResult
     public func acceptSession(token: String, destination: String) -> Bool {

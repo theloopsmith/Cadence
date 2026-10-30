@@ -1,5 +1,6 @@
 import CadenceCompanion
 import Foundation
+import UIKit
 
 #if canImport(MWDATCore) && canImport(MWDATMotion) && canImport(MWDATCamera)
 import MWDATCamera
@@ -31,6 +32,11 @@ public final class DATGlassesDevice: GlassesDevice {
 
     /// Why the last connect attempt failed, for the Settings screen.
     public private(set) var lastError: String?
+    public var connectionError: String? { lastError }
+    private var captureTask: Task<Void, Never>?
+    private var captureCompletion: ((Result<Data, GlassesError>) -> Void)?
+    private var captureID: UUID?
+    private var sessionGeneration = UUID()
 
     private let wearables = Wearables.shared
     private var session: DeviceSession?
@@ -49,14 +55,20 @@ public final class DATGlassesDevice: GlassesDevice {
 
     public func connect() {
         guard connectionState != .connected, connectionState != .connecting else { return }
+        if session != nil { disconnect() }
         setConnection(.connecting)
         sessionTask?.cancel()
-        sessionTask = Task { [weak self] in
-            await self?.openSession()
+        sessionGeneration = UUID()
+        let generation = sessionGeneration
+        lastError = nil
+        sessionTask = Task { @MainActor [weak self] in
+            await self?.openSession(generation: generation)
         }
     }
 
     public func disconnect() {
+        sessionGeneration = UUID()
+        cancelPhotoCapture()
         sessionTask?.cancel()
         sessionTask = nil
         motionSource.stop()
@@ -71,12 +83,14 @@ public final class DATGlassesDevice: GlassesDevice {
         setConnection(.disconnected)
     }
 
-    private func openSession() async {
+    @MainActor
+    private func openSession(generation: UUID) async {
         do {
             // Registration is a one-time hand-off to the Meta AI app.
             if !isRegistered() {
                 try await wearables.startRegistration()
             }
+            guard !Task.isCancelled, sessionGeneration == generation else { return }
             let selector = AutoDeviceSelector(wearables: wearables)
             let session = try wearables.createSession(deviceSelector: selector)
             self.session = session
@@ -84,7 +98,7 @@ public final class DATGlassesDevice: GlassesDevice {
             try session.start()
 
             for await state in states {
-                if Task.isCancelled { return }
+                if Task.isCancelled || sessionGeneration != generation { return }
                 switch state {
                 case .started:
                     motionSource.bind(session: session)
@@ -94,8 +108,11 @@ public final class DATGlassesDevice: GlassesDevice {
                         AudioRouteManager.shared.routeToGlassesIfAvailable()
                     }
                 case .paused:
-                    break
+                    cancelPhotoCapture()
+                    motionSource.bind(session: nil)
+                    setConnection(.disconnected)
                 case .stopped:
+                    cancelPhotoCapture()
                     await MainActor.run {
                         self.motionSource.bind(session: nil)
                         self.setWear(.unknown)
@@ -107,6 +124,7 @@ public final class DATGlassesDevice: GlassesDevice {
                 }
             }
         } catch {
+            guard sessionGeneration == generation, !Task.isCancelled else { return }
             await MainActor.run {
                 self.lastError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
                 self.setConnection(.disconnected)
@@ -121,6 +139,7 @@ public final class DATGlassesDevice: GlassesDevice {
     /// `donState` is device metadata, delivered before and during a session.
     private func observeDeviceState(_ device: Device?) {
         guard let device else { return }
+        let generation = sessionGeneration
         deviceStateToken = device.addDeviceStateListener { [weak self] state in
             let worn: GlassesWearState
             switch state.donState {
@@ -128,7 +147,10 @@ public final class DATGlassesDevice: GlassesDevice {
             case .doffed: worn = .notWorn
             default: worn = .unknown
             }
-            Task { @MainActor in self?.setWear(worn) }
+            Task { @MainActor in
+                guard self?.sessionGeneration == generation else { return }
+                self?.setWear(worn)
+            }
         }
     }
 
@@ -158,72 +180,68 @@ public final class DATGlassesDevice: GlassesDevice {
         guard connectionState == .connected, let session else {
             return completion(.failure(.notConnected))
         }
-        Task { [weak self] in
+        guard captureCompletion == nil else { return completion(.failure(.captureInProgress)) }
+        captureCompletion = completion
+        let id = UUID(); captureID = id
+        let generation = sessionGeneration
+        captureTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 var status = try await wearables.checkPermissionStatus(.camera)
-                if status != .granted {
-                    status = try await wearables.requestPermission(.camera)
-                }
-                guard status == .granted else {
-                    return await MainActor.run { completion(.failure(.cameraUnavailable)) }
-                }
-
-                // Stop any previous camera instance
-                self.activeCamera?.stop()
-                self.activeCaptureTokens.clear()
-
+                if status != .granted { status = try await wearables.requestPermission(.camera) }
+                guard !Task.isCancelled, generation == sessionGeneration, captureID == id else { return }
+                guard status == .granted else { return finishCapture(.failure(.cameraUnavailable)) }
                 guard let camera = try session.addCamera(config: StreamConfiguration()) else {
-                    return await MainActor.run { completion(.failure(.cameraUnavailable)) }
+                    return finishCapture(.failure(.cameraUnavailable))
                 }
-                self.activeCamera = camera
+                activeCamera = camera
                 let photo = camera.photo
-                let once = OnceFlag()
-
-                // Safety timeout after 15 seconds
-                let timeoutTask = Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 15_000_000_000)
-                    if once.claim() {
-                        photo.stop()
-                        camera.stop()
-                        self?.activeCaptureTokens.clear()
-                        self?.activeCamera = nil
-                        await MainActor.run { completion(.failure(.captureFailed)) }
-                    }
-                }
-
+                let trigger = OnceFlag()
                 photo.photoDataPublisher.listen { [weak self] capture in
-                    guard once.claim() else { return }
-                    timeoutTask.cancel()
-                    let data = capture.imageData
-                    photo.stop()
-                    camera.stop()
-                    self?.activeCaptureTokens.clear()
-                    self?.activeCamera = nil
-                    Task { @MainActor in completion(.success(data)) }
-                }.store(in: self.activeCaptureTokens)
-
+                    Task { @MainActor in
+                        guard self?.captureID == id else { return }
+                        guard let image = UIImage(data: capture.imageData), let jpeg = image.jpegData(compressionQuality: 0.85) else {
+                            self?.finishCapture(.failure(.captureFailed))
+                            return
+                        }
+                        self?.finishCapture(.success(jpeg))
+                    }
+                }.store(in: activeCaptureTokens)
                 photo.errorPublisher.listen { [weak self] _ in
-                    guard once.claim() else { return }
-                    timeoutTask.cancel()
-                    photo.stop()
-                    camera.stop()
-                    self?.activeCaptureTokens.clear()
-                    self?.activeCamera = nil
-                    Task { @MainActor in completion(.failure(.captureFailed)) }
-                }.store(in: self.activeCaptureTokens)
-
-                photo.statePublisher.listen { state in
-                    if state == .started {
+                    Task { @MainActor in
+                        guard self?.captureID == id else { return }
+                        self?.finishCapture(.failure(.captureFailed))
+                    }
+                }.store(in: activeCaptureTokens)
+                photo.statePublisher.listen { [weak self] state in
+                    Task { @MainActor in
+                        guard self?.captureID == id, state == .started, trigger.claim() else { return }
                         photo.capturePhoto(resolution: .medium, quality: .medium)
                     }
-                }.store(in: self.activeCaptureTokens)
-
+                }.store(in: activeCaptureTokens)
                 photo.start()
+                do { try await Task.sleep(nanoseconds: 15_000_000_000) }
+                catch { return }
+                if captureID == id { finishCapture(.failure(.captureFailed)) }
             } catch {
-                await MainActor.run { completion(.failure(.captureFailed)) }
+                guard !Task.isCancelled, generation == sessionGeneration, captureID == id else { return }
+                finishCapture(.failure(.captureFailed))
             }
         }
+    }
+
+    public func cancelPhotoCapture() { finishCapture(.failure(.captureFailed)) }
+
+    private func finishCapture(_ result: Result<Data, GlassesError>) {
+        guard let completion = captureCompletion else { return }
+        captureCompletion = nil
+        captureID = nil
+        captureTask?.cancel(); captureTask = nil
+        activeCamera?.photo.stop()
+        activeCamera?.stop()
+        activeCaptureTokens.clear()
+        activeCamera = nil
+        completion(result)
     }
 
     public func playHaptic(_ pattern: HapticPattern) {

@@ -88,6 +88,7 @@ public final class EventSyncManager {
 
     public var persistenceError: QueueStorageError? { dbQueue.sync { storageError } }
     public var volatileEventCount: Int { dbQueue.sync { volatile.count } }
+    var isUploading: Bool { dbQueue.sync { isDraining } }
     public var backendBaseURL: String {
         get { dbQueue.sync { currentURL } }
         set { configureSession(baseURL: newValue, bearerToken: deviceBearerToken) }
@@ -306,6 +307,28 @@ public final class EventSyncManager {
             guard sqlite3_prepare_v2(db,"DELETE FROM pending_events WHERE event_uuid=? AND synced=0 AND owner_id=? AND destination=?",-1,&stmt,nil)==SQLITE_OK else { return false }
             bind(stmt,1,uuid);bind(stmt,2,currentOwner ?? "");bind(stmt,3,currentURL)
             return sqlite3_step(stmt)==SQLITE_DONE && sqlite3_changes(db)>0
+        }
+    }
+
+    /// Only migrate this owner's records after an authenticated address repair.
+    func relocateDestination(from: String, to: String, owner: String) throws {
+        try dbQueue.sync {
+            guard !suspended, !isDraining else { throw QueueStorageError.unavailable }
+            guard sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else { throw QueueStorageError.unavailable }
+            do {
+                var stmt: OpaquePointer?
+                let prepared = sqlite3_prepare_v2(db, "UPDATE pending_events SET destination=? WHERE destination=? AND owner_id=?", -1, &stmt, nil)
+                guard prepared == SQLITE_OK else { throw QueueStorageError.writeFailed(prepared) }
+                defer { sqlite3_finalize(stmt) }
+                bind(stmt, 1, to); bind(stmt, 2, from); bind(stmt, 3, owner)
+                let code = sqlite3_step(stmt)
+                guard code == SQLITE_DONE, sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { throw QueueStorageError.writeFailed(code) }
+            } catch { sqlite3_exec(db, "ROLLBACK", nil, nil, nil); throw error }
+            for (key, item) in volatile where item.owner == owner && item.destination == from {
+                volatile.removeValue(forKey: key)
+                volatile[owner+"|"+to+"|"+item.event.eventUUID] = Buffered(event: item.event, owner: owner, destination: to)
+            }
+            lastOwnerByDestination[to] = owner
         }
     }
 
