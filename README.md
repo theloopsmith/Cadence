@@ -28,6 +28,16 @@ This scope is a product boundary, not a statement of organizer approval. The sup
 
 ## Run and test
 
+### Clean clone setup
+```bash
+git clone https://github.com/theloopsmith/Cadence.git
+cd Cadence
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt
+PYTHONPATH=backend backend/.venv/bin/pytest backend/tests/ -v
+CADENCE_TEST_SILENT_AUDIO=1 ./scripts/test_ios.sh
+```
+
 For a physical iPhone on the Mac's Wi-Fi, run `python3 scripts/run_phone_backend.py`. It starts a LAN development server on port 8001, prints the address to enter in iPhone Settings, and keeps phone-login credentials in ignored `.local/phone-login.txt`. Real caregiver SMS/calls are disabled in this server. [Phone setup, glasses capture changes and verification](docs/PHONE_AND_GLASSES_JOURNEY_2026-10-29.md).
 
 `localhost` in the iPhone app refers to the iPhone, not the Mac. Use the printed `.local` hostname or the Mac's LAN IP. The updated Settings flow can repair an existing localhost binding while preserving the phone's history and queued events.

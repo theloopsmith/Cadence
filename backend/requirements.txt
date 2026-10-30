@@ -11,3 +11,4 @@ twilio>=9.3.0
 pytest>=8.3.0
 pytest-asyncio>=0.24.0
 PyJWT>=2.8.0
+meta-sam-parser>=0.1.0

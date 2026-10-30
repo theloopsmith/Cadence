@@ -145,6 +145,31 @@ async def get_dashboard_script():
 
 # ==================== SPEECH (Muse Voice Transcribe) ====================
 MAX_CLIP_SECONDS = 30
+MAX_IMAGE_BASE64_LENGTH = 10 * 1024 * 1024  # 10 MB base64 string
+MAX_IMAGE_DECODED_BYTES = 6 * 1024 * 1024   # 6 MB binary image
+
+
+def _validated_image(image_base64: Optional[str]) -> Optional[bytes]:
+    if not image_base64:
+        return None
+    if len(image_base64) > MAX_IMAGE_BASE64_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image payload exceeds 10MB limit.",
+        )
+    try:
+        data = base64.b64decode(image_base64, validate=True)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid base64 encoding for image.",
+        )
+    if len(data) > MAX_IMAGE_DECODED_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Decoded image exceeds 6MB limit.",
+        )
+    return data
 
 
 def _validated_wav(audio_base64: str) -> bytes:
@@ -428,9 +453,7 @@ async def analyze_meal_protein(
         return await log_meal_time(MealLogCreate(event_uuid=payload.event_uuid, timestamp_utc=payload.timestamp_utc), auth)
     reject_simulated_inputs(simulated_masks=payload.simulated_masks)
     deadline = RequestDeadlineContext()
-    img_bytes = (
-        base64.b64decode(payload.image_base64) if payload.image_base64 else None
-    )
+    img_bytes = _validated_image(payload.image_base64)
     sam_res = await meta_client.segment_sam_3_1(
         image_bytes=img_bytes,
         candidate_labels=FOOD_CANDIDATE_VOCAB,
@@ -493,15 +516,22 @@ async def reality_check_endpoint(
 ) -> Dict[str, Any]:
     if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
-    img_bytes = (
-        base64.b64decode(payload.image_base64) if payload.image_base64 else None
-    )
+    img_bytes = _validated_image(payload.image_base64)
     reject_simulated_inputs(simulated_sam_masks=payload.simulated_sam_masks)
-    res = await run_reality_check_pipeline(
-        user_query=payload.user_query,
-        image_bytes=img_bytes,
-        simulated_sam_masks=payload.simulated_sam_masks,
-    )
+    deadline = RequestDeadlineContext()
+    try:
+        async with asyncio.timeout(deadline.remaining_sec()):
+            res = await run_reality_check_pipeline(
+                user_query=payload.user_query,
+                image_bytes=img_bytes,
+                simulated_sam_masks=payload.simulated_sam_masks,
+                deadline=deadline,
+            )
+    except TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Reality check deadline exhausted across model pipeline.",
+        )
 
     await execute_write(
         """
@@ -537,14 +567,13 @@ async def analyze_handwriting_endpoint(
 ) -> Dict[str, Any]:
     if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
-    img_bytes = (
-        base64.b64decode(payload.image_base64) if payload.image_base64 else None
-    )
+    img_bytes = _validated_image(payload.image_base64)
     reject_simulated_inputs(
         simulated_letter_heights_px=payload.simulated_letter_heights_px,
         simulated_sam_decay_pct=payload.simulated_sam_decay_pct,
     )
-    res = analyze_handwriting_opencv(
+    res = await asyncio.to_thread(
+        analyze_handwriting_opencv,
         image_bytes=img_bytes,
         simulated_letter_heights_px=payload.simulated_letter_heights_px,
         simulated_sam_decay_pct=payload.simulated_sam_decay_pct,

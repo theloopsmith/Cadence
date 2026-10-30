@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-test:
+    name: Backend Tests (Python 3.13)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run Pytest test suite
+        run: |
+          PYTHONPATH=backend pytest backend/tests/ -v
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run JavaScript Dashboard security tests
+        run: |
+          node backend/tests/dashboard_browser_security.cjs
+          node backend/tests/dashboard_exam_validity.test.cjs
+
+  ios-test:
+    name: iOS & DSP Tests (macOS 14)
+    runs-on: macos-14
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Swift & Xcode Version
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Run Swift Package test suite
+        run: |
+          CADENCE_TEST_SILENT_AUDIO=1 ./scripts/test_ios.sh
