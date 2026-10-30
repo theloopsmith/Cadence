@@ -49,7 +49,8 @@ public enum TaskMetricsSummary {
         if let spm = record.walkStepsPerMinute {
             parts.append("\(Int(spm.rounded())) steps a minute")
         }
-        return parts.isEmpty ? "Motor check done" : parts.joined(separator: " · ")
+        if let voice = record.voiceMeanDbfs { parts.append("Voice \(Int(voice.rounded())) dB") }
+        return parts.isEmpty ? "No tasks measured this time" : parts.joined(separator: " · ")
     }
 
     // MARK: - Lines
@@ -130,9 +131,7 @@ public struct TaskMetricsHistory {
     }
 
     public static var `default`: TaskMetricsHistory {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return TaskMetricsHistory(directory: docs.appendingPathComponent("MotorChecks", isDirectory: true))
+        TaskMetricsHistory(directory: DeviceProfile.shared.directory.appendingPathComponent("MotorChecks", isDirectory: true))
     }
 
     private var fileURL: URL { directory.appendingPathComponent("history.json") }

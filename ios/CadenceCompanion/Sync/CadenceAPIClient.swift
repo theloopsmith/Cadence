@@ -126,6 +126,30 @@ public struct MealProteinResult: Decodable {
     }
 }
 
+public struct FallDeliveryStatus: Decodable {
+    public let eventUUID: String
+    public let contactState: String
+    public let providerAccepted: Bool
+    public let caregiverAcknowledged: Bool
+    public let simulated: Bool
+    enum CodingKeys: String, CodingKey {
+        case eventUUID = "event_uuid", contactState = "contact_state", providerAccepted = "provider_accepted"
+        case caregiverAcknowledged = "caregiver_acknowledged", simulated
+    }
+}
+
+public struct ReportMetadata: Decodable {
+    public let windowStartUTC: String
+    public let windowEndUTC: String
+    public let generatedAtUTC: String
+    public let latestEventUTC: String?
+    public let coverageNote: String
+    enum CodingKeys: String, CodingKey {
+        case windowStartUTC = "window_start_utc", windowEndUTC = "window_end_utc", generatedAtUTC = "generated_at_utc"
+        case latestEventUTC = "latest_event_utc", coverageNote = "coverage_note"
+    }
+}
+
 public struct ReportSummary: Decodable {
     public let onPct: Double?
     public let wearingOffPct: Double?
@@ -136,9 +160,15 @@ public struct ReportSummary: Decodable {
     public let fallCandidateResolvedCount: Int
     public let latestExamScore: Double?
     /// Doses logged in the last 24 hours. Absent from older servers.
+    public let caregiverProviderAcceptedCount: Int?
+    public let caregiverAcknowledgedCount: Int?
+    public let simulatedAlertCount: Int?
     public let doseCount: Int?
 
     enum CodingKeys: String, CodingKey {
+        case caregiverProviderAcceptedCount = "caregiver_provider_accepted_count"
+        case caregiverAcknowledgedCount = "caregiver_acknowledged_count"
+        case simulatedAlertCount = "simulated_alert_count"
         case doseCount = "dose_count"
         case onPct = "on_pct"
         case wearingOffPct = "wearing_off_pct"
@@ -152,7 +182,9 @@ public struct ReportSummary: Decodable {
 }
 
 public struct DiaryBucket: Decodable, Identifiable {
-    public var id: String { labelHHMM }
+    public var id: String { bucketStartUTC ?? labelHHMM }
+    public let bucketStartUTC: String?
+    public let observationStatus: String?
     public let labelHHMM: String
     public let clinicalState: String?
     public let symptomBurdenScore: Double?
@@ -161,6 +193,8 @@ public struct DiaryBucket: Decodable, Identifiable {
     public let hasExam: Bool?
 
     enum CodingKeys: String, CodingKey {
+        case bucketStartUTC = "bucket_start_utc"
+        case observationStatus = "observation_status"
         case labelHHMM = "label_hhmm"
         case clinicalState = "clinical_state"
         case symptomBurdenScore = "symptom_burden_score"
@@ -170,22 +204,25 @@ public struct DiaryBucket: Decodable, Identifiable {
     }
 
     /// What happened in this half hour, counted rather than interpreted.
-    public enum EventLevel { case none, onePause, more }
+    public enum EventLevel: Equatable { case unknown, none, onePause, more }
 
     public var eventLevel: EventLevel {
         let pauses = fogCount ?? 0
         if fallOccurred == true || pauses >= 2 { return .more }
-        return pauses == 1 ? .onePause : .none
+        if pauses == 1 { return .onePause }
+        return observationStatus == "events_logged" || hasExam == true ? .none : .unknown
     }
 }
 
 public struct NeurologistReport: Decodable {
     public let patientID: String
+    public let metadata: ReportMetadata?
     public let summary: ReportSummary
     public let buckets: [DiaryBucket]
     public let clinicalNarrative: String
 
     enum CodingKeys: String, CodingKey {
+        case metadata = "report_metadata"
         case patientID = "patient_id"
         case summary = "summary_stats"
         case buckets = "buckets_24h"
@@ -320,6 +357,17 @@ public struct CadenceAPIClient {
         request.httpMethod = "GET"
         let data = try await transport.send(request, bearerToken: bearerToken)
         return try decoder.decode(Health.self, from: data)
+    }
+
+    public func fallDelivery(eventUUID: String) async throws -> FallDeliveryStatus {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/?#%")
+        guard let encoded = eventUUID.addingPercentEncoding(withAllowedCharacters: allowed),
+              let url = URL(string: "\(baseURL)/api/v1/events/fall/\(encoded)/delivery") else { throw CadenceAPIError.badURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        let data = try await transport.send(request, bearerToken: bearerToken)
+        return try decoder.decode(FallDeliveryStatus.self, from: data)
     }
 
     public func fetchReport() async throws -> NeurologistReport {

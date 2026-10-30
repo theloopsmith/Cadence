@@ -2,12 +2,14 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
 
+from app.config import settings
+
 
 @dataclass
 class RequestDeadlineContext:
-    """Enforces a hard 4.0-second total wall-clock budget across chained cloud calls."""
+    """One wall-clock budget shared by the chained cloud calls of a request."""
 
-    total_budget_sec: float = 4.0
+    total_budget_sec: float = field(default_factory=lambda: settings.interactive_request_budget_sec)
     started_at: float = field(default_factory=time.monotonic)
 
     def remaining_sec(self) -> float:

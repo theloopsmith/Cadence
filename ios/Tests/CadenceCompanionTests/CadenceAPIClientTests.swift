@@ -30,6 +30,13 @@ final class RecordingJSONTransport: JSONTransporting {
 }
 
 final class CadenceAPIClientTests: XCTestCase {
+    func testTimelineTreatsMissingCoverageAsUnknownWithoutHidingRecordedEvents() throws {
+        func bucket(_ body: String) throws -> DiaryBucket { try JSONDecoder().decode(DiaryBucket.self, from: Data(body.utf8)) }
+        XCTAssertEqual(try bucket(#"{"label_hhmm":"10:00","fog_count":0}"#).eventLevel, .unknown)
+        XCTAssertEqual(try bucket(#"{"label_hhmm":"10:00","fog_count":1}"#).eventLevel, .onePause)
+        XCTAssertEqual(try bucket(#"{"label_hhmm":"10:00","observation_status":"no_observations"}"#).eventLevel, .unknown)
+        XCTAssertEqual(try bucket(#"{"label_hhmm":"10:00","observation_status":"events_logged","fog_count":0}"#).eventLevel, .none)
+    }
     private func makeClient(_ transport: RecordingJSONTransport) -> CadenceAPIClient {
         CadenceAPIClient(
             baseURL: "http://example.test",

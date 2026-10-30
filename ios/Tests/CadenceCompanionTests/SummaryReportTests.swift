@@ -56,7 +56,7 @@ final class SummaryReportTests: XCTestCase {
         XCTAssertEqual(report.count("Doses logged"), 2)
         XCTAssertEqual(report.count("Beats played"), 1)
         XCTAssertEqual(report.count("Check-ins answered okay"), 1)
-        XCTAssertEqual(report.count("Falls, help contacted"), 0)
+        XCTAssertEqual(report.count("Alerts requested"), 0)
         XCTAssertEqual(report.days.count, 1)
         let entries = report.days[0].entries
         XCTAssertEqual(entries.first?.word, "Dose taken")
@@ -67,7 +67,9 @@ final class SummaryReportTests: XCTestCase {
         let report = try build(.lastWeek)
         XCTAssertEqual(report.count("Doses logged"), 3)
         XCTAssertEqual(report.count("Beats played"), 3)
-        XCTAssertEqual(report.count("Falls, help contacted"), 1)
+        XCTAssertEqual(report.count("Alerts requested"), 1)
+        XCTAssertEqual(report.count("Provider accepted alerts"), 0)
+        XCTAssertEqual(report.count("Caregiver acknowledged alerts"), 0)
         XCTAssertEqual(report.days.count, 7)
         let oct27 = try XCTUnwrap(report.days.first { calendar.component(.day, from: $0.date) == 27 })
         XCTAssertEqual(oct27.countsLine, "1 dose · 2 beats")
@@ -154,5 +156,36 @@ final class SummaryReportTests: XCTestCase {
         let url = try SummaryPDFRenderer().writeTemporaryFile(report)
         XCTAssertEqual(url.lastPathComponent, "Cadence summary 2026-10-28.pdf")
         XCTAssertNotNil(PDFDocument(url: url))
+    }
+
+    func testLegacyContactClaimsRenderAsUnverifiedRequestsInPDF() throws {
+        let diary = try makeDiary()
+        let report = SummaryReportBuilder(diary: diary, metrics: try history(), calendar: calendar)
+            .build(range: .lastDay, endingAt: date(26, 18), name: "Pat")
+        XCTAssertEqual(report.count("Alerts requested"), 1)
+        XCTAssertEqual(report.count("Caregiver acknowledged alerts"), 0)
+        let pdf = try XCTUnwrap(PDFDocument(data: SummaryPDFRenderer().render(report)))
+        let text = (0..<pdf.pageCount).compactMap { pdf.page(at: $0)?.string }.joined(separator: " ")
+        XCTAssertFalse(text.contains("Your caregiver was contacted"))
+        XCTAssertTrue(text.contains("receipt is unverified"))
+        XCTAssertTrue(text.contains("coverage is unknown"))
+    }
+
+    func testFutureLocalEventsAndChecksAreExcludedAndDeliveryFactsAreDistinct() throws {
+        let diary = try makeDiary()
+        let accepted = DiaryEvent(id: "accepted-incident", kind: .alertAccepted, at: date(28, 16), detail: "Provider accepted", incidentID: "incident")
+        try diary.append(accepted)
+        try diary.append(accepted) // repeated polling cannot inflate the count
+        try diary.append(DiaryEvent(kind: .caregiverAcknowledged, at: date(28, 17), detail: "Acknowledged", incidentID: "incident"))
+        try diary.append(DiaryEvent(kind: .helpSent, at: date(28, 23), detail: "Future"))
+        let report = SummaryReportBuilder(diary: diary, metrics: try history(), calendar: calendar)
+            .build(range: .lastDay, endingAt: date(28, 18), name: "Pat")
+        XCTAssertEqual(report.count("Provider accepted alerts"), 1)
+        XCTAssertEqual(report.count("Caregiver acknowledged alerts"), 1)
+        XCTAssertEqual(report.count("Alerts requested"), 0)
+        XCTAssertFalse(report.plainText.contains("Future"))
+        let early = SummaryReportBuilder(diary: diary, metrics: try history(), calendar: calendar)
+            .build(range: .lastDay, endingAt: date(28, 9), name: "Pat")
+        XCTAssertTrue(early.motorChecks.isEmpty)
     }
 }

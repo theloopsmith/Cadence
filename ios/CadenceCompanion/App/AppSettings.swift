@@ -5,6 +5,10 @@ import Foundation
 /// the subsystems that need it whenever a value changes.
 @MainActor
 public final class AppSettings: ObservableObject {
+    public let profile: DeviceProfile
+    @Published public private(set) var profileNotice: String?
+    @Published public private(set) var restartRequired = false
+    private var changingCredentials = false
     private enum Key {
         static let backendBaseURL = "cadence.backendBaseURL"
         /// Read once to move an older build's token into the Keychain, then erased.
@@ -39,21 +43,33 @@ public final class AppSettings: ObservableObject {
     @Published public var schedule: MedicationSchedule {
         didSet {
             if let data = try? JSONEncoder().encode(schedule) {
-                defaults.set(data, forKey: Key.schedule)
+                defaults.set(data, forKey: scoped(Key.schedule))
             }
         }
     }
 
     @Published public var backendBaseURL: String {
-        didSet { defaults.set(backendBaseURL, forKey: Key.backendBaseURL); apply() }
+        didSet {
+            guard !changingCredentials else { return }
+            guard acceptSession(token: deviceToken, destination: backendBaseURL) else {
+                changingCredentials = true; backendBaseURL = oldValue; changingCredentials = false; return
+            }
+            defaults.set(backendBaseURL, forKey: Key.backendBaseURL); apply()
+        }
     }
     /// The sign-in token, kept in the Keychain and never in UserDefaults.
     @Published public var deviceToken: String {
-        didSet { tokenStore.write(deviceToken); apply() }
+        didSet {
+            guard !changingCredentials else { return }
+            guard acceptSession(token: deviceToken, destination: backendBaseURL) else {
+                changingCredentials = true; deviceToken = oldValue; changingCredentials = false; return
+            }
+            tokenStore.write(deviceToken); apply()
+        }
     }
     /// Who the phone is signed in as, for display only.
     @Published public var signedInUsername: String? {
-        didSet { defaults.set(signedInUsername, forKey: Key.signedInUsername) }
+        didSet { defaults.set(signedInUsername, forKey: scoped(Key.signedInUsername)) }
     }
 
     /// The shared development token, available in debug builds so the app
@@ -75,29 +91,29 @@ public final class AppSettings: ObservableObject {
     }
     /// The voice prompts are spoken in. Nil picks the most natural installed.
     @Published public var preferredVoiceIdentifier: String? {
-        didSet { defaults.set(preferredVoiceIdentifier, forKey: Key.preferredVoice); apply() }
+        didSet { defaults.set(preferredVoiceIdentifier, forKey: scoped(Key.preferredVoice)); apply() }
     }
     /// Muse Voice Transcribe listens alongside the on-device recognizer when online.
     @Published public var cloudListeningEnabled: Bool {
-        didSet { defaults.set(cloudListeningEnabled, forKey: Key.cloudListening) }
+        didSet { defaults.set(cloudListeningEnabled, forKey: scoped(Key.cloudListening)) }
     }
 
     /// The name printed at the top of shared summaries. Optional.
     @Published public var summaryName: String {
-        didSet { defaults.set(summaryName, forKey: Key.summaryName) }
+        didSet { defaults.set(summaryName, forKey: scoped(Key.summaryName)) }
     }
     @Published public var caregiverName: String {
-        didSet { defaults.set(caregiverName, forKey: Key.caregiverName) }
+        didSet { defaults.set(caregiverName, forKey: scoped(Key.caregiverName)) }
     }
     @Published public var caregiverPhone: String {
-        didSet { defaults.set(caregiverPhone, forKey: Key.caregiverPhone); apply() }
+        didSet { defaults.set(caregiverPhone, forKey: scoped(Key.caregiverPhone)); apply() }
     }
     @Published public var emergencyNumber: String {
-        didSet { defaults.set(emergencyNumber, forKey: Key.emergencyNumber); apply() }
+        didSet { defaults.set(emergencyNumber, forKey: scoped(Key.emergencyNumber)); apply() }
     }
     /// Whether the wearer wants motion protection to start with the app.
     @Published public var protectionEnabled: Bool {
-        didSet { defaults.set(protectionEnabled, forKey: Key.protectionEnabled) }
+        didSet { defaults.set(protectionEnabled, forKey: scoped(Key.protectionEnabled)) }
     }
 
     private let defaults: UserDefaults
@@ -112,8 +128,13 @@ public final class AppSettings: ObservableObject {
         sync: EventSyncManager = .shared,
         developerMode: Bool = AppSettings.defaultDeveloperMode,
         tokenStore: TokenStoring? = nil,
-        defaultToken: String = AppSettings.developmentToken
+        defaultToken: String = AppSettings.developmentToken,
+        profile: DeviceProfile? = nil
     ) {
+        let profile = profile ?? (NSClassFromString("XCTestCase") != nil
+            ? DeviceProfile(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("profile-\(UUID())")) : .shared)
+        self.profile = profile
+        let localKey: (String) -> String = { "cadence.profile.\(profile.id).\($0)" }
         let store = tokenStore ?? (NSClassFromString("XCTestCase") != nil ? InMemoryTokenStore() : KeychainTokenStore())
         self.defaults = defaults
         self.tokenStore = store
@@ -124,21 +145,31 @@ public final class AppSettings: ObservableObject {
             store.write(legacy)
         }
         defaults.removeObject(forKey: Key.legacyDeviceToken)
-        deviceToken = store.read() ?? defaultToken
-        signedInUsername = defaults.string(forKey: Key.signedInUsername)
-        summaryName = defaults.string(forKey: Key.summaryName) ?? ""
-        preferredVoiceIdentifier = defaults.string(forKey: Key.preferredVoice)
-        cloudListeningEnabled = defaults.object(forKey: Key.cloudListening) as? Bool ?? true
-        caregiverName = defaults.string(forKey: Key.caregiverName) ?? ""
-        caregiverPhone = defaults.string(forKey: Key.caregiverPhone) ?? ""
-        emergencyNumber = defaults.string(forKey: Key.emergencyNumber) ?? "911"
-        protectionEnabled = defaults.object(forKey: Key.protectionEnabled) as? Bool ?? true
-        if let data = defaults.data(forKey: Key.schedule),
+        let requiresFreshLogin = !profile.isBound && !profile.allowsDevelopmentDefault
+        if requiresFreshLogin { store.write("") }
+        for retiredID in profile.erasedProfileIDs {
+            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("cadence.profile.\(retiredID).") {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        deviceToken = requiresFreshLogin ? "" : (store.read() ?? (profile.allowsDevelopmentDefault ? defaultToken : ""))
+        signedInUsername = defaults.string(forKey: localKey(Key.signedInUsername))
+        summaryName = defaults.string(forKey: localKey(Key.summaryName)) ?? ""
+        preferredVoiceIdentifier = defaults.string(forKey: localKey(Key.preferredVoice))
+        cloudListeningEnabled = defaults.object(forKey: localKey(Key.cloudListening)) as? Bool ?? true
+        caregiverName = defaults.string(forKey: localKey(Key.caregiverName)) ?? ""
+        caregiverPhone = defaults.string(forKey: localKey(Key.caregiverPhone)) ?? ""
+        emergencyNumber = defaults.string(forKey: localKey(Key.emergencyNumber)) ?? "911"
+        protectionEnabled = defaults.object(forKey: localKey(Key.protectionEnabled)) as? Bool ?? true
+        if let data = defaults.data(forKey: localKey(Key.schedule)),
            let saved = try? JSONDecoder().decode(MedicationSchedule.self, from: data) {
             schedule = saved
         } else {
             schedule = MedicationSchedule(medicationName: "Levodopa", doseTimes: [])
         }
+        if !acceptSession(token: deviceToken, destination: backendBaseURL) {
+            changingCredentials = true; deviceToken = ""; changingCredentials = false
+        } else { store.write(deviceToken) }
         apply()
     }
 
@@ -164,6 +195,43 @@ public final class AppSettings: ObservableObject {
         var url = backendBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         while url.hasSuffix("/") { url.removeLast() }
         return url
+    }
+
+    private func scoped(_ key: String) -> String { "cadence.profile.\(profile.id).\(key)" }
+
+    @discardableResult
+    public func acceptSession(token: String, destination: String) -> Bool {
+        do {
+            guard !restartRequired, try profile.accept(token: token, destination: destination) else {
+                profileNotice = profile.failure ?? "This installation belongs to one wearer and server. Use the same account, or erase this phone's local profile in Settings before changing wearer or server."
+                return false
+            }
+            profileNotice = nil
+            return true
+        } catch {
+            profileNotice = "The account binding could not be saved. Check phone storage and try again."
+            return false
+        }
+    }
+
+    /// The durable marker makes interrupted erasure resume before producers
+    /// start at the next launch. Credentials cannot repopulate the old queue.
+    public func prepareLocalReset() throws -> Bool {
+        guard sync.suspendForLocalReset() else { return false }
+        do { try profile.beginReset() }
+        catch {
+            sync.resumeAfterFailedLocalReset(baseURL: trimmedBaseURL, token: deviceToken)
+            throw error
+        }
+        restartRequired = true
+        changingCredentials = true
+        deviceToken = ""; signedInUsername = nil
+        tokenStore.write("")
+        changingCredentials = false
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("cadence.profile.\(profile.id).") {
+            defaults.removeObject(forKey: key)
+        }
+        return true
     }
 
     private func apply() {

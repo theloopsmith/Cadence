@@ -200,6 +200,8 @@ def test_simulated_inputs_are_refused_outside_demo_mode(server, monkeypatch, pat
 
 def test_the_dashboard_no_longer_ships_a_token(server):
     html = server.get("/dashboard").text
-    assert settings.cadence_device_token not in html
-    assert settings.cadence_clinician_token not in html
-    assert "/api/v1/auth/login" in html
+    script = server.get('/assets/dashboard.js').text
+    for content in (html, script):
+        assert settings.cadence_device_token not in content
+        assert settings.cadence_clinician_token not in content
+    assert "/api/v1/auth/login" in script

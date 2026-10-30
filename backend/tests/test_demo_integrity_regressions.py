@@ -6,6 +6,7 @@ covered. They are grouped by the defect they guard against so a future
 regression names itself in the failure output.
 """
 
+from datetime import datetime, timezone
 import asyncio
 import os
 import tempfile
@@ -133,8 +134,8 @@ def test_demo_seed_covers_the_full_day_and_every_pipeline():
         rep = client.get("/api/v1/report/neurologist", headers=DEVICE_HEADERS).json()
 
     labels = [b["label_hhmm"] for b in rep["buckets_24h"]]
-    assert labels[0] == "07:30", "timeline must open with the morning OFF exam"
-    assert labels[-1] >= "19:30", "timeline must reach the end-of-day exam"
+    assert len(labels) == 48
+    assert rep["report_metadata"]["window_end_utc"] == rep["report_metadata"]["generated_at_utc"]
 
     # Every pipeline leaves a trace a judge can point at.
     assert rep["fog_events"], "Pipeline 1 produced no rows"
@@ -225,7 +226,7 @@ def test_exam_delta_prefers_a_true_off_baseline_over_a_later_wearing_off():
             "voice_mean_dbfs": -25.5,
         },
     ]
-    tl = build_24h_diary_timeline([], [], [], [], [], exam_rows)
+    tl = build_24h_diary_timeline([], [], [], [], [], exam_rows, reference_end_utc=datetime(2026,10,26,20,tzinfo=timezone.utc))
     delta = tl["exam_on_vs_off_delta"]
     assert delta is not None
     assert delta["off_baseline_state"] == "OFF"
@@ -260,7 +261,7 @@ def test_exam_delta_uses_wearing_off_only_when_no_true_off_exists():
             "voice_mean_dbfs": -15.0,
         },
     ]
-    delta = build_24h_diary_timeline([], [], [], [], [], exam_rows)["exam_on_vs_off_delta"]
+    delta = build_24h_diary_timeline([], [], [], [], [], exam_rows, reference_end_utc=datetime(2026,10,26,20,tzinfo=timezone.utc))["exam_on_vs_off_delta"]
     assert delta["off_baseline_state"] == "WEARING_OFF"
     assert delta["off_composite"] == pytest.approx(59.1)
 

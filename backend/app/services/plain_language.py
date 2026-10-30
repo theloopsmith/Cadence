@@ -40,8 +40,12 @@ def describe_task_metrics(
     parts: List[str] = [describe_letter_change(handwriting_decay_pct)]
     if voice_mean_dbfs is not None:
         parts.append(f"the “Ahhh” averaged {round(voice_mean_dbfs)} dB")
-    if walk_cadence_spm:
+    else:
+        parts.append("voice was not measured")
+    if walk_cadence_spm is not None:
         parts.append(f"walking was {round(walk_cadence_spm)} steps a minute")
+    else:
+        parts.append("walking was not measured")
     if walk_fog_count:
         parts.append(f"{_plural(int(walk_fog_count), 'freeze', 'freezes')} during the walk")
     return ", ".join(parts)
@@ -59,17 +63,25 @@ def summarize_day(stats: Dict[str, Any]) -> str:
     if doses:
         events.append(f"{_plural(doses, 'dose', 'doses')} logged")
     if freezes:
-        events.append(
-            f"a steady beat played {_plural(freezes, 'time', 'times')} when walking paused"
-        )
+        events.append(f"{_plural(freezes, 'walking pause', 'walking pauses')} logged")
     if falls:
-        events.append(f"{_plural(falls, 'fall', 'falls')} where a caregiver was contacted")
+        events.append(f"{_plural(falls, 'fall alert', 'fall alerts')} recorded")
     if events:
         sentences.append("In the last 24 hours: " + "; ".join(events) + ".")
     if answered:
         sentences.append(
             f"{_plural(answered, 'impact was', 'impacts were')} answered as okay during the voice check-in."
         )
+
+    accepted = int(stats.get('caregiver_provider_accepted_count',0) or 0)
+    acknowledged = int(stats.get('caregiver_acknowledged_count',0) or 0)
+    if accepted:
+        sentences.append(f"The notification provider accepted {_plural(accepted,'alert','alerts')}; acceptance does not confirm receipt by a caregiver.")
+    if acknowledged:
+        sentences.append(f"A caregiver acknowledged {_plural(acknowledged,'alert','alerts')}.")
+    simulated = int(stats.get('simulated_alert_count',0) or 0)
+    if simulated:
+        sentences.append(f"{_plural(simulated,'alert included','alerts included')} simulated delivery; simulated attempts do not establish real caregiver contact.")
 
     metrics = stats.get("latest_exam_metrics")
     if metrics:
@@ -85,5 +97,7 @@ def summarize_day(stats: Dict[str, Any]) -> str:
         )
 
     if not sentences:
+        if stats.get('recorded_event_count',0):
+            return "Other observations were logged in the last 24 hours."
         return "Nothing was logged in the last 24 hours."
     return " ".join(sentences)

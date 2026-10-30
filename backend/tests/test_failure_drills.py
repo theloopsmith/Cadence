@@ -127,7 +127,8 @@ class TestOfflineBatchReconnectDrill:
         client = TestClient(app)
 
         # 1. Device was offline during an event 40 minutes ago
-        historical_ts = "2026-10-27T10:00:00Z"
+        from datetime import datetime, timedelta, timezone
+        historical_ts = (datetime.now(timezone.utc)-timedelta(minutes=40)).isoformat()
         event_uuid = "drill-fog-offline-001"
 
         res = client.post(

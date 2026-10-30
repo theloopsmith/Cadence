@@ -14,6 +14,7 @@ struct TodayView: View {
     @State private var showMealCheck = false
     @State private var showSettings = false
     @ObservedObject private var audioRoute = AudioRouteManager.shared
+    @ObservedObject private var audio = AudioCueEngine.shared
 
     private var walking: WalkingModel { app.walking }
     private var doses: DoseLogModel { app.doses }
@@ -88,7 +89,7 @@ struct TodayView: View {
     // MARK: - Protection & Status
 
     private var isGlassesConnected: Bool {
-        app.glasses.connectionState == .connected || audioRoute.isGlassesMicActive
+        app.glasses.connectionState == .connected
     }
 
     private var glassesDisplayName: String {
@@ -116,14 +117,14 @@ struct TodayView: View {
                 )
                 Spacer()
                 Button {
-                    let next = !walking.isProtectionOn
+                    let next = !walking.isProtectionRequested
                     app.settings.protectionEnabled = next
                     walking.setProtection(enabled: next)
                     Haptics.tap()
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: walking.isProtectionOn ? "checkmark.circle.fill" : "circle")
-                        Text(walking.isProtectionOn ? "Protection On" : "Protection Off")
+                        Image(systemName: walking.isProtectionRequested ? "checkmark.circle.fill" : "circle")
+                        Text(walking.isProtectionRequested ? "Turn Off" : "Turn On")
                             .fontWeight(.semibold)
                     }
                     .font(.subheadline)
@@ -135,13 +136,35 @@ struct TodayView: View {
                     )
                 }
                 .disabled(walking.isDemoRunning)
-                .accessibilityLabel(walking.isProtectionOn ? "Turn protection off" : "Turn protection on")
+                .accessibilityLabel(walking.isProtectionRequested ? "Turn protection off" : "Turn protection on")
             }
 
             Text(walking.detail)
                 .font(simple ? .title3 : .body)
                 .foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Text("Audio output: \(audioRoute.activeOutputName) · Microphone: \(audioRoute.activeInputName)")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+
+            if !audio.isAudioAvailable || (walking.isProtectionRequested && app.motion.health == .healthy && !walking.isProtectionOn) {
+                InlineNotice(text: audio.audioProblem ?? walking.protectionProblem ?? "Audio cues are unavailable.", color: CadenceTheme.caution, systemName: "speaker.slash.fill")
+                Button("Retry audio") { walking.retryAudio() }
+                    .disabled(audio.isInterrupted)
+            }
+            if walking.isProtectionRequested, app.motion.health == .stale {
+                Button("Retry protection") { walking.setProtection(enabled: true) }
+            }
+            if walking.isProtectionRequested || walking.isDemoRunning || walking.isCueing {
+                GuardedButton(size: .big, style: .tinted(.secondary), action: {
+                    app.settings.protectionEnabled = false
+                    walking.stopWalkingAudio()
+                }) {
+                    Label("Stop walking cues", systemImage: "stop.fill")
+                }
+                .accessibilityHint("Stops walking protection and its speech. An active fall alert stays active.")
+            }
 
             if walking.isProtectionOn, !walking.sourceSentence.isEmpty, !simple {
                 Text(walking.sourceSentence)
@@ -174,7 +197,7 @@ struct TodayView: View {
         switch app.glasses.connectionState {
         case .connected:
             let micLabel = audioRoute.isGlassesMicActive ? "Glasses Mic" : audioRoute.activeInputName
-            return "60 Hz IMU · \(micLabel) Active"
+            return "Connected · microphone: \(micLabel)"
         case .connecting:
             return "Connecting to glasses…"
         case .disconnected, .notPaired:

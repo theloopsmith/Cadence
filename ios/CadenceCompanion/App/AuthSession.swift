@@ -12,6 +12,7 @@ public final class AuthSession: ObservableObject {
 
     private let settings: AppSettings
     private var cancellables: Set<AnyCancellable> = []
+    private var generation = UUID()
 
     public init(settings: AppSettings) {
         self.settings = settings
@@ -34,6 +35,7 @@ public final class AuthSession: ObservableObject {
     }
 
     public func signIn(username rawUsername: String, password: String) async {
+        guard !isWorking, !settings.restartRequired, settings.profile.failure == nil else { return }
         let username = rawUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !username.isEmpty, !password.isEmpty else {
             errorMessage = "Enter the phone's username and password."
@@ -42,10 +44,18 @@ public final class AuthSession: ObservableObject {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
+        let generation = self.generation
+        let client = settings.api
         do {
-            let result = try await settings.api.login(username: username, password: password)
+            let result = try await client.login(username: username, password: password)
+            guard self.generation == generation, !settings.restartRequired,
+                  settings.api.baseURL == client.baseURL, settings.deviceToken == client.bearerToken else { return }
             guard result.role == "device_writer" else {
                 errorMessage = "That account is for viewing summaries. Use the account made for this phone."
+                return
+            }
+            guard settings.acceptSession(token: result.accessToken, destination: client.baseURL) else {
+                errorMessage = settings.profileNotice
                 return
             }
             settings.deviceToken = result.accessToken
@@ -63,11 +73,15 @@ public final class AuthSession: ObservableObject {
     }
 
     public func signOut() {
+        generation = UUID()
         settings.deviceToken = ""
         settings.signedInUsername = nil
         isExpired = false
         errorMessage = nil
     }
+
+    /// Invalidates a pending login without replacing the installation's binding.
+    public func cancelPendingSignIn() { generation = UUID() }
 
     /// The server refused the token (it expired or was revoked).
     public func markExpired() {

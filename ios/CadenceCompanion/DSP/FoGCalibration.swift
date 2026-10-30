@@ -336,11 +336,9 @@ public struct LabeledCaptureStore {
         self.directory = directory
     }
 
-    /// The app's default location: Documents/LabeledCaptures.
+    /// The provisioned wearer's local recordings; legacy files stay separate.
     public static var `default`: LabeledCaptureStore {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return LabeledCaptureStore(directory: docs.appendingPathComponent("LabeledCaptures", isDirectory: true))
+        LabeledCaptureStore(directory: DeviceProfile.shared.directory.appendingPathComponent("Captures", isDirectory: true))
     }
 
     public func save(_ capture: LabeledCapture) throws {

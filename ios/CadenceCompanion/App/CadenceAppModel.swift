@@ -4,7 +4,9 @@ import Foundation
 /// Everything the screens share. Built once at launch by `CadenceRootView`.
 @MainActor
 public final class CadenceAppModel: ObservableObject {
+    public static let shared = CadenceAppModel()
     @Published public private(set) var persistenceWarning: String?
+    @Published public private(set) var profileResetError: String?
     public let settings: AppSettings
     public let motion: MotionFeed
     public let fallAlert: FallAlertCoordinator
@@ -34,20 +36,23 @@ public final class CadenceAppModel: ObservableObject {
     @Published public private(set) var pillPhoto: Data?
 
     private var cancellables: Set<AnyCancellable> = []
+    private var deliveryTask: Task<Void, Never>?
 
     public convenience init() {
+        let profile = DeviceProfile.shared
         self.init(
-            settings: AppSettings(),
+            settings: AppSettings(profile: profile),
             motion: MotionFeed(),
             fallAlert: FallAlertCoordinator(),
             location: LiveLocationProvider.shared,
-            captureStore: .default,
-            diary: .default,
+            captureStore: LabeledCaptureStore(directory: profile.directory.appendingPathComponent("Captures")),
+            diary: DiaryStore(directory: profile.directory.appendingPathComponent("Diary")),
             transcripts: LiveTranscriptListener.shared,
             phoneHaptics: PhoneHaptics(),
-            pillPhotos: .default,
+            pillPhotos: PillPhotoStore(directory: profile.directory.appendingPathComponent("Medication")),
             apiTransport: URLSessionJSONTransport(),
-            notifications: SystemNotificationCenter()
+            notifications: SystemNotificationCenter(),
+            history: TaskMetricsHistory(directory: profile.directory.appendingPathComponent("MotorChecks"))
         )
     }
 
@@ -62,7 +67,8 @@ public final class CadenceAppModel: ObservableObject {
         phoneHaptics: HapticPatternPlaying,
         pillPhotos: PillPhotoStore,
         apiTransport: JSONTransporting,
-        notifications: DoseNotificationCentering
+        notifications: DoseNotificationCentering,
+        history: TaskMetricsHistory? = nil
     ) {
         settings.apiTransport = apiTransport
         self.settings = settings
@@ -80,6 +86,7 @@ public final class CadenceAppModel: ObservableObject {
         self.pillPhoto = pillPhotos.load()
         self.offHours = OffHourLearner(diary: diary)
         let detector = FoGDetector()
+        detector.eventSync = settings.sync
         let glasses = GlassesSessionManager(phoneMotion: motion.phoneSource)
         self.glasses = glasses
         self.walking = WalkingModel(
@@ -87,7 +94,7 @@ public final class CadenceAppModel: ObservableObject {
         )
         self.calibration = FoGCalibrationController(store: captureStore, detector: detector)
         self.recorder = LabeledCaptureRecorder(motion: motion, store: captureStore, source: .phoneRecording)
-        self.exam = HomeMotorExamManager()
+        self.exam = HomeMotorExamManager(sync: settings.sync, history: history)
         let doses = DoseLogModel(schedule: settings.schedule, diary: diary, sync: settings.sync)
         self.doses = doses
         self.haptics = HapticRouter(phone: phoneHaptics, glasses: glasses)
@@ -122,6 +129,8 @@ public final class CadenceAppModel: ObservableObject {
         fallAlert.$phase
             .sink { [weak self] phase in
                 if case .checkIn = phase { self?.haptics.play(.alert) }
+                self?.deliveryTask?.cancel()
+                if case .dispatched = phase { self?.startDeliveryMonitoring() }
             }
             .store(in: &cancellables)
 
@@ -172,8 +181,8 @@ public final class CadenceAppModel: ObservableObject {
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] active in
-                guard let self, !active, !self.walking.isDemoRunning else { return }
-                self.record(.cue, detail: "A steady beat helped you step again")
+                guard let self, !active, !self.walking.isDemoRunning, self.motion.health == .healthy else { return }
+                self.record(.cue, detail: "Walking cue ended while motion samples were current")
             }
             .store(in: &cancellables)
 
@@ -194,7 +203,7 @@ public final class CadenceAppModel: ObservableObject {
                 case "canceled_by_user_button":
                     self?.record(.checkInAnswered, detail: "You tapped I'm OK")
                 case "confirmed_waiting_dispatch":
-                    self?.record(.helpSent, detail: "Alert saved on device; trying to contact caregiver")
+                    self?.record(.helpSent, detail: "Help requested; caregiver receipt is unverified", incidentID: self?.fallAlert.activeEventUUID)
                 default:
                     break
                 }
@@ -224,8 +233,48 @@ public final class CadenceAppModel: ObservableObject {
         }
     }
 
-    private func record(_ kind: DiaryEventKind, detail: String) {
-        try? diary.append(DiaryEvent(kind: kind, at: Date(), detail: detail))
+    deinit { deliveryTask?.cancel() }
+
+    private func startDeliveryMonitoring() {
+        guard let eventUUID = fallAlert.activeEventUUID else { return }
+        let client = settings.api
+        guard !client.bearerToken.isEmpty else { return }
+        deliveryTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard await self?.refreshDelivery(eventUUID: eventUUID, client: client) == true else { return }
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    @discardableResult
+    func refreshDelivery(eventUUID: String, client: CadenceAPIClient) async -> Bool {
+        func stillOwned() -> Bool {
+            !client.bearerToken.isEmpty && !settings.restartRequired && fallAlert.isDispatched && fallAlert.activeEventUUID == eventUUID &&
+                settings.deviceToken == client.bearerToken && settings.api.baseURL == client.baseURL
+        }
+        guard stillOwned() else { return false }
+        do {
+            let reply = try await client.fallDelivery(eventUUID: eventUUID)
+            guard stillOwned(), reply.eventUUID == eventUUID else { return false }
+            let before = fallAlert.contactState
+            fallAlert.updateDelivery(reply)
+            if before != fallAlert.contactState {
+                if reply.providerAccepted && before != "provider_accepted" && before != "acknowledged" {
+                    record(.alertAccepted, detail: "Provider accepted this alert; caregiver receipt is not confirmed", incidentID: eventUUID)
+                }
+                if reply.caregiverAcknowledged && fallAlert.contactState == "acknowledged" {
+                    record(.caregiverAcknowledged, detail: "The server verified a caregiver acknowledgment for this alert", incidentID: eventUUID)
+                }
+            }
+        } catch { /* Keep the last observed state; offline is not proof of delivery. */ }
+        return stillOwned()
+    }
+
+    private func record(_ kind: DiaryEventKind, detail: String, incidentID: String? = nil) {
+        guard !settings.restartRequired else { return }
+        let id = incidentID.map { "\(kind.rawValue)-\($0)" } ?? UUID().uuidString
+        try? diary.append(DiaryEvent(id: id, kind: kind, at: Date(), detail: detail, incidentID: incidentID))
         diaryVersion += 1
         if kind == .cue { refreshSimpleMode() }
     }
@@ -245,6 +294,7 @@ public final class CadenceAppModel: ObservableObject {
 
     /// Diary access for tools that log outside the automatic hooks.
     public func recordDiary(_ kind: DiaryEventKind, detail: String, at date: Date = Date()) {
+        guard !settings.restartRequired else { return }
         try? diary.append(DiaryEvent(kind: kind, at: date, detail: detail))
         diaryVersion += 1
     }
@@ -255,6 +305,7 @@ public final class CadenceAppModel: ObservableObject {
 
     /// Saves the care partner's pill photo for the medication card.
     public func setPillPhoto(_ jpeg: Data?) {
+        guard !settings.restartRequired else { return }
         if let jpeg {
             try? pillPhotos.save(jpeg)
         } else {
@@ -335,6 +386,7 @@ public final class CadenceAppModel: ObservableObject {
 
     /// Called once the first screen appears.
     public func start() {
+        guard !settings.restartRequired, settings.profile.failure == nil else { return }
         LiveSpeechCheckInListener.shared.cloudEarFactory = cloudEarFactory(for: .fallCheckIn)
         LiveTranscriptListener.shared.cloudEarFactory = cloudEarFactory(for: .dose)
         AudioCueEngine.shared.configureLaunchAudioSession()
@@ -343,5 +395,34 @@ public final class CadenceAppModel: ObservableObject {
             walking.setProtection(enabled: true)
         }
         Task { await reminders.sync(settings.schedule) }
+    }
+
+    @discardableResult
+    public func resetLocalProfile() -> Bool {
+        guard !fallAlert.isAlertVisible else {
+            profileResetError = "Resolve the active help alert before erasing this phone's profile."
+            return false
+        }
+        do {
+            guard try settings.prepareLocalReset() else {
+                profileResetError = "An upload is still in progress. Wait for it to finish, then try erasing again."
+                return false
+            }
+        } catch {
+            profileResetError = "The reset could not be saved safely. Check phone storage and try again."
+            return false
+        }
+        auth.cancelPendingSignIn()
+        deliveryTask?.cancel()
+        voiceDose.cancel()
+        exam.cancelExam()
+        walking.stopWalkingAudio()
+        glasses.detach()
+        _ = recorder.stopAndSave()
+        reminders.suspendForLocalReset()
+        AudioCueEngine.shared.cancelSpeech()
+        pillPhoto = nil
+        profileResetError = nil
+        return true
     }
 }

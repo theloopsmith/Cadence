@@ -3,7 +3,7 @@ import SwiftUI
 /// Three tabs and one help button that never moves. Setup lives behind the
 /// Help tab for a care partner; the wearer's day is Today and Diary.
 public struct CadenceRootView: View {
-    @StateObject private var app = CadenceAppModel()
+    @StateObject private var app = CadenceAppModel.shared
     @State private var tab: Tab = .today
     @State private var didReady = false
     private let onReady: ((CadenceAppModel) -> Void)?
@@ -17,6 +17,25 @@ public struct CadenceRootView: View {
     }
 
     public var body: some View {
+        Group {
+            if app.settings.restartRequired {
+                VStack(spacing: 16) {
+                    Text("Local reset prepared").font(.title2)
+                    Text("Close Cadence completely and reopen it. The previous local profile and its queued uploads will be erased before new setup starts. Server records are unchanged.")
+                }.padding(24)
+            } else if let failure = app.settings.profile.failure {
+                VStack(spacing: 16) {
+                    Text("Local profile unavailable").font(.title2)
+                    Text(failure)
+                    Text("Close Cadence and reopen it after resolving the storage problem.")
+                }.padding(24)
+            } else if !app.settings.profile.isBound {
+                SettingsView(app: app)
+            } else { mainContent }
+        }
+    }
+
+    private var mainContent: some View {
         TabView(selection: $tab) {
             TodayView(app: app)
                 .safeAreaInset(edge: .bottom) { helpBar }

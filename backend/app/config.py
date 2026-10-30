@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # Meta Model API ($150 Credits)
     meta_api_key: str = ""
-    meta_api_base_url: str = "https://api.llama.com/v1"
+    meta_api_base_url: str = "https://api.meta.ai/v1"
     meta_sam_model: str = "sam-3.1"
     meta_stt_model: str = "muse-voice-transcribe-1.0"
     meta_asr_base_url: str = "https://api.meta.ai/v1"
@@ -77,7 +77,10 @@ class Settings(BaseSettings):
 
     # Shared Request Deadline & Per-Stage Budgets
     request_deadline_sec: float = 4.0
-    sam_stage_budget_sec: float = 1.8
+    # One interactive request (photo in, sentence out) may use this much wall clock.
+    # Measured 2026-10-29: a single live SAM 3.1 call takes 2.5-3.6 s.
+    interactive_request_budget_sec: float = 8.0
+    sam_stage_budget_sec: float = 6.0
     baseten_stage_budget_sec: float = 1.2
     tts_stage_budget_sec: float = 0.8
 

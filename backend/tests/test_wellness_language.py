@@ -49,7 +49,7 @@ def test_task_metrics_are_raw_measurements():
 
 def test_task_metrics_skip_what_was_not_measured():
     text = describe_task_metrics(
-        voice_mean_dbfs=None, handwriting_decay_pct=None, walk_cadence_spm=0.0, walk_fog_count=0
+        voice_mean_dbfs=None, handwriting_decay_pct=None, walk_cadence_spm=None, walk_fog_count=None
     )
     assert "handwriting was not measured" in text
     assert "steps a minute" not in text
@@ -76,7 +76,8 @@ def test_day_summary_counts_events_without_interpreting_them():
         }
     )
     assert "3 doses logged" in text
-    assert "2 times" in text
+    assert "2 walking pauses logged" in text
+    assert "beat played" not in text
     assert "1 fall" in text
     assert "answered as okay" in text
     assert "letters got 22% smaller" in text
@@ -87,6 +88,11 @@ def test_day_summary_counts_events_without_interpreting_them():
 def test_an_empty_day_says_so():
     text = summarize_day({"fog_count": 0, "fall_count": 0, "dose_count": 0})
     assert "nothing" in text.lower() or "no events" in text.lower()
+    assert_plain(text)
+
+def test_other_observations_are_not_reported_as_nothing_logged():
+    text = summarize_day({'recorded_event_count':1})
+    assert 'observations were logged' in text
     assert_plain(text)
 
 
@@ -113,6 +119,7 @@ def test_motor_check_summary_is_plain(client):
         headers=DEVICE_HEADERS,
         json={
             "exam_uuid": "plain-exam-001",
+            "voice_status": "measured", "handwriting_status": "measured", "walk_status": "measured", "measurement_source": "device",
             "voice_mean_dbfs": -28.0,
             "voice_stability_db": 3.5,
             "handwriting_opencv_decay_pct": -35.0,

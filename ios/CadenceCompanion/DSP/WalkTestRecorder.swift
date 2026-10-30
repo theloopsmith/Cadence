@@ -20,6 +20,8 @@ public struct WalkTestResult: Equatable {
 /// half second, so the exam and the ambient FoG log agree on what a freeze is.
 public final class WalkTestRecorder {
     private var samples: [IMUSample] = []
+    private var continuous = true
+    public var hasUsableRecording: Bool { continuous && samples.count >= 16 && elapsedSec >= 3 }
     private let spectral = FoGDetector()
 
     /// Peaks closer than this are one footfall, not two.
@@ -31,9 +33,16 @@ public final class WalkTestRecorder {
 
     public func reset() {
         samples.removeAll()
+        continuous = true
     }
 
     public func ingest(_ sample: IMUSample) {
+        let values = [sample.timestamp,sample.ax,sample.ay,sample.az,sample.gx,sample.gy,sample.gz]
+        guard values.allSatisfy({ $0.isFinite }) else { continuous = false; return }
+        if let last = samples.last {
+            guard sample.timestamp > last.timestamp else { continuous = false; return }
+            if sample.timestamp - last.timestamp > 0.5 { continuous = false }
+        }
         samples.append(sample)
     }
 

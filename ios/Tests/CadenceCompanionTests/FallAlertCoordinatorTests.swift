@@ -38,6 +38,28 @@ final class FallAlertCoordinatorTests: XCTestCase {
         )
     }
 
+    func testDeliveryEvidenceMustMatchTheActiveIncidentAndSeparateAcceptanceFromAcknowledgment() {
+        let c = makeCoordinator()
+        c.beginCheckIn(eventUUID: "active")
+        c.escalate()
+        func proof(_ uuid: String = "active", _ state: String, accepted: Bool = false, acknowledged: Bool = false, simulated: Bool = false) -> FallDeliveryStatus {
+            FallDeliveryStatus(eventUUID: uuid, contactState: state, providerAccepted: accepted, caregiverAcknowledged: acknowledged, simulated: simulated)
+        }
+        c.updateDelivery(proof("old", "acknowledged", accepted: true, acknowledged: true))
+        XCTAssertEqual(c.contactState, "queued")
+        c.updateDelivery(proof("active", "acknowledged", acknowledged: true, simulated: true))
+        XCTAssertEqual(c.contactState, "simulated")
+        c.updateDelivery(proof("active", "provider_accepted", accepted: true))
+        XCTAssertEqual(c.contactHeadline, "Alert accepted by provider")
+        c.updateDelivery(proof("active", "acknowledged", accepted: true, acknowledged: true))
+        XCTAssertEqual(c.contactState, "acknowledged")
+        c.updateDelivery(proof("active", "queued"))
+        XCTAssertEqual(c.contactState, "acknowledged", "a stale response cannot erase verified acknowledgment")
+        c.cancelByUser()
+        c.updateDelivery(proof("active", "provider_accepted", accepted: true))
+        XCTAssertFalse(c.isDispatched)
+    }
+
     /// The check-in screen appears immediately and brings the display up, so a
     /// wearer on the floor can find the cancel button.
     func testCheckInRaisesBrightnessAndKeepsScreenAwake() {

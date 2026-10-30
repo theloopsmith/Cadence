@@ -1,0 +1,12 @@
+{
+  "checked_at_utc": "2026-10-29T16:18:00+00:00",
+  "endpoint": "https://api.meta.ai/v1/asr/transcribe",
+  "model": "muse-voice-transcribe-1.0",
+  "audio_source": "macOS `say` rendering of \"I'm okay, I just sat down\", converted to 16 kHz mono 16-bit WAV",
+  "wav_bytes": 62294,
+  "keywords": "check_in_keywords()",
+  "available": true,
+  "transcript": "I'm okay. I just sat down..",
+  "wall_ms": 1999,
+  "note": "Synthesized speech, not a wearer. Establishes that the request shape, auth and parsing work against the live service."
+}

@@ -127,7 +127,9 @@ final class HomeMotorExamTests: XCTestCase {
     func testSubmittedPayloadMatchesTheBackendContract() async {
         let stub = StubExamSubmitter(result: scoredResult)
         let mgr = HomeMotorExamManager(submitter: stub, audio: .shared, sync: sync)
-        mgr.measurements = measurements()
+        var valid = measurements()
+        valid.voiceMeasured = true; valid.handwritingMeasured = true; valid.walkMeasured = true
+        mgr.measurements = valid
 
         _ = await mgr.completeExam(examUUID: "exam-contract-1")
 

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from app.services.diary_engine import (
     DiaryBucketMetrics,
     build_24h_diary_timeline,
@@ -74,7 +75,7 @@ def test_build_24h_diary_timeline_and_on_off_exam_delta():
         med_rows=med_rows,
         writing_rows=[],
         voice_rows=[],
-        exam_rows=exam_rows,
+        exam_rows=exam_rows, reference_end_utc=datetime(2026,10,26,20,tzinfo=timezone.utc),
     )
     assert len(tl["buckets"]) >= 8
     assert tl["exam_on_vs_off_delta"] is not None

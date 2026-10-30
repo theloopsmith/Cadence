@@ -208,7 +208,7 @@ public final class DeveloperToolsModel: ObservableObject {
         app.recordDiary(.mealLogged, detail: "Meal time logged", at: todayAt(hour: 13, minute: 30))
         app.recordDiary(.motorCheck, detail: "Letters 22% smaller across the line · 96 steps a minute", at: todayAt(hour: 14, minute: 0))
         app.recordDiary(.checkInAnswered, detail: "You said you were okay", at: todayAt(hour: 15, minute: 0))
-        app.recordDiary(.helpSent, detail: "Your caregiver was contacted", at: todayAt(hour: 16, minute: 0))
+        app.recordDiary(.helpSent, detail: "Sample alert requested; caregiver receipt is unverified", at: todayAt(hour: 16, minute: 0))
         app.recordDiary(.protectionOff, detail: "", at: todayAt(hour: 17, minute: 0))
         lastMessage = "Sample day written to the diary."
     }

@@ -26,7 +26,9 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
     public static let shared = LiveTranscriptListener()
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-    private let audioEngine = AVAudioEngine()
+    private var audioEngine = AVAudioEngine()
+    private var audioGeneration = 0
+    private var pauseObserver: NSObjectProtocol?
     private let audioQueue = DispatchQueue(label: "com.cadence.transcript")
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -43,6 +45,13 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
     public var cloudEarFactory: ((@escaping (String) -> Void) -> CloudEar)?
     private var cloudEar: CloudEar?
 
+    public override init() {
+        super.init()
+        pauseObserver = NotificationCenter.default.addObserver(forName: .cadenceAudioPaused, object: nil, queue: .main) { [weak self] _ in self?.stopListening() }
+    }
+
+    deinit { if let pauseObserver { NotificationCenter.default.removeObserver(pauseObserver) } }
+
     public func startListening(onTranscript: @escaping (String) -> Void) {
         guard !isListening else { return }
         isListening = true
@@ -50,7 +59,7 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
         let session = session
         echoFilter = EchoFilteredTranscript()
         cloudEar = cloudEarFactory? { [weak self] text in
-            guard let self, self.isListening else { return }
+            guard let self, self.isListening, self.session == session else { return }
             onTranscript(text)
         }
         audioQueue.async { [weak self] in
@@ -61,43 +70,19 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
     private func open(session: Int, onTranscript: @escaping (String) -> Void) {
         guard session == self.session else { return }
 
-        #if os(iOS)
-        let audioSession = AVAudioSession.sharedInstance()
-        #if targetEnvironment(simulator)
-        guard audioSession.isInputAvailable else {
-            print("[TranscriptListener] No audio input available on simulator.")
+        guard AudioCueEngine.shared.prepareMicrophoneSession() else {
             isListening = false
             return
         }
-        do {
-            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("[TranscriptListener] Audio session error: \(error)")
-            isListening = false
-            return
+        guard session == self.session else { return }
+        let generation = AudioCueEngine.shared.currentMediaServicesGeneration()
+        if generation != audioGeneration {
+            // Audio objects from before a media-services reset are invalid.
+            audioEngine = AVAudioEngine()
+            hasInstalledTap = false
+            audioGeneration = generation
         }
-        #else
-        do {
-            var options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
-            #if swift(>=5.9)
-            options.insert(.allowBluetoothHFP)
-            #endif
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            AudioRouteManager.shared.routeToGlassesIfAvailable()
-        } catch {
-            do {
-                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
-                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-                AudioRouteManager.shared.routeToGlassesIfAvailable()
-            } catch {
-                isListening = false
-                return
-            }
-        }
-        #endif
-        #endif
+
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
@@ -141,6 +126,7 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
             let text = result.bestTranscription.formattedString
             let echo = self.echoGuard.isInEchoWindow(at: Date())
             DispatchQueue.main.async {
+                guard self.isListening, self.session == session else { return }
                 guard let fresh = self.echoFilter.update(fullTranscript: text, echoActive: echo) else { return }
                 onTranscript(fresh)
             }
@@ -154,6 +140,12 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
         cloudEar = nil
         audioQueue.async { [weak self] in
             guard let self else { return }
+            let generation = AudioCueEngine.shared.currentMediaServicesGeneration()
+            if generation != self.audioGeneration {
+                self.audioEngine = AVAudioEngine()
+                self.hasInstalledTap = false
+                self.audioGeneration = generation
+            }
             if self.audioEngine.isRunning {
                 self.audioEngine.stop()
             }

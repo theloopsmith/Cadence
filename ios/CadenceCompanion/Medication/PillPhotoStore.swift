@@ -10,9 +10,7 @@ public struct PillPhotoStore {
     }
 
     public static var `default`: PillPhotoStore {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return PillPhotoStore(directory: docs.appendingPathComponent("Medication", isDirectory: true))
+        PillPhotoStore(directory: DeviceProfile.shared.directory.appendingPathComponent("Medication", isDirectory: true))
     }
 
     private var fileURL: URL { directory.appendingPathComponent("pill.jpg") }

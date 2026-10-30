@@ -56,12 +56,18 @@ public enum QueueStorageError: Error, Equatable {
 /// owner remain quarantined. JWT claims are used ONLY as a local routing key;
 /// the server still validates the signature/role on every request.
 public final class EventSyncManager {
-    public static let shared = EventSyncManager()
+    public static let shared: EventSyncManager = {
+        let queue = EventSyncManager(databasePath: DeviceProfile.shared.directory.appendingPathComponent("queue.sqlite").path,
+            startPeriodicDrain: NSClassFromString("XCTestCase") == nil)
+        queue.configureSession(baseURL: "", bearerToken: "")
+        return queue
+    }()
     private let dbQueue = DispatchQueue(label: "com.cadence.eventsync.db")
     private var db: OpaquePointer?
     private let path: String
     private var drainTask: Task<Void, Never>?
     private var isDraining = false
+    private var suspended = false
     private let autoDispatchEnabled: Bool
     private var currentURL = "http://localhost:8000"
     private var currentToken = "cadence-dev-device-writer-token-2026"
@@ -109,6 +115,7 @@ public final class EventSyncManager {
     /// their original session and a subsequent iteration stops after sign-out/switch.
     public func configureSession(baseURL: String, bearerToken: String, replaceTransport: Bool = true) {
         dbQueue.sync {
+            guard !suspended else { return }
             var destination = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             while destination.hasSuffix("/") { destination.removeLast() }
             currentURL = destination; currentToken = bearerToken
@@ -125,7 +132,7 @@ public final class EventSyncManager {
         }
     }
 
-    private static func owner(for token: String) -> String? {
+    static func owner(for token: String) -> String? {
         guard !token.isEmpty else { return nil }
         let parts = token.split(separator: ".")
         if parts.count == 3 {
@@ -181,6 +188,7 @@ public final class EventSyncManager {
             report(.invalidPayload); return .failure(.invalidPayload)
         }
         let result: Result<Void, QueueStorageError> = dbQueue.sync {
+            guard !suspended else { return .failure(.unavailable) }
             let owner = currentOwner ?? lastOwnerByDestination[currentURL] ?? "unassigned"
             let item = Buffered(event: PendingEvent(eventUUID:eventUUID,endpoint:endpoint,payloadJSON:json,retryCount:0),owner:owner,destination:currentURL)
             let code = insert(item)
@@ -215,6 +223,7 @@ public final class EventSyncManager {
     }
     public func retryPersistingBufferedEvents() {
         let recovered = dbQueue.sync { () -> Bool in
+            guard !suspended else { return false }
             guard storageError != nil || !volatile.isEmpty else { return false }
             openDatabase()
             for (id,item) in volatile where insert(item) == SQLITE_DONE { volatile.removeValue(forKey:id) }
@@ -260,7 +269,7 @@ public final class EventSyncManager {
     public func drainPendingEvents(now: Date = Date()) async -> (delivered:Int,failed:Int) {
         retryPersistingBufferedEvents()
         let session = dbQueue.sync { () -> (String,String,String,EventTransport)? in
-            guard !isDraining,let owner=currentOwner,!currentToken.isEmpty else { return nil }
+            guard !suspended, !isDraining,let owner=currentOwner,!currentToken.isEmpty else { return nil }
             isDraining=true; return (owner,currentURL,currentToken,currentTransport)
         }
         guard let (owner,destination,token,transport)=session else { return (0,0) }
@@ -298,6 +307,22 @@ public final class EventSyncManager {
             bind(stmt,1,uuid);bind(stmt,2,currentOwner ?? "");bind(stmt,3,currentURL)
             return sqlite3_step(stmt)==SQLITE_DONE && sqlite3_changes(db)>0
         }
+    }
+
+    /// A reset must not race an already-sent request. Once suspended, stale
+    /// producers cannot enqueue, retry buffered writes, or resume delivery.
+    public func suspendForLocalReset() -> Bool {
+        dbQueue.sync {
+            guard !isDraining else { return false }
+            suspended = true
+            currentToken = ""
+            return true
+        }
+    }
+
+    public func resumeAfterFailedLocalReset(baseURL: String, token: String) {
+        dbQueue.sync { suspended = false }
+        configureSession(baseURL: baseURL, bearerToken: token)
     }
     private func startPeriodicDrainLoop() {
         drainTask=Task{[weak self] in

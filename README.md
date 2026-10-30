@@ -2,6 +2,16 @@
 
 Current priorities and submission gates: [October 29 hackathon readiness review](docs/HACKATHON_READINESS_REVIEW_2026-10-29.md).
 
+Audio cancellation, interruption recovery, route display and fresh-sample protection status: [implementation and verification](docs/AUDIO_PROTECTION_VERIFICATION_2026-10-29.md).
+
+Partial task measurements, nullable API values and the backend-first database upgrade: [implementation and verification](docs/EXAM_VALIDITY_VERIFICATION_2026-10-29.md).
+
+Dashboard text rendering, safe GPS links and browser-enforced script policy: [implementation and verification](docs/DASHBOARD_SECURITY_VERIFICATION_2026-10-29.md).
+
+Report intervals, observation coverage and caregiver delivery evidence: [implementation and verification](docs/REPORT_TRUTH_VERIFICATION_2026-10-29.md).
+
+Single-wearer account/server binding and deliberate local reset: [implementation, upgrade behavior and limits](docs/LOCAL_PROFILE_VERIFICATION_2026-10-29.md). Existing unassigned history is kept separate; local reset leaves server records unchanged.
+
 Cadence is an audio-first accessibility companion for a paired iPhone and Meta AI glasses, built for the Meta Global AI Developer Hackathon's **Build for Your World** problem statement.
 
 It supports rhythmic walking cues, suspected-fall check-ins, attempts to contact a configured caregiver, user-requested descriptions of objects in a photo, and routine logging. Scene descriptions are limited observations, not proof that a room is safe. A queued alert does not mean a caregiver has received it.
@@ -25,6 +35,8 @@ cd backend && .venv/bin/python -m pytest -q
 cd .. && ./scripts/test_ios.sh
 ./scripts/run_ios_sim.sh
 ```
+
+Live Meta Model API checks (sanitized traces, no keys or media): [SAM 3.1 over the Responses API](docs/verification/sam-live-2026-10-29.json) and [Muse Voice Transcribe](docs/verification/muse-transcribe-live-2026-10-29.json), both October 29. Re-run the SAM check with `backend/.venv/bin/python scripts/sam_smoke.py [photo.jpg concept ...]`. A single SAM call measured 1–3.6 s; the reality check sends up to five concepts in parallel (about 2.2 s). Baseten label selection and real-photo scene results are not yet recorded.
 
 Configure backend provider credentials and caregiver contacts locally. Production never substitutes simulated Twilio success for missing credentials; the API returns a retryable failure. Local development/demo may use visibly simulated transports. Automated contacts are currently configured on the server for a single-wearer deployment; the phone's caregiver number configures its manual dialer and does not change server routing.
 

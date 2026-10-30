@@ -11,13 +11,25 @@ public final class VoiceMonitor {
         return currentLevelDbfs > -38.0
     }
 
-    private let audioEngine = AVAudioEngine()
+    private var audioEngine = AVAudioEngine()
+    private var audioGeneration = 0
+    private var pauseObserver: NSObjectProtocol?
     public private(set) var isMonitoring: Bool = false
     private var isRecordingVowel: Bool = false
     private var recordedVowelSamples: [Double] = []
+    public private(set) var lastVowelSampleCount = 0
     private var hasInstalledTap: Bool = false
 
-    public init() {}
+    public init() {
+        pauseObserver = NotificationCenter.default.addObserver(forName: .cadenceAudioPaused, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.stopLiveMonitoring()
+            self.isRecordingVowel = false
+            self.recordedVowelSamples.removeAll()
+        }
+    }
+
+    deinit { if let pauseObserver { NotificationCenter.default.removeObserver(pauseObserver) } }
 
     /// Manual level update (used by mock streams, simulator replayers, or tests)
     public func updateSampleLevel(dbfs: Double) {
@@ -32,43 +44,25 @@ public final class VoiceMonitor {
         guard !isMonitoring else { return }
         isMonitoring = true
 
-        #if os(iOS)
-        let audioSession = AVAudioSession.sharedInstance()
-        #if targetEnvironment(simulator)
-        guard audioSession.isInputAvailable else {
-            print("[VoiceMonitor] No audio input available on simulator.")
+        guard AudioCueEngine.shared.prepareMicrophoneSession() else {
+            isMonitoring = false
             return
         }
-        do {
-            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("[VoiceMonitor] Audio session error: \(error)")
-            return
+        let generation = AudioCueEngine.shared.currentMediaServicesGeneration()
+        if generation != audioGeneration {
+            // Audio objects from before a media-services reset are invalid.
+            audioEngine = AVAudioEngine()
+            hasInstalledTap = false
+            audioGeneration = generation
         }
-        #else
-        do {
-            var options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
-            #if swift(>=5.9)
-            options.insert(.allowBluetoothHFP)
-            #endif
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            AudioRouteManager.shared.routeToGlassesIfAvailable()
-        } catch {
-            try? audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
-            try? audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            AudioRouteManager.shared.routeToGlassesIfAvailable()
-        }
-        #endif
-        #endif
+
 
         do {
             let inputNode = audioEngine.inputNode
             let recordingFormat = inputNode.outputFormat(forBus: 0)
 
             guard recordingFormat.sampleRate > 0 && recordingFormat.channelCount > 0 else {
-                print("[VoiceMonitor] Invalid input format: \(recordingFormat)")
+                isMonitoring = false
                 return
             }
 
@@ -102,6 +96,12 @@ public final class VoiceMonitor {
     }
 
     public func stopLiveMonitoring() {
+        let generation = AudioCueEngine.shared.currentMediaServicesGeneration()
+        if generation != audioGeneration {
+            audioEngine = AVAudioEngine()
+            hasInstalledTap = false
+            audioGeneration = generation
+        }
         if audioEngine.isRunning {
             audioEngine.stop()
         }
@@ -116,11 +116,13 @@ public final class VoiceMonitor {
     public func startVowelPhonationRecording() {
         isRecordingVowel = true
         recordedVowelSamples.removeAll()
+        lastVowelSampleCount = 0
     }
 
     /// Finishes recording and returns (meanDbfs, stabilityDb)
     public func stopVowelPhonationRecording() -> (meanDbfs: Double, stabilityDb: Double) {
         isRecordingVowel = false
+        lastVowelSampleCount = recordedVowelSamples.count
         guard !recordedVowelSamples.isEmpty else {
             return (currentLevelDbfs, 0.0)
         }

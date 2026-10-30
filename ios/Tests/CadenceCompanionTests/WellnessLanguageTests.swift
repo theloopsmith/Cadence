@@ -76,7 +76,7 @@ final class TaskMetricsSummaryTests: XCTestCase {
 
     func testTheDiaryLineIsPlain() {
         let text = TaskMetricsSummary.diaryDetail(measurements(voice: -26, letters: -22, cadence: 96, freezes: 0))
-        XCTAssertEqual(text, "Letters 22% smaller across the line · 96 steps a minute")
+        XCTAssertEqual(text, "Letters 22% smaller across the line · 96 steps a minute · Voice -26 dB")
         XCTAssertNil(clinicalTerm(in: text))
     }
 }

@@ -196,6 +196,12 @@ public final class FallDetector {
         previousAccelMagG = 1.0
     }
 
+    public func resetForStreamGap() {
+        if case .stage3CheckInActive = stage { return }
+        resetAfterResolution()
+        preImpactBuffer.removeAll()
+    }
+
     private func computePreImpactWearRmsG(beforeTimestamp: TimeInterval) -> Double {
         let window = preImpactBuffer.filter { $0.timestamp <= beforeTimestamp && $0.timestamp >= beforeTimestamp - 10.0 }
         guard !window.isEmpty else { return 0.05 }

@@ -121,6 +121,29 @@ public final class FallAlertCoordinator: ObservableObject {
 
     /// Caregiver number offered as a one-tap call on the SOS screen. Falls back
     /// to the local emergency number when unset.
+    @Published public private(set) var contactState = "queued"
+    public var contactHeadline: String {
+        switch contactState {
+        case "acknowledged": return "Caregiver acknowledged"
+        case "provider_accepted": return "Alert accepted by provider"
+        case "simulated": return "Simulated caregiver alert"
+        case "exhausted": return "Automatic attempts ended"
+        case "canceled": return "Alert canceled"
+        case "suppressed": return "Alert suppressed as glasses drop"
+        default: return "Trying to contact caregiver"
+        }
+    }
+    public func updateDelivery(_ reply: FallDeliveryStatus) {
+        guard isDispatched, activeEventUUID == reply.eventUUID else { return }
+        if reply.caregiverAcknowledged && reply.providerAccepted { contactState = "acknowledged" }
+        else if contactState != "acknowledged" {
+            if reply.providerAccepted { contactState = "provider_accepted" }
+            else if reply.simulated { contactState = "simulated" }
+            else if ["exhausted", "canceled", "suppressed"].contains(reply.contactState) { contactState = reply.contactState }
+            else { contactState = "queued" }
+        }
+    }
+
     public var caregiverPhoneNumber: String?
     public var emergencyNumber: String = "911"
     /// Hardware wear state from the glasses. Nil, or an unknown answer, is
@@ -283,6 +306,7 @@ public final class FallAlertCoordinator: ObservableObject {
     ) {
         guard case let .checkIn(uuid, _) = phase else { return }
         checkInTask?.cancel()
+        contactState = "queued"
         phase = .dispatched(eventUUID: uuid)
         lastOutcome = status
         audio.activateBystanderSiren()
@@ -303,7 +327,7 @@ public final class FallAlertCoordinator: ObservableObject {
             "peak_jerk_gs": peakJerkGs,
             "post_impact_tilt_deg": postImpactTiltDeg,
             "status": status,
-            "local_siren_activated": true,
+            "local_siren_activated": audio.isSirenActive && audio.isAudioAvailable,
         ]
         if let lat = resolvedLat, let lon = resolvedLon {
             payload["latitude"] = lat

@@ -8,6 +8,8 @@ public enum DiaryEventKind: String, Codable, CaseIterable {
     case doseTaken
     case checkInAnswered
     case helpSent
+    case alertAccepted
+    case caregiverAcknowledged
     case environmentCheck
     case mealLogged
     case motorCheck
@@ -19,7 +21,7 @@ public enum DiaryEventKind: String, Codable, CaseIterable {
         case .cue: return "metronome.fill"
         case .doseTaken: return "pills.fill"
         case .checkInAnswered: return "hand.thumbsup.fill"
-        case .helpSent: return "phone.fill"
+        case .helpSent, .alertAccepted, .caregiverAcknowledged: return "phone.fill"
         case .environmentCheck: return "eye.fill"
         case .mealLogged: return "fork.knife"
         case .motorCheck: return "figure.walk.motion"
@@ -34,6 +36,8 @@ public enum DiaryEventKind: String, Codable, CaseIterable {
         case .doseTaken: return "Dose taken"
         case .checkInAnswered: return "Check-in answered"
         case .helpSent: return "Help requested"
+        case .alertAccepted: return "Alert accepted by provider"
+        case .caregiverAcknowledged: return "Caregiver acknowledged"
         case .environmentCheck: return "Looked around"
         case .mealLogged: return "Meal noted"
         case .motorCheck: return "Motor check"
@@ -46,12 +50,18 @@ public struct DiaryEvent: Codable, Identifiable, Equatable {
     public var kind: DiaryEventKind
     public var at: Date
     public var detail: String
+    public var incidentID: String?
 
-    public init(id: String = UUID().uuidString, kind: DiaryEventKind, at: Date, detail: String) {
+    public init(id: String = UUID().uuidString, kind: DiaryEventKind, at: Date, detail: String, incidentID: String? = nil) {
         self.id = id
         self.kind = kind
         self.at = at
         self.detail = detail
+        self.incidentID = incidentID
+    }
+
+    public var factualDetail: String {
+        kind == .helpSent ? "Help requested; caregiver receipt is unverified" : detail
     }
 }
 
@@ -66,14 +76,13 @@ public struct DiaryStore {
     }
 
     public static var `default`: DiaryStore {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return DiaryStore(directory: docs.appendingPathComponent("Diary", isDirectory: true))
+        DiaryStore(directory: DeviceProfile.shared.directory.appendingPathComponent("Diary", isDirectory: true))
     }
 
     public func append(_ event: DiaryEvent) throws {
         var events = try load(day: event.at)
-        events.append(event)
+        if let index = events.firstIndex(where: { $0.id == event.id }) { events[index] = event }
+        else { events.append(event) }
         try save(events, day: event.at)
     }
 

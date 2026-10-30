@@ -1,25 +1,24 @@
 import AVFoundation
 import Foundation
 
-/// Keeps the process running while protection streams motion with the
-/// screen locked.
-///
-/// iOS suspends a backgrounded app within about thirty seconds unless an
-/// audio session is actively playing. With `UIBackgroundModes: audio` and a
-/// looping silent buffer, CoreMotion and the detectors keep running with the
-/// phone in a pocket. The buffer is silence, so it is inaudible and does
-/// not interfere with cues, prompts, or the siren, which play on their own
-/// node of the same engine.
+/// Requests background audio while motion runs. This is not a guarantee that
+/// iOS will keep the process or sensors alive; sample freshness is checked separately.
 public protocol BackgroundKeepAliving: AnyObject {
     var isActive: Bool { get }
+    var failureReason: String? { get }
     func start()
     func stop()
 }
+public extension BackgroundKeepAliving { var failureReason: String? { nil } }
 
 public final class SilentAudioKeepAlive: BackgroundKeepAliving {
-    public private(set) var isActive = false
-    private let engine: AVAudioEngine
-    private let node = AVAudioPlayerNode()
+    public var isActive: Bool { scheduled && engine.isRunning && node.isPlaying }
+    public private(set) var failureReason: String?
+    private var scheduled = false
+    private var requested = false
+    var isRequested: Bool { requested }
+    private var engine: AVAudioEngine
+    private var node = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 44100.0, channels: 1)!
     private var attached = false
 
@@ -29,6 +28,7 @@ public final class SilentAudioKeepAlive: BackgroundKeepAliving {
     }
 
     public func start() {
+        requested = true
         guard !isActive else { return }
         if !attached {
             engine.attach(node)
@@ -36,9 +36,11 @@ public final class SilentAudioKeepAlive: BackgroundKeepAliving {
             attached = true
         }
         if !engine.isRunning {
-            try? engine.start()
+            do { try engine.start() }
+            catch { failureReason = "Background audio could not start."; return }
         }
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(format.sampleRate)) else {
+            failureReason = "Background audio could not be prepared."
             return
         }
         buffer.frameLength = buffer.frameCapacity
@@ -46,14 +48,32 @@ public final class SilentAudioKeepAlive: BackgroundKeepAliving {
             for i in 0..<Int(buffer.frameLength) { channel[i] = 0 }
         }
         node.volume = 0
+        node.stop()
         node.scheduleBuffer(buffer, at: nil, options: .loops, completionHandler: nil)
         node.play()
-        isActive = true
+        scheduled = true
+        failureReason = isActive ? nil : "Background audio is unavailable."
     }
 
     public func stop() {
-        guard isActive else { return }
+        requested = false
+        suspend()
+        failureReason = nil
+    }
+
+    func suspend() {
         node.stop()
-        isActive = false
+        scheduled = false
+    }
+
+    func resumeIfRequested() { if requested { start() } }
+
+    /// Media services invalidates the old engine and nodes. Keep this wrapper
+    /// stable because WalkingModel holds it, while replacing its hardware objects.
+    func rebuild(using engine: AVAudioEngine) {
+        suspend()
+        self.engine = engine
+        node = AVAudioPlayerNode()
+        attached = false
     }
 }

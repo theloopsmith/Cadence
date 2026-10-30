@@ -130,20 +130,24 @@ CREATE TABLE IF NOT EXISTS motor_exams (
     patient_id TEXT NOT NULL DEFAULT 'default_patient',
     exam_uuid TEXT UNIQUE NOT NULL,
     timestamp_utc TEXT NOT NULL,
-    medication_state_label TEXT NOT NULL,
+    medication_state_label TEXT,
     minutes_since_last_dose INTEGER,
-    voice_mean_dbfs REAL NOT NULL,
-    voice_stability_db REAL NOT NULL,
-    voice_score REAL NOT NULL,
-    handwriting_opencv_decay_pct REAL NOT NULL,
+    voice_mean_dbfs REAL,
+    voice_stability_db REAL,
+    voice_score REAL,
+    handwriting_opencv_decay_pct REAL,
     handwriting_sam_decay_pct REAL,
-    handwriting_score REAL NOT NULL,
-    walk_cadence_spm REAL NOT NULL,
-    walk_mean_fi REAL NOT NULL,
-    walk_fog_count INTEGER NOT NULL,
-    gait_score REAL NOT NULL,
-    composite_motor_score REAL NOT NULL,
-    clinical_summary TEXT NOT NULL
+    handwriting_score REAL,
+    walk_cadence_spm REAL,
+    walk_mean_fi REAL,
+    walk_fog_count INTEGER,
+    gait_score REAL,
+    composite_motor_score REAL,
+    clinical_summary TEXT NOT NULL,
+    voice_status TEXT NOT NULL DEFAULT 'legacy_unverified',
+    handwriting_status TEXT NOT NULL DEFAULT 'legacy_unverified',
+    walk_status TEXT NOT NULL DEFAULT 'legacy_unverified',
+    measurement_source TEXT NOT NULL DEFAULT 'legacy_unverified'
 );
 CREATE INDEX IF NOT EXISTS idx_motor_exams_patient_ts ON motor_exams(patient_id, timestamp_utc);
 
@@ -213,11 +217,36 @@ def _connect_sync(db_path: Optional[str] = None) -> sqlite3.Connection:
     return conn
 
 
+def _migrate_exam_validity(conn):
+    """Rebuild legacy NOT NULL columns atomically; preserve old values for audit.
+
+    Legacy rows get unknown validity. API/report projection withholds their
+    numbers rather than guessing which old defaults were real observations.
+    """
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY)")
+    conn.commit()
+    conn.execute('BEGIN IMMEDIATE')
+    if conn.execute("SELECT 1 FROM schema_migrations WHERE name='motor_exam_validity_v1'").fetchone():
+        return
+    columns = [r['name'] for r in conn.execute('PRAGMA table_info(motor_exams)')]
+    if 'voice_status' not in columns:
+        start = SCHEMA_SQL.index('CREATE TABLE IF NOT EXISTS motor_exams (')
+        end = SCHEMA_SQL.index(');', start) + 2
+        conn.execute(SCHEMA_SQL[start:end].replace('IF NOT EXISTS motor_exams', 'motor_exams_validity_new'))
+        names = ','.join(columns)
+        conn.execute(f'INSERT INTO motor_exams_validity_new ({names}) SELECT {names} FROM motor_exams')
+        conn.execute('DROP TABLE motor_exams')
+        conn.execute('ALTER TABLE motor_exams_validity_new RENAME TO motor_exams')
+        conn.execute('CREATE INDEX idx_motor_exams_patient_ts ON motor_exams(patient_id,timestamp_utc)')
+    conn.execute("INSERT INTO schema_migrations(name) VALUES('motor_exam_validity_v1')")
+
+
 def init_db_sync(db_path: Optional[str] = None) -> None:
     conn = _connect_sync(db_path)
     try:
         from app.services.fall_durability import SCHEMA as FALL_OUTBOX_SCHEMA
         conn.executescript(SCHEMA_SQL + FALL_OUTBOX_SCHEMA)
+        _migrate_exam_validity(conn)
         conn.commit()
     finally:
         conn.close()

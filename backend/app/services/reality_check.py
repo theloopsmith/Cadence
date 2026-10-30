@@ -30,6 +30,35 @@ INANIMATE_VOCAB = {
 UPRIGHT_FIXTURE_LABELS = {"coat rack", "lamp", "curtain", "plant", "shadow"}
 CLOSED_REALITY_VOCAB = sorted(LIVING_VOCAB | INANIMATE_VOCAB)
 
+# SAM 3.1 answers one noun phrase per request, so each photo gets a short
+# list: the living things we always ask about, then whatever the wearer named.
+ALWAYS_ASK_LIVING = ["person", "dog", "cat"]
+DEFAULT_INANIMATE = ["chair", "coat"]
+MAX_CONCEPTS_PER_PHOTO = 6
+
+
+def reality_check_concepts(user_query: str) -> List[str]:
+    """The concepts to segment for one question, living ones first."""
+    lowered = f" {user_query.lower()} "
+    named = [
+        label
+        for label in sorted(INANIMATE_VOCAB, key=len, reverse=True)
+        if f" {label} " in lowered or f" {label}s " in lowered or f" {label}? " in lowered
+    ]
+    concepts = list(ALWAYS_ASK_LIVING)
+    for label in named + DEFAULT_INANIMATE:
+        if label not in concepts and len(concepts) < MAX_CONCEPTS_PER_PHOTO:
+            concepts.append(label)
+    return concepts
+
+
+def _confident_enough(mask: Dict[str, Any], floor: float = 0.65) -> bool:
+    """SAM may omit confidence. Missing is not zero; only a stated low value is dropped."""
+    confidence = mask.get("confidence")
+    if confidence is None:
+        return True
+    return float(confidence) >= floor
+
 LIVING_DENY_WORDS = {
     "person",
     "human",
@@ -91,7 +120,7 @@ async def run_reality_check_pipeline(
 
     sam_res = await meta_client.segment_sam_3_1(
         image_bytes=image_bytes,
-        candidate_labels=CLOSED_REALITY_VOCAB,
+        candidate_labels=reality_check_concepts(user_query),
         deadline=ctx,
         simulated_masks=simulated_sam_masks,
     )
@@ -110,16 +139,20 @@ async def run_reality_check_pipeline(
             "latency_ms": latency_ms,
         }
 
-    # Filter masks by confidence >= 0.65 and area_ratio >= 0.015 (1.5% of frame)
+    # Keep masks that are at least 1.5% of the frame and not stated to be low confidence.
     raw_masks = sam_res.get("masks", [])
     verified_masks = [
         m
         for m in raw_masks
-        if float(m.get("confidence", 0.0)) >= 0.65
+        if _confident_enough(m)
         and float(m.get("area_ratio", 0.0)) >= 0.015
         and str(m.get("label", "")).lower() in CLOSED_REALITY_VOCAB
     ]
-    verified_masks.sort(key=lambda m: float(m.get("confidence", 0.0)), reverse=True)
+    # Stated confidence first, then size; a record without `c` sorts by size alone.
+    verified_masks.sort(
+        key=lambda m: (float(m["confidence"]) if m.get("confidence") is not None else 0.0, float(m.get("area_ratio", 0.0))),
+        reverse=True,
+    )
 
     living_masks = [
         m for m in verified_masks if str(m.get("label", "")).lower() in LIVING_VOCAB

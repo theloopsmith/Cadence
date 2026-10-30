@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-29",
+  "result": "passed",
+  "browser": "isolated headless Google Chrome via Playwright",
+  "report_source": "in-memory hostile-text fixture",
+  "stored_markup_inert": true,
+  "authorized_script_and_button_work": true,
+  "csp_blocked_injected_code": true,
+  "unexpected_requests": 0,
+  "policy_violations": ["script-src-elem", "script-src-elem", "script-src-attr"],
+  "notes": "These violations were deliberately induced to test CSP. The normal dashboard load had no policy violations or page errors. All page requests were intercepted in memory; no real account, live server or provider was used. Browser/context closed on completion."
+}

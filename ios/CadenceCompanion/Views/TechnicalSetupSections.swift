@@ -8,10 +8,13 @@ struct TechnicalSetupSections: View {
     @ObservedObject private var settings: AppSettings
     @State private var recordingLabel: GaitLabel = .walking
     @State private var showSensitivity = false
+    @State private var deviceKey = ""
+    @State private var serverAddress: String
 
     init(app: CadenceAppModel) {
         self.app = app
         self.settings = app.settings
+        _serverAddress = State(initialValue: app.settings.backendBaseURL)
     }
 
     var body: some View {
@@ -157,14 +160,22 @@ struct TechnicalSetupSections: View {
 
     var backendSection: some View {
         Section {
-            TextField("Server address", text: $settings.backendBaseURL)
+            TextField("Server address", text: $serverAddress)
                 #if os(iOS)
                 .textContentType(.URL)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 #endif
                 .autocorrectionDisabled()
-            SecureField("Device key", text: $settings.deviceToken)
+            SecureField("New device key", text: $deviceKey)
+            Button("Apply connection") {
+                settings.backendBaseURL = serverAddress
+                if settings.api.baseURL == DeviceProfile.normalize(serverAddress) {
+                    settings.deviceToken = deviceKey
+                }
+                deviceKey = ""
+            }
+            if let notice = settings.profileNotice { Text(notice).foregroundColor(CadenceTheme.caution) }
         } header: {
             Text("Connection")
         } footer: {

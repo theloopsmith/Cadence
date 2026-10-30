@@ -71,6 +71,7 @@ def test_exam_uses_the_dose_already_taken_not_one_logged_later(client):
         headers=DEVICE_HEADERS,
         json={
             "exam_uuid": "exam-dose-clock-2099",
+            "voice_status": "measured", "handwriting_status": "measured", "walk_status": "measured", "measurement_source": "device",
             "timestamp_utc": EXAM_AT,
             "voice_mean_dbfs": -20.0,
             "voice_stability_db": 1.0,

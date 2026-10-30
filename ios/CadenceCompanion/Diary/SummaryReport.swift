@@ -67,7 +67,7 @@ public struct SummaryReport {
 
     public static let disclaimer =
         "Cadence is a daily-living companion, not a medical device. These are counts of logged events and raw "
-        + "measurements, not an assessment of health. Questions about health or medication are for the care team."
+        + "measurements, not an assessment of health. This summary uses phone logs; continuous monitoring coverage is unknown. Alert requests do not confirm caregiver receipt. Questions about health or medication are for the care team."
 
     public static let nothingLogged = "Nothing was logged in this period."
 
@@ -116,7 +116,7 @@ public struct SummaryReportBuilder {
 
     /// Kinds that describe the day. Switching protection on or off does not.
     private static let reportedKinds: Set<DiaryEventKind> = [
-        .doseTaken, .cue, .helpSent, .checkInAnswered, .environmentCheck, .mealLogged, .motorCheck,
+        .doseTaken, .cue, .helpSent, .alertAccepted, .caregiverAcknowledged, .checkInAnswered, .environmentCheck, .mealLogged, .motorCheck,
     ]
 
     public func build(range: SummaryRange, endingAt end: Date, name: String) -> SummaryReport {
@@ -125,12 +125,12 @@ public struct SummaryReportBuilder {
             calendar.date(byAdding: .day, value: -$0, to: lastDay)
         }
         let firstDay = dayStarts.first ?? lastDay
-        let rangeEnd = calendar.date(byAdding: .day, value: 1, to: lastDay) ?? end
+        let rangeEnd = end
 
         var eventsByDay: [Date: [DiaryEvent]] = [:]
         for day in dayStarts {
             let events = ((try? diary.events(on: day)) ?? [])
-                .filter { Self.reportedKinds.contains($0.kind) }
+                .filter { Self.reportedKinds.contains($0.kind) && $0.at <= end }
                 .sorted { $0.at < $1.at }
             eventsByDay[day] = events
         }
@@ -141,7 +141,9 @@ public struct SummaryReportBuilder {
         let counts = [
             SummaryReport.Count(label: "Doses logged", value: tally(.doseTaken)),
             SummaryReport.Count(label: "Beats played", value: tally(.cue)),
-            SummaryReport.Count(label: "Falls, help contacted", value: tally(.helpSent)),
+            SummaryReport.Count(label: "Alerts requested", value: tally(.helpSent)),
+            SummaryReport.Count(label: "Provider accepted alerts", value: tally(.alertAccepted)),
+            SummaryReport.Count(label: "Caregiver acknowledged alerts", value: tally(.caregiverAcknowledged)),
             SummaryReport.Count(label: "Check-ins answered okay", value: tally(.checkInAnswered)),
             SummaryReport.Count(label: "Look-arounds", value: tally(.environmentCheck)),
             SummaryReport.Count(label: "Meals noted", value: tally(.mealLogged)),
@@ -154,14 +156,14 @@ public struct SummaryReportBuilder {
                 heading: format(day, "EEEE, MMMM d"),
                 countsLine: countsLine(events),
                 entries: range == .lastDay
-                    ? events.map { SummaryReport.Entry(time: format($0.at, "h:mm a"), word: $0.kind.word, detail: $0.detail) }
+                    ? events.map { SummaryReport.Entry(time: format($0.at, "h:mm a"), word: $0.kind.word, detail: $0.factualDetail) }
                     : []
             )
         }
 
         let history = metrics.all()
         let motorChecks = history.enumerated().compactMap { index, record -> SummaryReport.MotorCheck? in
-            guard record.date >= firstDay, record.date < rangeEnd else { return nil }
+            guard record.date >= firstDay, record.date <= rangeEnd else { return nil }
             let previous = index > 0 ? history[index - 1] : nil
             let lines = TaskMetricsSummary.lines(current: record, previous: previous).map { line in
                 var text = "\(line.title): \(line.value)"
@@ -190,8 +192,8 @@ public struct SummaryReportBuilder {
         return SummaryReport(
             title: trimmedName.isEmpty ? "Cadence summary" : "Cadence summary for \(trimmedName)",
             rangeText: range == .lastDay
-                ? format(lastDay, "EEEE, MMMM d, yyyy")
-                : "\(format(firstDay, "MMMM d")) to \(format(lastDay, "MMMM d, yyyy"))",
+                ? format(lastDay, "EEEE, MMMM d, yyyy") + " · Through " + format(end, "h:mm a z")
+                : "\(format(firstDay, "MMMM d")) to \(format(lastDay, "MMMM d, yyyy")) · Through " + format(end, "h:mm a z"),
             range: range,
             counts: allCounts,
             days: days,
@@ -209,9 +211,13 @@ public struct SummaryReportBuilder {
         let parts = [
             part(.doseTaken, "dose", "doses"),
             part(.cue, "beat", "beats"),
-            part(.helpSent, "fall", "falls"),
+            part(.helpSent, "alert requested", "alerts requested"),
+            part(.alertAccepted, "provider acceptance", "provider acceptances"),
+            part(.caregiverAcknowledged, "caregiver acknowledgment", "caregiver acknowledgments"),
             part(.checkInAnswered, "check-in", "check-ins"),
             part(.motorCheck, "motor check", "motor checks"),
+            part(.mealLogged, "meal", "meals"),
+            part(.environmentCheck, "environment check", "environment checks"),
         ].compactMap { $0 }
         return parts.isEmpty ? "Nothing logged" : parts.joined(separator: " · ")
     }

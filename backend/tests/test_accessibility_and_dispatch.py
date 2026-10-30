@@ -91,7 +91,9 @@ def test_default_task_completion_and_history_do_not_return_health_scores(http):
         'walk_cadence_spm': 90, 'walk_mean_fi': 1, 'walk_fog_count': 0,
     })
     assert result.status_code == 200
-    assert set(result.json()) == {'exam_uuid', 'clinical_summary'}
+    assert 'composite_motor_score' not in result.json()
+    assert result.json()['voice_status'] == 'legacy_unverified'
+    assert result.json()['voice_mean_dbfs'] is None
     exams = http.get('/api/v1/exam/history', headers=headers()).json()['exams']
     assert len(exams) == 1
     assert 'composite_motor_score' not in exams[0]

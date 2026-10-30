@@ -13,6 +13,12 @@ public final class AudioRouteManager: ObservableObject {
     @Published public private(set) var activeInputName: String = "iPhone"
     @Published public private(set) var isGlassesMicActive: Bool = false
 
+    @Published public private(set) var activeOutputName: String = "No audio output"
+
+    public static func isGlassesName(_ name: String) -> Bool {
+        name.localizedCaseInsensitiveContains("Ray-Ban") || name.localizedCaseInsensitiveContains("RayBan") || name.localizedCaseInsensitiveContains("Meta")
+    }
+
     private init() {
         #if os(iOS)
         NotificationCenter.default.addObserver(
@@ -28,27 +34,7 @@ public final class AudioRouteManager: ObservableObject {
     /// Prepares AVAudioSession with .playAndRecord and two-way Bluetooth support,
     /// explicitly using .voiceChat mode so iOS does not disable Bluetooth microphones.
     public func configureAudioSession(preferVoiceChat: Bool = true) {
-        #if os(iOS)
-        let session = AVAudioSession.sharedInstance()
-        #if targetEnvironment(simulator)
-        try? session.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .defaultToSpeaker])
-        try? session.setActive(true)
-        #else
-        do {
-            let mode: AVAudioSession.Mode = preferVoiceChat ? .voiceChat : .default
-            var options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
-            #if swift(>=5.9)
-            options.insert(.allowBluetoothHFP)
-            #endif
-
-            try session.setCategory(.playAndRecord, mode: mode, options: options)
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-            routeToGlassesIfAvailable()
-        } catch {
-            print("[AudioRouteManager] Failed to configure audio session: \(error)")
-        }
-        #endif
-        #endif
+        AudioCueEngine.shared.configureLaunchAudioSession(preferVoiceChat: preferVoiceChat)
     }
 
     /// Automatically sets the connected Bluetooth glasses (HFP/LE) as the preferred audio input.
@@ -57,13 +43,10 @@ public final class AudioRouteManager: ObservableObject {
         let session = AVAudioSession.sharedInstance()
         let available = session.availableInputs ?? []
 
-        // Prioritize Bluetooth HFP or Bluetooth LE ports (Meta / Ray-Ban glasses)
+        // Ordinary Bluetooth earphones must not be classified or selected as glasses.
         if let glassesInput = available.first(where: {
-            $0.portType == .bluetoothHFP ||
-            $0.portType == .bluetoothLE ||
-            $0.portName.localizedCaseInsensitiveContains("Ray-Ban") ||
-            $0.portName.localizedCaseInsensitiveContains("Meta")
-        }) {
+            Self.isGlassesName($0.portName)
+        }), session.preferredInput?.uid != glassesInput.uid {
             do {
                 try session.setPreferredInput(glassesInput)
                 print("[AudioRouteManager] Selected glasses microphone: \(glassesInput.portName)")
@@ -80,16 +63,11 @@ public final class AudioRouteManager: ObservableObject {
     public func updateCurrentInput() {
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
-        if let current = session.currentRoute.inputs.first {
-            let isGlasses = current.portType == .bluetoothHFP ||
-                            current.portType == .bluetoothLE ||
-                            current.portName.localizedCaseInsensitiveContains("Ray-Ban") ||
-                            current.portName.localizedCaseInsensitiveContains("Meta")
-            DispatchQueue.main.async {
-                self.activeInputName = current.portName
-                self.isGlassesMicActive = isGlasses
-            }
-        }
+        let current = session.currentRoute.inputs.first
+        let output = session.currentRoute.outputs.map(\.portName).joined(separator: ", ")
+        self.activeInputName = current?.portName ?? "No microphone"
+        self.isGlassesMicActive = current.map { Self.isGlassesName($0.portName) } ?? false
+        self.activeOutputName = output.isEmpty ? "No audio output" : output
         #endif
     }
 }

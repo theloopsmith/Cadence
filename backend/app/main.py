@@ -3,8 +3,9 @@ import base64
 import io
 import wave
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
+import secrets
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -57,6 +58,9 @@ from app.services.diary_engine import (
 from app.services.fall_escalation import fall_escalation_manager
 from app.services.handwriting import analyze_handwriting_opencv
 from app.services.motor_exam import MotorExamInput, score_home_motor_exam
+from app.services.exam_validity import measured_exam
+from app.services.report_snapshot import report_snapshot
+from app.services.plain_language import summarize_day
 from app.services.protein_checker import (
     FOOD_CANDIDATE_VOCAB,
     check_dose_protein_conflict,
@@ -98,7 +102,24 @@ async def get_neurologist_dashboard_shell() -> HTMLResponse:
     never in URL query parameters) and fetches /api/v1/report/neurologist with Authorization header.
     """
     html_path = STATIC_DIR / "neurologist_dashboard.html"
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"), status_code=200)
+    nonce = secrets.token_urlsafe(24)
+    policy = (
+        "default-src 'none'; "
+        f"script-src 'nonce-{nonce}'; script-src-attr 'none'; "
+        "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
+        "font-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'"
+    )
+    return HTMLResponse(
+        content=html_path.read_text(encoding="utf-8").replace('__CADENCE_SCRIPT_NONCE__', nonce),
+        headers={'Content-Security-Policy': policy, 'X-Content-Type-Options': 'nosniff',
+                 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store'},
+    )
+
+
+@app.get('/assets/dashboard.js')
+async def get_dashboard_script():
+    return Response(content=(STATIC_DIR/'dashboard.js').read_text(encoding='utf-8'),
+        media_type='text/javascript', headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
 
 
 # ==================== SPEECH (Muse Voice Transcribe) ====================
@@ -515,96 +536,57 @@ async def complete_home_motor_exam(
     payload: HomeMotorExamCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    scores = score_home_motor_exam(
-        MotorExamInput(
-            voice_mean_dbfs=payload.voice_mean_dbfs,
-            voice_stability_db=payload.voice_stability_db,
-            handwriting_opencv_decay_pct=payload.handwriting_opencv_decay_pct,
-            handwriting_sam_decay_pct=payload.handwriting_sam_decay_pct,
-            walk_cadence_spm=payload.walk_cadence_spm,
-            walk_mean_fi=payload.walk_mean_fi,
-            walk_fog_count=payload.walk_fog_count,
-        )
-    )
+    if payload.measurement_source == 'simulated':
+        reject_simulated_inputs(simulated_exam=True)
+    raw = payload.model_dump()
+    values = measured_exam(raw)
+    complete = values['complete']
+    scores = dict.fromkeys(('voice_score','handwriting_score','gait_score','composite_motor_score'))
+    diary_eval = {'clinical_state': None, 'symptom_burden_score': None}
+    minutes_since_dose = None
+    # Legacy research calculations run only for complete, explicitly measured tasks.
+    if settings.enable_research_metrics and complete:
+        scores = score_home_motor_exam(MotorExamInput(**{k: values[k] for k in MotorExamInput.__dataclass_fields__}))
+        dose_ts = await dose_timestamp_at_or_before(auth.patient_id, payload.timestamp_utc)
+        if dose_ts:
+            try:
+                diff = int((parse_utc(payload.timestamp_utc)-parse_utc(dose_ts)).total_seconds()//60)
+                if 0 <= diff <= 720: minutes_since_dose = diff
+            except ValueError:
+                pass
+        diary_eval = classify_diary_bucket(DiaryBucketMetrics(
+            fog_count=values['walk_fog_count'], mean_fi=values['walk_mean_fi'],
+            opencv_decay_pct=values['handwriting_opencv_decay_pct'], mean_voice_dbfs=values['voice_mean_dbfs'],
+            has_exam=True, exam_composite_score=scores['composite_motor_score'],
+            has_dose=minutes_since_dose is not None, minutes_since_last_dose=minutes_since_dose))
+    clinical_summary = 'Home motor check: ' + describe_task_metrics(
+        voice_mean_dbfs=values['voice_mean_dbfs'], handwriting_decay_pct=values['handwriting_opencv_decay_pct'],
+        walk_cadence_spm=values['walk_cadence_spm'], walk_fog_count=values['walk_fog_count']) + '.'
+    columns = ['patient_id','exam_uuid','timestamp_utc','medication_state_label','minutes_since_last_dose',
+        'voice_mean_dbfs','voice_stability_db','voice_score','handwriting_opencv_decay_pct','handwriting_sam_decay_pct',
+        'handwriting_score','walk_cadence_spm','walk_mean_fi','walk_fog_count','gait_score','composite_motor_score',
+        'clinical_summary','voice_status','handwriting_status','walk_status','measurement_source']
+    row = {**values, **scores, 'patient_id': auth.patient_id, 'medication_state_label': diary_eval['clinical_state'],
+        'minutes_since_last_dose': minutes_since_dose, 'clinical_summary': clinical_summary}
+    # Replays return the committed record, not a different summary of a replacement body.
+    existing = await fetch_one('SELECT patient_id FROM motor_exams WHERE exam_uuid=?',(payload.exam_uuid,))
+    if existing and existing['patient_id'] != auth.patient_id:
+        raise HTTPException(404, 'Motor check not found.')
+    await execute_write(f"INSERT INTO motor_exams ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)}) ON CONFLICT(exam_uuid) DO NOTHING",
+        tuple(row[k] for k in columns))
+    stored = await fetch_one('SELECT * FROM motor_exams WHERE exam_uuid=? AND patient_id=?',(payload.exam_uuid,auth.patient_id))
+    if not stored: raise HTTPException(404, 'Motor check not found.')
+    return _exam_response(stored)
 
-    dose_ts = await dose_timestamp_at_or_before(auth.patient_id, payload.timestamp_utc)
-    minutes_since_dose: Optional[int] = None
-    has_dose = False
-    if dose_ts:
-        try:
-            t_exam = datetime.fromisoformat(payload.timestamp_utc.replace("Z", "+00:00"))
-            t_dose = datetime.fromisoformat(dose_ts.replace("Z", "+00:00"))
-            diff_min = int((t_exam - t_dose).total_seconds() // 60)
-            if 0 <= diff_min <= 720:
-                has_dose = True
-                minutes_since_dose = diff_min
-        except Exception:
-            pass
 
-    diary_eval = classify_diary_bucket(
-        DiaryBucketMetrics(
-            fall_occurred=False,
-            fog_count=payload.walk_fog_count,
-            mean_fi=payload.walk_mean_fi,
-            opencv_decay_pct=payload.handwriting_opencv_decay_pct,
-            mean_voice_dbfs=payload.voice_mean_dbfs,
-            has_exam=True,
-            exam_composite_score=scores["composite_motor_score"],
-            has_dose=has_dose,
-            minutes_since_last_dose=minutes_since_dose,
-            protein_conflict_active=False,
-        )
-    )
-
-    clinical_summary = "Home motor check: " + describe_task_metrics(
-        voice_mean_dbfs=payload.voice_mean_dbfs,
-        handwriting_decay_pct=payload.handwriting_opencv_decay_pct,
-        walk_cadence_spm=payload.walk_cadence_spm,
-        walk_fog_count=payload.walk_fog_count,
-    ) + "."
-
-    await execute_write(
-        """
-        INSERT INTO motor_exams (
-            patient_id, exam_uuid, timestamp_utc, medication_state_label,
-            minutes_since_last_dose, voice_mean_dbfs, voice_stability_db,
-            voice_score, handwriting_opencv_decay_pct, handwriting_sam_decay_pct,
-            handwriting_score, walk_cadence_spm, walk_mean_fi, walk_fog_count,
-            gait_score, composite_motor_score, clinical_summary
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(exam_uuid) DO NOTHING
-        """,
-        (
-            auth.patient_id,
-            payload.exam_uuid,
-            payload.timestamp_utc,
-            diary_eval["clinical_state"],
-            minutes_since_dose,
-            payload.voice_mean_dbfs,
-            payload.voice_stability_db,
-            scores["voice_score"],
-            payload.handwriting_opencv_decay_pct,
-            payload.handwriting_sam_decay_pct,
-            scores["handwriting_score"],
-            payload.walk_cadence_spm,
-            payload.walk_mean_fi,
-            payload.walk_fog_count,
-            scores["gait_score"],
-            scores["composite_motor_score"],
-            clinical_summary,
-        ),
-    )
-
+def _exam_response(row):
+    result = measured_exam(row)
     if not settings.enable_research_metrics:
-        return {"exam_uuid": payload.exam_uuid, "clinical_summary": clinical_summary}
-    return {
-        "exam_uuid": payload.exam_uuid,
-        "medication_state_label": diary_eval["clinical_state"],
-        "symptom_burden_score": diary_eval["symptom_burden_score"],
-        "minutes_since_last_dose": minutes_since_dose,
-        **scores,
-        "clinical_summary": clinical_summary,
-    }
+        for key in ('medication_state_label','voice_score','handwriting_score','gait_score','composite_motor_score'):
+            result.pop(key, None)
+    result.pop('id', None)
+    result.pop('patient_id', None)
+    return result
 
 
 @app.get("/api/v1/exam/history")
@@ -615,6 +597,7 @@ async def get_exam_history(
         "SELECT * FROM motor_exams WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 50",
         (auth.patient_id,),
     )
+    exams = [measured_exam(exam) for exam in exams]
     if not settings.enable_research_metrics:
         for exam in exams:
             for key in ("medication_state_label", "voice_score", "handwriting_score", "gait_score", "composite_motor_score"):
@@ -627,7 +610,7 @@ def _within_last_day(timestamp_iso: str) -> bool:
         when = parse_utc(timestamp_iso)
     except ValueError:
         return False
-    return (datetime.now(timezone.utc) - when).total_seconds() <= 24 * 3600
+    return 0 <= (datetime.now(timezone.utc) - when).total_seconds() <= 24 * 3600
 
 
 # ==================== PIPELINE 7: NEUROLOGIST REPORT & PATIENT WIPE ====================
@@ -636,35 +619,12 @@ async def get_neurologist_report(
     auth: AuthContext = Depends(require_any_authenticated_role),
 ) -> Dict[str, Any]:
     pid = auth.patient_id
-    fog_rows = await fetch_all(
-        "SELECT * FROM fog_events WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 100",
-        (pid,),
-    )
-    fall_rows = await fetch_all(
-        "SELECT * FROM fall_events WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 50",
-        (pid,),
-    )
-    med_rows = await fetch_all(
-        "SELECT * FROM medication_logs WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 100",
-        (pid,),
-    )
-    reality_rows = await fetch_all(
-        "SELECT * FROM reality_checks WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 50",
-        (pid,),
-    )
-    writing_rows = await fetch_all(
-        "SELECT * FROM handwriting_logs WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 50",
-        (pid,),
-    )
-    voice_rows = await fetch_all(
-        "SELECT * FROM voice_logs WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 100",
-        (pid,),
-    )
-    exam_rows = await fetch_all(
-        "SELECT * FROM motor_exams WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 50",
-        (pid,),
-    )
-
+    snapshot = await report_snapshot(pid)
+    fog_rows = snapshot['fog_events']; fall_rows = snapshot['fall_events']
+    med_rows = snapshot['medication_logs']; reality_rows = snapshot['reality_checks']
+    writing_rows = snapshot['handwriting_logs']; voice_rows = snapshot['voice_logs']
+    exam_rows = snapshot['motor_exams']
+    exam_rows = [measured_exam(exam) for exam in exam_rows]
     timeline = build_24h_diary_timeline(
         fog_rows=fog_rows,
         fall_rows=fall_rows,
@@ -672,6 +632,7 @@ async def get_neurologist_report(
         writing_rows=writing_rows,
         voice_rows=voice_rows,
         exam_rows=exam_rows,
+        reference_end_utc=snapshot['end'], include_research_metrics=settings.enable_research_metrics, other_rows=reality_rows,
     )
 
     summary_stats = {
@@ -688,7 +649,7 @@ async def get_neurologist_report(
             [
                 f
                 for f in fall_rows
-                if f.get("status") not in {"canceled_false_alarm", "suppressed_unworn_drop"}
+                if f.get("status") not in {"canceled_false_alarm", "suppressed_unworn_drop", "candidate_check_in_pending"}
             ]
         ),
         "fall_candidate_resolved_count": len(
@@ -704,7 +665,6 @@ async def get_neurologist_report(
                 m
                 for m in med_rows
                 if m.get("event_type") == "dose_taken"
-                and _within_last_day(str(m.get("timestamp_utc", "")))
             ]
         ),
         "latest_exam_metrics": (
@@ -718,14 +678,20 @@ async def get_neurologist_report(
             else None
         ),
     }
-    narrative = None
-    if settings.fireworks_api_key:
-        narrative = await fireworks_client.summarize_clinical_diary(summary_stats)
-    if not narrative:
-        narrative = await baseten_client.summarize_clinical_diary(summary_stats)
+    summary_stats.update({
+        'recorded_event_count': sum(len(rows) for rows in (fog_rows,fall_rows,med_rows,reality_rows,writing_rows,voice_rows,exam_rows)),
+        'caregiver_provider_accepted_count': sum(f['provider_accepted'] for f in fall_rows),
+        'caregiver_acknowledged_count': sum(f['caregiver_acknowledged'] for f in fall_rows),
+        'simulated_alert_count': sum(f['simulated'] for f in fall_rows),
+        'alert_queued_count': sum(f['contact_state']=='queued' for f in fall_rows),
+        'alert_exhausted_count': sum(f['contact_state']=='exhausted' for f in fall_rows),
+        'check_in_pending_count': sum(f['contact_state']=='check_in_pending' for f in fall_rows),
+    })
+    # Delivery wording and report counts are factual; do not ask a model to infer contact.
+    narrative = summarize_day(summary_stats)
 
     if not settings.enable_research_metrics:
-        for key in ("on_pct", "wearing_off_pct", "off_pct", "no_dose_pct", "latest_exam_score", "exam_on_vs_off_delta"):
+        for key in ("on_pct", "wearing_off_pct", "off_pct", "no_dose_pct", "unknown_pct", "latest_exam_score", "exam_on_vs_off_delta"):
             summary_stats.pop(key, None)
         hidden = {"medication_state_label", "voice_score", "handwriting_score", "gait_score",
                   "composite_motor_score", "estimated_protein_grams", "conflict_detected",
@@ -739,15 +705,23 @@ async def get_neurologist_report(
                 bucket.pop(key, None)
     return {
         "patient_id": pid,
+        "report_metadata": {
+            "window_start_utc": snapshot['start'].isoformat(), "window_end_utc": snapshot['end'].isoformat(),
+            "generated_at_utc": snapshot['end'].isoformat(), "monitoring_coverage": "unknown",
+            "coverage_note": "Recorded events do not establish continuous monitoring. No observations does not mean no events occurred.",
+            "latest_event_utc": max((r['timestamp_utc'] for rows in (fog_rows,fall_rows,med_rows,reality_rows,writing_rows,voice_rows,exam_rows) for r in rows), key=parse_utc, default=None),
+            "detail_limit": 100,
+            "details_truncated": {name: len(rows)>100 for name,rows in [('fog_events',fog_rows),('fall_events',fall_rows),('medication_logs',med_rows),('reality_checks',reality_rows),('handwriting_logs',writing_rows),('motor_exams',exam_rows)]},
+        },
         "summary_stats": summary_stats,
         "buckets_24h": timeline["buckets"],
         "clinical_narrative": narrative,
-        "motor_exams": exam_rows,
-        "fog_events": fog_rows,
-        "fall_events": fall_rows,
-        "medication_logs": med_rows,
-        "reality_checks": reality_rows,
-        "handwriting_logs": writing_rows,
+        "motor_exams": exam_rows[:100],
+        "fog_events": fog_rows[:100],
+        "fall_events": fall_rows[:100],
+        "medication_logs": med_rows[:100],
+        "reality_checks": reality_rows[:100],
+        "handwriting_logs": writing_rows[:100],
     }
 
 
@@ -782,10 +756,14 @@ async def seed_demo_patient_timeline(
     re-running the demo never places a live Twilio call.
     """
     pid = auth.patient_id
+    seed_base = datetime.now(timezone.utc) - timedelta(hours=21)
+    def demo_time(hour,minute):
+        return (seed_base+timedelta(hours=hour,minutes=minute)).isoformat()
     # 1. Morning OFF Home Motor Exam (07:30 UTC)
     off_exam = HomeMotorExamCreate(
+        voice_status='measured', handwriting_status='measured', walk_status='measured', measurement_source='simulated',
         exam_uuid="demo-exam-morning-off-001",
-        timestamp_utc="2026-10-26T07:30:00Z",
+        timestamp_utc=demo_time(7,30),
         voice_mean_dbfs=-25.5,
         voice_stability_db=3.8,
         handwriting_opencv_decay_pct=-31.0,
@@ -802,15 +780,16 @@ async def seed_demo_patient_timeline(
     await log_medication_dose(
         DoseLogCreate(
             event_uuid="demo-med-dose-0800",
-            timestamp_utc="2026-10-26T08:00:00Z",
+            timestamp_utc=demo_time(8,0),
         ),
         AuthContext(role="device_writer", patient_id=pid),
     )
 
     # 3. 09:15 UTC Peak ON Home Motor Exam (75 min post-dose)
     on_exam = HomeMotorExamCreate(
+        voice_status='measured', handwriting_status='measured', walk_status='measured', measurement_source='simulated',
         exam_uuid="demo-exam-morning-on-002",
-        timestamp_utc="2026-10-26T09:15:00Z",
+        timestamp_utc=demo_time(9,15),
         voice_mean_dbfs=-15.2,
         voice_stability_db=1.1,
         handwriting_opencv_decay_pct=-6.4,
@@ -827,7 +806,7 @@ async def seed_demo_patient_timeline(
     await log_fog_event(
         FoGEventCreate(
             event_uuid="demo-fog-1130",
-            timestamp_utc="2026-10-26T11:30:00Z",
+            timestamp_utc=demo_time(11,30),
             duration_sec=5.5,
             peak_freeze_index=2.45,
             locomotor_band_power=0.12,
@@ -844,14 +823,14 @@ async def seed_demo_patient_timeline(
     await log_medication_dose(
         DoseLogCreate(
             event_uuid="demo-med-dose-1230",
-            timestamp_utc="2026-10-26T12:30:00Z",
+            timestamp_utc=demo_time(12,30),
         ),
         AuthContext(role="device_writer", patient_id=pid),
     )
     await analyze_meal_protein(
         MealProteinAnalyzeRequest(
             event_uuid="demo-meal-steak-1250",
-            timestamp_utc="2026-10-26T12:50:00Z",
+            timestamp_utc=demo_time(12,50),
             simulated_masks=[
                 {"label": "steak", "area_px": 34000.0, "confidence": 0.94},
                 {"label": "plate", "area_px": 72000.0, "confidence": 0.98},
@@ -864,7 +843,7 @@ async def seed_demo_patient_timeline(
     await log_fog_event(
         FoGEventCreate(
             event_uuid="demo-fog-1400",
-            timestamp_utc="2026-10-26T14:00:00Z",
+            timestamp_utc=demo_time(14,0),
             duration_sec=7.0,
             peak_freeze_index=3.25,
             locomotor_band_power=0.10,
@@ -879,7 +858,7 @@ async def seed_demo_patient_timeline(
     await analyze_handwriting_endpoint(
         HandwritingAnalyzeRequest(
             event_uuid="demo-writing-1405",
-            timestamp_utc="2026-10-26T14:05:00Z",
+            timestamp_utc=demo_time(14,5),
             simulated_letter_heights_px=[42.0, 40.0, 38.0, 33.0, 29.0, 27.0],
             simulated_sam_decay_pct=-27.8,
             source_context="ambient",
@@ -891,7 +870,7 @@ async def seed_demo_patient_timeline(
     await reality_check_endpoint(
         RealityCheckRequest(
             event_uuid="demo-reality-1615",
-            timestamp_utc="2026-10-26T16:15:00Z",
+            timestamp_utc=demo_time(16,15),
             user_query="Is someone standing by the coat rack?",
             simulated_sam_masks=[
                 {"label": "coat rack", "confidence": 0.93, "area_ratio": 0.24}
@@ -904,7 +883,7 @@ async def seed_demo_patient_timeline(
     await log_voice_event(
         VoiceLogCreate(
             event_uuid="demo-voice-1620",
-            timestamp_utc="2026-10-26T16:20:00Z",
+            timestamp_utc=demo_time(16,20),
             window_mean_dbfs=-34.5,
             baseline_dbfs=-24.0,
             nudge_triggered=True,
@@ -916,7 +895,7 @@ async def seed_demo_patient_timeline(
     await log_medication_dose(
         DoseLogCreate(
             event_uuid="demo-med-dose-1730",
-            timestamp_utc="2026-10-26T17:30:00Z",
+            timestamp_utc=demo_time(17,30),
         ),
         AuthContext(role="device_writer", patient_id=pid),
     )
@@ -929,7 +908,7 @@ async def seed_demo_patient_timeline(
         patient_id=pid,
         payload=FallEventCreate(
             event_uuid="demo-fall-1745",
-            timestamp_utc="2026-10-26T17:45:00Z",
+            timestamp_utc=demo_time(17,45),
             peak_impact_g=3.4,
             peak_jerk_gs=41.0,
             post_impact_tilt_deg=68.0,
@@ -948,8 +927,9 @@ async def seed_demo_patient_timeline(
 
     # 11. 19:30 UTC End-of-Day OFF Home Motor Exam (120 min after the evening dose)
     evening_exam = HomeMotorExamCreate(
+        voice_status='measured', handwriting_status='measured', walk_status='measured', measurement_source='simulated',
         exam_uuid="demo-exam-evening-off-003",
-        timestamp_utc="2026-10-26T19:30:00Z",
+        timestamp_utc=demo_time(19,30),
         voice_mean_dbfs=-27.0,
         voice_stability_db=3.1,
         handwriting_opencv_decay_pct=-24.0,

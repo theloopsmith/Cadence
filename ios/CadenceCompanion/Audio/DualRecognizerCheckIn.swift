@@ -10,6 +10,11 @@ public struct DualRecognizerCheckIn {
     public private(set) var cloudTranscript = ""
     public private(set) var distressHeard = false
     public init() {}
+    public mutating func invalidateAffirmations() {
+        localTranscript = ""
+        cloudTranscript = ""
+        // Distress already heard must survive loss of microphone input.
+    }
     public mutating func record(_ text: String, from source: CheckInRecognizer) {
         switch source { case .local: localTranscript=text; case .cloud: cloudTranscript=text }
         let normalized=FallDetector.normalizeTranscript(text)

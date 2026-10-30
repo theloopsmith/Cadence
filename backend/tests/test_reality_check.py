@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi.testclient import TestClient
 from app.config import settings
 from app.main import app
@@ -36,3 +38,47 @@ def test_reality_check_l_sam_locked_slot_and_unverified_fallback():
         )
         assert r2.status_code == 200
         assert r2.json()["template_id"] == "UNVERIFIED_LIGHTING_FALLBACK"
+
+
+def test_a_person_without_a_confidence_value_is_still_a_person():
+    """SAM 3.1 may omit `c`. Missing confidence is not zero and must not hide someone."""
+    from app.services.reality_check import run_reality_check_pipeline
+
+    result = asyncio.run(
+        run_reality_check_pipeline(
+            user_query="Is anyone there?",
+            image_bytes=None,
+            simulated_sam_masks=[{"label": "person", "area_ratio": 0.12}],
+        )
+    )
+    assert result["living_subject_present"] is True
+    assert result["template_id"] == "CONFIRM_LIVING_SUBJECT"
+
+
+def test_low_confidence_is_still_filtered_when_present():
+    from app.services.reality_check import run_reality_check_pipeline
+
+    result = asyncio.run(
+        run_reality_check_pipeline(
+            user_query="Is anyone there?",
+            image_bytes=None,
+            simulated_sam_masks=[{"label": "person", "confidence": 0.2, "area_ratio": 0.12}],
+        )
+    )
+    assert result["living_subject_present"] is False
+
+
+def test_concepts_per_photo_are_few_and_always_ask_about_people():
+    from app.services.reality_check import reality_check_concepts, LIVING_VOCAB
+
+    concepts = reality_check_concepts("Is someone sitting in the armchair under the coat?")
+    assert len(concepts) <= 6
+    assert "person" in concepts
+    assert any(c in LIVING_VOCAB and c != "person" for c in concepts)
+    assert "armchair" in concepts and "coat" in concepts
+
+    plain = reality_check_concepts("Is anyone there?")
+    assert "person" in plain
+    assert len(plain) <= 6
+    # The wearer's question names no object, so a couple of common ones are asked about anyway.
+    assert any(c not in LIVING_VOCAB for c in plain)

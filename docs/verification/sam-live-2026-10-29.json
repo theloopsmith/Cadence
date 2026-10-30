@@ -1,0 +1,31 @@
+{
+  "checked_at_utc": "2026-10-29T16:13:00+00:00",
+  "endpoint": "https://api.meta.ai/v1/responses",
+  "model": "sam-3.1",
+  "image_source": "synthetic 640x480 red circle on white",
+  "image_bytes": 10226,
+  "concepts": [
+    "red circle"
+  ],
+  "sam_verified": true,
+  "failed_labels": [],
+  "errors": {},
+  "reason": null,
+  "wall_ms": 3632,
+  "records": [
+    {
+      "label": "red circle",
+      "object_id": "0",
+      "confidence": 0.9452055096626282,
+      "box": {
+        "x1": 220,
+        "y1": 140,
+        "x2": 420,
+        "y2": 339,
+        "w": 640,
+        "h": 480
+      },
+      "area_ratio": 0.1309
+    }
+  ]
+}

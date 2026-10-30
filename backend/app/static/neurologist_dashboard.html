@@ -113,7 +113,8 @@
     .bucket-ON { background: var(--on); }
     .bucket-WEARING_OFF { background: var(--wearing-off); }
     .bucket-OFF { background: var(--off); }
-    .bucket-NO_DOSE { background: var(--nodose); }
+    .bucket-NO_DOSE, .bucket-UNKNOWN { background: var(--nodose); }
+    .bucket-LOGGED { background: var(--brand); }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
@@ -141,9 +142,9 @@
         <p>Logged events and raw task measurements from the Cadence companion. Cadence is not a medical device and does not assess health.</p>
       </div>
       <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn" style="background:#16a34a;" onclick="seedDemoTimeline()">⚡ Seed Sample Routine</button>
-        <button class="btn" style="background:#dc2626;" onclick="wipePatientData()">Reset Diary Data</button>
-        <button class="btn" onclick="window.print()">Export / Print PDF</button>
+        <button class="btn" style="background:#16a34a;" id="seedDemoButton">⚡ Seed Sample Routine</button>
+        <button class="btn" style="background:#dc2626;" id="wipeButton">Reset Diary Data</button>
+        <button class="btn" id="printButton">Export / Print PDF</button>
       </div>
     </header>
 
@@ -156,17 +157,18 @@
         </span>
       </div>
       <div class="sim-grid">
-        <button class="btn-sim" onclick="simFoG()">1. 🦶 Walking Pause (plays the 100 BPM beat)</button>
-        <button class="btn-sim" onclick="simDoseAndSteak()">2. 🥩 Log Levodopa + Steak Meal (protein near a dose)</button>
-        <button class="btn-sim" onclick="simRealityCheck()">3. 👁️ Look Around ("Is someone by the coat rack?")</button>
-        <button class="btn-sim" onclick="simMicrographia()">4. ✍️ Handwriting Check (letter size across a line)</button>
-        <button class="btn-sim" onclick="simHomeMotorExam()">5. 🩺 Run 3-Step Motor Check (Voice + Writing + Walk)</button>
-        <button class="btn-sim" onclick="simFallAndCancel()">6. 🚨 Trigger 3-Stage Fall Alert + Caregiver All-Clear Cancel</button>
+        <button class="btn-sim" id="fogButton">1. 🦶 Walking Pause (plays the 100 BPM beat)</button>
+        <button class="btn-sim" id="mealButton">2. 🥩 Log Levodopa + Steak Meal (protein near a dose)</button>
+        <button class="btn-sim" id="realityButton">3. 👁️ Look Around ("Is someone by the coat rack?")</button>
+        <button class="btn-sim" id="writingButton">4. ✍️ Handwriting Check (letter size across a line)</button>
+        <button class="btn-sim" id="examButton">5. 🩺 Run 3-Step Motor Check (Voice + Writing + Walk)</button>
+        <button class="btn-sim" id="fallButton">6. 🚨 Trigger 3-Stage Fall Alert + Caregiver All-Clear Cancel</button>
       </div>
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
       <div class="metric-label">Summary of the Last 24 Hours</div>
+      <p id="reportMetadata" style="font-size:13px; color:var(--muted);">Report interval and coverage have not loaded.</p>
       <p id="narrativeText" style="margin: 8px 0 0; font-size: 15px; line-height: 1.5;">
         Click "Seed Sample Routine" above to fill in a sample day, or use the buttons to log individual events.
       </p>
@@ -178,7 +180,7 @@
         <div class="metric-value" id="doseCount" style="color: var(--on);">—</div>
       </div>
       <div class="card">
-        <div class="metric-label">Beats Played (walking paused)</div>
+        <div class="metric-label">Walking Pauses Logged</div>
         <div class="metric-value" id="beatCount" style="color: var(--wearing-off);">—</div>
       </div>
       <div class="card">
@@ -192,7 +194,11 @@
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label" style="margin-bottom: 8px;">Half-Hour Timeline (green = no events, amber = a walking pause, red = a fall or several pauses)</div>
+      <div class="metric-label">Caregiver alert evidence</div>
+      <p id="contactEvidence">Delivery evidence has not loaded.</p>
+    </div>
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="metric-label" style="margin-bottom: 8px;">Half-Hour Timeline (gray = no observations, blue = other logs, amber = a walking pause, red = a fall alert or several pauses). Continuous monitoring coverage is unknown.</div>
       <div id="timelineRibbon" class="timeline-ribbon"></div>
     </div>
 
@@ -248,294 +254,10 @@
       <input type="text" id="usernameInput" placeholder="Username" autocomplete="username" />
       <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password" />
       <p id="loginError" style="font-size:13px; color:#b91c1c; min-height:18px; margin:4px 0;"></p>
-      <button class="btn" style="width:100%;" onclick="signIn()">Sign in</button>
+      <button class="btn" style="width:100%;" id="signInButton">Sign in</button>
     </div>
   </div>
 
-  <script>
-    const STORAGE_KEY = "cadence_bearer_token";
-
-    function getToken() {
-      return sessionStorage.getItem(STORAGE_KEY);
-    }
-
-    function setGlassesBanner(msg) {
-      const el = document.getElementById("glassesAudioBanner");
-      el.textContent = "🔊 Glasses Audio: " + msg;
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(msg);
-        u.rate = 0.95;
-        window.speechSynthesis.speak(u);
-      }
-    }
-
-    async function signIn() {
-      const username = document.getElementById("usernameInput").value.trim();
-      const password = document.getElementById("passwordInput").value;
-      const errorEl = document.getElementById("loginError");
-      errorEl.textContent = "";
-      if (!username || !password) {
-        errorEl.textContent = "Enter your username and password.";
-        return;
-      }
-      const res = await fetch("/api/v1/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password })
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        errorEl.textContent = body.message || "Sign-in didn't work. Please try again.";
-        return;
-      }
-      sessionStorage.setItem(STORAGE_KEY, body.access_token);
-      document.getElementById("passwordInput").value = "";
-      document.getElementById("authModal").style.display = "none";
-      loadReport();
-    }
-
-    async function apiPost(path, bodyObj) {
-      const token = getToken();
-      if (!token) {
-        document.getElementById("authModal").style.display = "flex";
-        return null;
-      }
-      const res = await fetch(path, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + token
-        },
-        body: bodyObj ? JSON.stringify(bodyObj) : undefined
-      });
-      return await res.json();
-    }
-
-    async function loadReport() {
-      const token = getToken();
-      if (!token) {
-        document.getElementById("authModal").style.display = "flex";
-        return;
-      }
-      const res = await fetch("/api/v1/report/neurologist", {
-        headers: { "Authorization": "Bearer " + token }
-      });
-      if (res.status === 401 || res.status === 403) {
-        sessionStorage.removeItem(STORAGE_KEY);
-        document.getElementById("authModal").style.display = "flex";
-        return;
-      }
-      const data = await res.json();
-      document.getElementById("narrativeText").textContent = data.clinical_narrative;
-      const st = data.summary_stats;
-      document.getElementById("doseCount").textContent = st.dose_count ?? 0;
-      document.getElementById("beatCount").textContent = st.fog_count;
-      document.getElementById("fallCount").textContent = st.fall_count;
-      document.getElementById("incidentsCount").textContent = st.fall_candidate_resolved_count || 0;
-
-      const dEl = document.getElementById("examDelta");
-      const exams = data.motor_exams || [];
-      if (exams.length < 2) {
-        dEl.textContent = "Two motor checks are needed to show a change.";
-      } else {
-        const [latest, prev] = exams;
-        const signed = (v, unit) => (v >= 0 ? "+" : "") + v.toFixed(0) + unit;
-        const letters = (p) => Math.abs(p) < 5 ? "about the same size" : Math.abs(p).toFixed(0) + "% " + (p < 0 ? "smaller" : "larger");
-        dEl.innerHTML = `
-          <div>Letters: ${letters(latest.handwriting_opencv_decay_pct)} across the line (previously ${letters(prev.handwriting_opencv_decay_pct)})</div>
-          <div>Voice: ${signed(latest.voice_mean_dbfs - prev.voice_mean_dbfs, " dB")} compared with the previous check</div>
-          <div>Walking: ${signed(latest.walk_cadence_spm - prev.walk_cadence_spm, " steps a minute")} compared with the previous check</div>`;
-      }
-
-      const fList = document.getElementById("fallList");
-      if (!data.fall_events || data.fall_events.length === 0) {
-        fList.textContent = "No fall events recorded.";
-      } else {
-        fList.innerHTML = data.fall_events.slice(0, 6).map(f => {
-          const gps = (f.latitude != null && f.longitude != null)
-            ? ` • <a href="https://maps.google.com/?q=${f.latitude},${f.longitude}" target="_blank" rel="noopener noreferrer">GPS</a>`
-            : "";
-          const resolved = f.status === "canceled_false_alarm";
-          const badge = resolved ? "badge-ON" : "badge-OFF";
-          const words = resolved ? "Answered okay" : (f.status === "suppressed_unworn_drop" ? "Glasses dropped" : (f.status === "escalated_twilio" ? "Alert accepted by provider" : "Alert pending"));
-          return `<div style="margin-bottom:8px;">
-            <span class="badge ${badge}">${words}</span>
-            ${f.timestamp_utc} • impact ${Number(f.peak_impact_g).toFixed(1)}g
-            • tilt ${Number(f.post_impact_tilt_deg).toFixed(0)}°${gps}
-            ${f.cancel_transcript ? `<br/><span style="color:var(--muted);">check-in: &ldquo;${f.cancel_transcript}&rdquo;</span>` : ""}
-          </div>`;
-        }).join("");
-      }
-
-      const ribbon = document.getElementById("timelineRibbon");
-      ribbon.innerHTML = "";
-      for (const b of (data.buckets_24h || [])) {
-        const div = document.createElement("div");
-        const pauses = b.fog_count || 0;
-        const level = (b.fall_occurred || pauses >= 2) ? "OFF" : (pauses === 1 ? "WEARING_OFF" : "ON");
-        const events = [];
-        if (pauses) events.push(pauses + (pauses === 1 ? " pause" : " pauses"));
-        if (b.fall_occurred) events.push("fall");
-        if (b.has_exam) events.push("check");
-        div.className = `bucket-pill bucket-${level}`;
-        div.innerHTML = `<div>${b.label_hhmm}</div><div>${events.join(", ") || "—"}</div>`;
-        ribbon.appendChild(div);
-      }
-
-      const tbody = document.getElementById("examTableBody");
-      tbody.innerHTML = "";
-      if (!data.motor_exams || data.motor_exams.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7">No motor checks recorded yet. Click "⚡ Seed Sample Routine" above!</td></tr>';
-      } else {
-        for (const ex of data.motor_exams) {
-          const tr = document.createElement("tr");
-          const p = ex.handwriting_opencv_decay_pct;
-          const letters = Math.abs(p) < 5 ? "about the same" : Math.abs(p).toFixed(0) + "% " + (p < 0 ? "smaller" : "larger");
-          tr.innerHTML = `
-            <td>${ex.timestamp_utc}</td>
-            <td>${ex.voice_mean_dbfs.toFixed(0)}</td>
-            <td>${ex.voice_stability_db.toFixed(1)}</td>
-            <td>${letters}</td>
-            <td>${ex.walk_cadence_spm.toFixed(0)}</td>
-            <td>${ex.walk_fog_count}</td>
-            <td>${ex.minutes_since_last_dose ?? "—"}</td>
-          `;
-          tbody.appendChild(tr);
-        }
-      }
-
-      const rList = document.getElementById("realityList");
-      if (!data.reality_checks || data.reality_checks.length === 0) {
-        rList.textContent = "None recorded yet.";
-      } else {
-        rList.innerHTML = data.reality_checks.slice(0, 4).map(r =>
-          `<div style="margin-bottom:8px;"><strong>"${r.user_query}"</strong><br/><span style="color:#0f172a;">➔ ${r.spoken_response}</span></div>`
-        ).join("");
-      }
-
-      const mList = document.getElementById("medList");
-      if (!data.medication_logs || data.medication_logs.length === 0) {
-        mList.textContent = "None recorded yet.";
-      } else {
-        mList.innerHTML = data.medication_logs.slice(0, 5).map(m =>
-          `<div style="margin-bottom:6px;">• <strong>${m.event_type}</strong> (${m.timestamp_utc}) ${m.estimated_protein_grams ? '— ' + m.estimated_protein_grams.toFixed(0) + 'g protein' : ''} ${m.conflict_detected ? '<span class="badge badge-WEARING_OFF">near a dose</span>' : ''}</div>`
-        ).join("");
-      }
-    }
-
-    async function seedDemoTimeline() {
-      await apiPost("/api/v1/demo/seed");
-      setGlassesBanner("Sample day added.");
-      await loadReport();
-    }
-
-    async function wipePatientData() {
-      const token = getToken();
-      if (!token) return;
-      await fetch("/api/v1/patient/data", {
-        method: "DELETE",
-        headers: { "Authorization": "Bearer " + token }
-      });
-      setGlassesBanner("Diary data wiped.");
-      await loadReport();
-    }
-
-    async function simFoG() {
-      await apiPost("/api/v1/events/fog", {
-        event_uuid: "sim-fog-" + Date.now(),
-        timestamp_utc: new Date().toISOString(),
-        duration_sec: 5.5,
-        peak_freeze_index: 3.10,
-        locomotor_band_power: 0.09,
-        freeze_band_power: 0.28,
-        sampled_hz: 100.0,
-        arming_mode: "turning_upright",
-        cue_bpm: 100,
-        recovery_latency_sec: 3.0
-      });
-      setGlassesBanner("Step with the beat.");
-      await loadReport();
-    }
-
-    async function simDoseAndSteak() {
-      const now = new Date().toISOString();
-      await apiPost("/api/v1/medication/dose", {
-        event_uuid: "sim-dose-" + Date.now(),
-        timestamp_utc: now
-      });
-      const res = await apiPost("/api/v1/medication/meal-protein", {
-        event_uuid: "sim-meal-" + Date.now(),
-        timestamp_utc: now,
-        simulated_masks: [
-          { label: "steak", area_px: 35000, confidence: 0.95 },
-          { label: "plate", area_px: 70000, confidence: 0.98 }
-        ]
-      });
-      if (res && res.spoken_response) setGlassesBanner(res.spoken_response);
-      await loadReport();
-    }
-
-    async function simRealityCheck() {
-      const res = await apiPost("/api/v1/reality-check", {
-        event_uuid: "sim-rc-" + Date.now(),
-        timestamp_utc: new Date().toISOString(),
-        user_query: "Is someone standing by the coat rack?",
-        simulated_sam_masks: [
-          { label: "coat rack", confidence: 0.94, area_ratio: 0.24 }
-        ]
-      });
-      if (res && res.spoken_response) setGlassesBanner(res.spoken_response);
-      await loadReport();
-    }
-
-    async function simMicrographia() {
-      const res = await apiPost("/api/v1/handwriting/analyze", {
-        event_uuid: "sim-hw-" + Date.now(),
-        timestamp_utc: new Date().toISOString(),
-        simulated_letter_heights_px: [44, 41, 38, 34, 30, 28],
-        simulated_sam_decay_pct: -29.5,
-        source_context: "ambient"
-      });
-      if (res && res.spoken_response) setGlassesBanner(res.spoken_response);
-      await loadReport();
-    }
-
-    async function simHomeMotorExam() {
-      const res = await apiPost("/api/v1/exam/complete", {
-        exam_uuid: "sim-exam-" + Date.now(),
-        timestamp_utc: new Date().toISOString(),
-        voice_mean_dbfs: -16.5,
-        voice_stability_db: 1.2,
-        handwriting_opencv_decay_pct: -7.5,
-        handwriting_sam_decay_pct: -6.9,
-        walk_cadence_spm: 105.0,
-        walk_mean_fi: 0.80,
-        walk_fog_count: 0
-      });
-      if (res && res.clinical_summary) setGlassesBanner(res.clinical_summary);
-      await loadReport();
-    }
-
-    async function simFallAndCancel() {
-      const uuid = "sim-fall-" + Date.now();
-      await apiPost("/api/v1/events/fall", {
-        event_uuid: uuid,
-        timestamp_utc: new Date().toISOString(),
-        peak_impact_g: 3.9,
-        peak_jerk_gs: 48.0,
-        post_impact_tilt_deg: 74.0,
-        latitude: 37.7749,
-        longitude: -122.4194,
-        horizontal_accuracy_m: 5.0,
-        status: "confirmed_waiting_dispatch"
-      });
-      await apiPost(`/api/v1/events/fall/${uuid}/cancel`);
-      setGlassesBanner("Fall alert dispatched and then canceled via All-Clear SMS.");
-      await loadReport();
-    }
-
-    window.addEventListener("DOMContentLoaded", loadReport);
-  </script>
+  <script nonce="__CADENCE_SCRIPT_NONCE__" src="/assets/dashboard.js" defer></script>
 </body>
 </html>

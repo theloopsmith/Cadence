@@ -61,7 +61,9 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
     private let recognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
-    private let audioEngine = AVAudioEngine()
+    private var audioEngine = AVAudioEngine()
+    private var audioGeneration = 0
+    private var pauseObserver: NSObjectProtocol?
     private var hasInstalledTap: Bool = false
     /// Opening `AVAudioEngine.inputNode` can block. Hardware setup runs here so
     /// `startListening` returns and the 12-second check-in timer stays armed.
@@ -92,7 +94,16 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
         self.recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         super.init()
         self.recognizer?.delegate = self
+        pauseObserver = NotificationCenter.default.addObserver(forName: .cadenceAudioPaused, object: nil, queue: .main) { [weak self] _ in
+            guard let self, self.isListening else { return }
+            self.evidence.invalidateAffirmations()
+            self.latestTranscript = self.evidence.transcriptForResolution
+            // Losing input cannot turn a provisional affirmative into cancellation.
+            _ = self.stopListening()
+        }
     }
+
+    deinit { if let pauseObserver { NotificationCenter.default.removeObserver(pauseObserver) } }
 
     public func requestSpeechAuthorization(completion: @escaping (Bool) -> Void) {
         SFSpeechRecognizer.requestAuthorization { status in
@@ -129,41 +140,19 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
     private func openMicrophone(session: Int) {
         guard session == self.session else { return }
 
-        #if os(iOS)
-        let audioSession = AVAudioSession.sharedInstance()
-        #if targetEnvironment(simulator)
-        guard audioSession.isInputAvailable else {
-            print("[SpeechCheckInListener] No audio input hardware available on simulator.")
+        guard AudioCueEngine.shared.prepareMicrophoneSession() else {
+            isListening = false
             return
         }
-        do {
-            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("[SpeechCheckInListener] Could not configure audio session: \(error)")
-            return
+        guard session == self.session else { return }
+        let generation = AudioCueEngine.shared.currentMediaServicesGeneration()
+        if generation != audioGeneration {
+            // Audio objects from before a media-services reset are invalid.
+            audioEngine = AVAudioEngine()
+            hasInstalledTap = false
+            audioGeneration = generation
         }
-        #else
-        do {
-            var options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
-            #if swift(>=5.9)
-            options.insert(.allowBluetoothHFP)
-            #endif
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            AudioRouteManager.shared.routeToGlassesIfAvailable()
-        } catch {
-            do {
-                try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
-                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-                AudioRouteManager.shared.routeToGlassesIfAvailable()
-            } catch {
-                print("[SpeechCheckInListener] Audio session recording setup failed: \(error)")
-                return
-            }
-        }
-        #endif
-        #endif
+
 
         do {
             let request = SFSpeechAudioBufferRecognitionRequest()
@@ -206,6 +195,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
                     let rms = sqrt(sumSquares / Float(max(1, frameLength)))
                     let dbfs = Double(20.0 * log10(max(1e-5, rms)))
                     DispatchQueue.main.async {
+                        guard self.isListening, self.session == session else { return }
                         self.maxVocalLevelDbfs = max(self.maxVocalLevelDbfs, dbfs)
                     }
                 }
@@ -257,6 +247,12 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
     }
 
     private func tearDownEngine() {
+        let generation = AudioCueEngine.shared.currentMediaServicesGeneration()
+        if generation != audioGeneration {
+            audioEngine = AVAudioEngine()
+            hasInstalledTap = false
+            audioGeneration = generation
+        }
         if audioEngine.isRunning {
             audioEngine.stop()
         }

@@ -236,6 +236,7 @@ def test_end_to_end_api_pipelines_and_rbac():
             headers=DEVICE_HEADERS,
             json={
                 "exam_uuid": "exam-test-001",
+            "voice_status": "measured", "handwriting_status": "measured", "walk_status": "measured", "measurement_source": "device",
                 "voice_mean_dbfs": -28.0,
                 "voice_stability_db": 3.5,
                 "handwriting_opencv_decay_pct": -35.0,

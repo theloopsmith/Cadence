@@ -6,6 +6,8 @@ import Foundation
 @MainActor
 public final class WalkingModel: ObservableObject {
     @Published public private(set) var isProtectionOn = false
+    @Published public private(set) var isProtectionRequested = false
+    @Published public private(set) var protectionProblem: String?
     @Published public private(set) var isCueing = false
     @Published public private(set) var headline = "Protection is off"
     @Published public private(set) var detail = "Turn on protection to listen for freezes while you walk."
@@ -26,6 +28,8 @@ public final class WalkingModel: ObservableObject {
     public let glasses: GlassesSessionManager
     private let location: LocationProvider
     private let keepAlive: BackgroundKeepAliving
+    private let audio: AudioCueEngine
+    private var healthTimer: Timer?
     private var cancellables: Set<AnyCancellable> = []
     private var demoTask: Task<Void, Never>?
 
@@ -35,13 +39,15 @@ public final class WalkingModel: ObservableObject {
         fogDetector: FoGDetector = FoGDetector(),
         location: LocationProvider,
         glasses: GlassesSessionManager? = nil,
-        keepAlive: BackgroundKeepAliving? = nil
+        keepAlive: BackgroundKeepAliving? = nil,
+        audio: AudioCueEngine = .shared
     ) {
         self.motion = motion
         self.fallAlert = fallAlert
         self.fogDetector = fogDetector
         self.location = location
-        self.keepAlive = keepAlive ?? AudioCueEngine.shared.keepAlive
+        self.audio = audio
+        self.keepAlive = keepAlive ?? audio.keepAlive
         self.glasses = glasses ?? GlassesSessionManager(phoneMotion: motion.phoneSource)
         motion.attach(fogDetector: fogDetector, fallDetector: fallAlert.detector)
         fallAlert.wearStateProvider = self.glasses
@@ -51,7 +57,7 @@ public final class WalkingModel: ObservableObject {
         self.glasses.$connectionState
             .dropFirst()
             .sink { [weak self] _ in
-                guard let self, self.motion.isRunning, !self.isDemoRunning else { return }
+                guard let self, self.isProtectionRequested, !self.isDemoRunning else { return }
                 self.setProtection(enabled: true)
             }
             .store(in: &cancellables)
@@ -60,20 +66,32 @@ public final class WalkingModel: ObservableObject {
             .combineLatest(motion.$armingMode, motion.$isRunning)
             .sink { [weak self] cueing, mode, running in
                 self?.isCueing = cueing
-                self?.isProtectionOn = running
-                self?.refreshText(armingMode: mode, cueing: cueing, running: running)
+                Task { @MainActor in self?.refreshProtectionHealth() }
             }
             .store(in: &cancellables)
+        motion.$health.sink { [weak self] _ in
+            // @Published emits before mutation; refresh after the property is set.
+            Task { @MainActor in self?.refreshProtectionHealth() }
+        }.store(in: &cancellables)
+        audio.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in self?.refreshProtectionHealth() }
+        }.store(in: &cancellables)
+        healthTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshProtectionHealth() }
+        }
     }
+
+    deinit { healthTimer?.invalidate() }
 
     // MARK: - Protection
 
     public func setProtection(enabled: Bool) {
+        isProtectionRequested = enabled
         if enabled {
             let source = glasses.preferredMotionSource
             let label = glasses.preferredSourceLabel
             let started = motion.start(source: source, label: label) { [location] in location.currentLocation }
-            if started {
+            if started && audio.isAudioAvailable {
                 keepAlive.start()
             } else {
                 keepAlive.stop()
@@ -85,12 +103,56 @@ public final class WalkingModel: ObservableObject {
                     : "The glasses did not start their motion stream. Try reconnecting them."
             }
         } else {
+            stopFreezeDemo()
             motion.stopPhone()
             keepAlive.stop()
-            if fogDetector.isEpisodeActive {
-                AudioCueEngine.shared.stopRASMetronome()
-            }
+            audio.stopRASMetronome()
+            audio.cancelNonEmergencySpeech()
         }
+        refreshProtectionHealth()
+    }
+
+    public func refreshProtectionHealth() {
+        motion.checkHealth()
+        audio.checkOutputHealth()
+        isCueing = motion.isFoGActive && audio.isMetronomeActive && audio.isAudioAvailable
+        guard isProtectionRequested, !isDemoRunning else {
+            isProtectionOn = false
+            protectionProblem = nil
+            if !isDemoRunning { refreshText(armingMode: motion.armingMode, cueing: false, running: false) }
+            return
+        }
+        if !motion.isRunning {
+            protectionProblem = "Motion sensors are not available. Reconnect the device and try again."
+        } else if motion.health == .starting {
+            protectionProblem = "Waiting for fresh motion samples."
+        } else if motion.health != .healthy {
+            protectionProblem = "Motion input stopped. Protection is unavailable. Reconnect the device or retry protection."
+        } else if !audio.isAudioAvailable {
+            protectionProblem = audio.audioProblem ?? "Audio cues are unavailable. Tap Retry audio."
+        } else if !keepAlive.isActive {
+            protectionProblem = keepAlive.failureReason ?? "Background audio is unavailable. Keep Cadence open and retry audio."
+        } else {
+            protectionProblem = nil
+        }
+        isProtectionOn = protectionProblem == nil
+        if let protectionProblem {
+            headline = !motion.isRunning ? "Motion sensors are not available" : (motion.health == .starting ? "Protection is starting" : "Protection is unavailable")
+            detail = protectionProblem
+        } else {
+            refreshText(armingMode: motion.armingMode, cueing: isCueing, running: true)
+        }
+    }
+
+    public func retryAudio() {
+        audio.retryAudio()
+        if isProtectionRequested && audio.isAudioAvailable { keepAlive.start() }
+        refreshProtectionHealth()
+    }
+
+    /// Deliberate stop, without canceling an active fall alert or its siren.
+    public func stopWalkingAudio() {
+        setProtection(enabled: false)
     }
 
     // MARK: - Demo (labeled)
@@ -100,8 +162,9 @@ public final class WalkingModel: ObservableObject {
     /// is paused while it plays so live samples do not mix with the demo.
     public func startFreezeDemo() {
         guard !isDemoRunning else { return }
-        let wasProtected = motion.isRunning
+        let wasProtected = isProtectionRequested
         motion.stopPhone()
+        keepAlive.stop()
         motion.beginSegment()
         isDemoRunning = true
         demoProgress = 0
@@ -146,9 +209,11 @@ public final class WalkingModel: ObservableObject {
         isDemoRunning = false
         demoProgress = 1
         lastDemoSummary = summary
-        AudioCueEngine.shared.stopRASMetronome()
+        audio.stopRASMetronome()
+        audio.cancelNonEmergencySpeech()
         motion.beginSegment()
         isCueing = false
+        refreshProtectionHealth()
     }
 
     // MARK: - Text

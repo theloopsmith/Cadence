@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 def utc_now_iso() -> str:
@@ -97,19 +97,31 @@ class HandwritingAnalyzeRequest(BaseModel):
 
 
 class HomeMotorExamCreate(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     exam_uuid: str = Field(..., min_length=4)
     timestamp_utc: str = Field(default_factory=utc_now_iso)
-    voice_mean_dbfs: float
-    voice_stability_db: float = Field(
-        ..., description="Std-dev in dB computed strictly over the 5s sustained vowel ('Ahhh')"
-    )
-    handwriting_opencv_decay_pct: float = Field(
-        ..., description="Negative percentage when shrinking (e.g., -35.0 for 35% shrinkage)"
-    )
+    voice_status: Literal['measured','skipped','unavailable','legacy_unverified'] = 'legacy_unverified'
+    handwriting_status: Literal['measured','skipped','unavailable','legacy_unverified'] = 'legacy_unverified'
+    walk_status: Literal['measured','skipped','unavailable','legacy_unverified'] = 'legacy_unverified'
+    measurement_source: Literal['device','simulated','legacy_unverified'] = 'legacy_unverified'
+    voice_mean_dbfs: Optional[float] = None
+    voice_stability_db: Optional[float] = Field(default=None, ge=0)
+    handwriting_opencv_decay_pct: Optional[float] = None
     handwriting_sam_decay_pct: Optional[float] = None
-    walk_cadence_spm: float = Field(..., ge=0.0)
-    walk_mean_fi: float = Field(..., ge=0.0)
-    walk_fog_count: int = Field(default=0, ge=0)
+    walk_cadence_spm: Optional[float] = Field(default=None, ge=0.0)
+    walk_mean_fi: Optional[float] = Field(default=None, ge=0.0)
+    walk_fog_count: Optional[int] = Field(default=None, ge=0)
+
+    @model_validator(mode='after')
+    def measured_tasks_require_values(self):
+        for task, fields in {
+            'voice': ('voice_mean_dbfs','voice_stability_db'),
+            'handwriting': ('handwriting_opencv_decay_pct',),
+            'walk': ('walk_cadence_spm','walk_mean_fi','walk_fog_count'),
+        }.items():
+            if getattr(self, task+'_status') == 'measured' and any(getattr(self, f) is None for f in fields):
+                raise ValueError(f'{task}: measured tasks require all measurements')
+        return self
 
 
 class VoiceLogCreate(BaseModel):

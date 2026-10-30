@@ -149,8 +149,8 @@ struct DiaryView: View {
                         .foregroundColor(.secondary)
                         .monospacedDigit()
                 }
-                if !event.detail.isEmpty {
-                    Text(event.detail)
+                if !event.factualDetail.isEmpty {
+                    Text(event.factualDetail)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -167,6 +167,8 @@ struct DiaryView: View {
         case .doseTaken, .mealLogged: return CadenceTheme.calm
         case .checkInAnswered: return CadenceTheme.calm
         case .helpSent: return CadenceTheme.danger
+        case .alertAccepted: return CadenceTheme.accent
+        case .caregiverAcknowledged: return CadenceTheme.calm
         case .protectionOn: return CadenceTheme.calm
         case .protectionOff: return .secondary
         case .environmentCheck, .motorCheck: return CadenceTheme.accent

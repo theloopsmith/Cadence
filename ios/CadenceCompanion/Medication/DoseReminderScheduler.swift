@@ -71,6 +71,7 @@ public final class DoseReminderScheduler: ObservableObject {
 
     private let center: DoseNotificationCentering
     private static let prefix = "cadence.dose."
+    private var suspended = false
 
     public init(center: DoseNotificationCentering = SystemNotificationCenter()) {
         self.center = center
@@ -78,6 +79,7 @@ public final class DoseReminderScheduler: ObservableObject {
 
     /// Replaces every pending reminder with one per dose time.
     public func sync(_ schedule: MedicationSchedule) async {
+        guard !suspended else { return }
         center.removeAllPending()
         guard !schedule.isEmpty else {
             status = .none
@@ -87,6 +89,7 @@ public final class DoseReminderScheduler: ObservableObject {
             status = .notAllowed
             return
         }
+        guard !suspended else { return }
         for time in schedule.doseTimes {
             center.add(Self.dailyRequest(for: time, schedule: schedule))
         }
@@ -97,6 +100,7 @@ public final class DoseReminderScheduler: ObservableObject {
     /// daily one back from tomorrow, so the phone does not nag about a pill
     /// already taken.
     public func doseTaken(at date: Date, schedule: MedicationSchedule) {
+        guard !suspended else { return }
         let cal = schedule.calendar
         guard let due = schedule.dueDose(at: date, takenToday: []) ?? nearestDoseTime(to: date, schedule: schedule) else {
             return
@@ -111,6 +115,12 @@ public final class DoseReminderScheduler: ObservableObject {
         let tomorrowComponents = cal.dateComponents([.year, .month, .day], from: tomorrow)
         center.add(Self.request(for: time, schedule: schedule, repeatsDaily: false, onDay: tomorrowComponents,
                                 identifierSuffix: ".next"))
+    }
+
+    public func suspendForLocalReset() {
+        suspended = true
+        center.removeAllPending()
+        status = .none
     }
 
     private func nearestDoseTime(to date: Date, schedule: MedicationSchedule) -> Date? {

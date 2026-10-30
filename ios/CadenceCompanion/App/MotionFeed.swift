@@ -1,6 +1,8 @@
 import Combine
 import Foundation
 
+public enum MotionHealth: Equatable { case off, starting, healthy, stale }
+
 /// Owns the phone motion source and the shared sample engine, and publishes
 /// what the screens render. The engine itself has no UI.
 @MainActor
@@ -12,6 +14,8 @@ public final class MotionFeed: ObservableObject {
     @Published public private(set) var fallEventUUID: String?
     @Published public private(set) var status = "Protection is off"
     @Published public private(set) var samplesSeen = 0
+    @Published public private(set) var health: MotionHealth = .off
+    public var staleAfterSec: TimeInterval = 2
     /// Which device the running stream comes from ("iPhone" or the glasses' name).
     @Published public private(set) var activeSourceLabel: String?
 
@@ -19,11 +23,23 @@ public final class MotionFeed: ObservableObject {
     private var source: MotionSource?
     private var engine: LiveEdgeEngine?
     private var locationLookup: (() -> LocationCoordinate?)?
+    private let uptime: () -> TimeInterval
+    private let automaticHealthChecks: Bool
+    private var healthTimer: Timer?
+    private var startedAt: TimeInterval?
+    private var lastSampleAt: TimeInterval?
+    private var lastSampleTimestamp: TimeInterval?
+    private var sourceGeneration = UUID()
 
     /// Extra listeners for raw samples, e.g. the timed-walk recorder.
     private var sinks: [UUID: (IMUSample) -> Void] = [:]
 
-    public init() {}
+    public init(uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, automaticHealthChecks: Bool = true) {
+        self.uptime = uptime
+        self.automaticHealthChecks = automaticHealthChecks
+    }
+
+    deinit { healthTimer?.invalidate() }
 
     public var sourceIsAvailable: Bool { phoneSource.isAvailable }
 
@@ -34,6 +50,7 @@ public final class MotionFeed: ObservableObject {
     }
 
     public func beginSegment() {
+        lastSampleTimestamp = nil
         engine?.beginSegment()
     }
 
@@ -57,6 +74,21 @@ public final class MotionFeed: ObservableObject {
         horizontalAccuracyM: Double? = nil
     ) -> LiveEdgeUpdate? {
         guard let engine else { return nil }
+        // Invalid/duplicate timestamps must not keep a dead stream looking healthy.
+        let fields = [sample.timestamp, sample.ax, sample.ay, sample.az, sample.gx, sample.gy, sample.gz, sample.pitchDeg, sample.rollDeg]
+        guard fields.allSatisfy({ $0.isFinite }), lastSampleTimestamp.map({ sample.timestamp > $0 }) ?? true else { return nil }
+        if isRunning, let lastSampleAt, uptime() - lastSampleAt > staleAfterSec {
+            health = .stale
+            discardStaleMotion()
+        }
+        lastSampleTimestamp = sample.timestamp
+        if source != nil {
+            lastSampleAt = uptime()
+            if health != .healthy {
+                health = .healthy
+                status = "Motion samples are current"
+            }
+        }
         samplesSeen += 1
         for sink in sinks.values { sink(sample) }
         let update = engine.ingest(
@@ -87,12 +119,20 @@ public final class MotionFeed: ObservableObject {
             status = "Motion engine is not ready."
             return false
         }
-        if let source, source === newSource, source.isActive { return true }
+        if let source, source === newSource, source.isActive, health != .stale { return true }
         source?.stop()
+        health = .starting
+        discardStaleMotion()
+        let generation = UUID()
+        sourceGeneration = generation
         source = newSource
+        startedAt = uptime()
+        lastSampleAt = nil
+        lastSampleTimestamp = nil
+        health = .starting
         locationLookup = location
         newSource.start { [weak self] sample in
-            guard let self else { return }
+            guard let self, self.sourceGeneration == generation else { return }
             let loc = self.locationLookup?()
             _ = self.ingest(
                 sample,
@@ -102,17 +142,31 @@ public final class MotionFeed: ObservableObject {
             )
         }
         isRunning = newSource.isActive
+        health = isRunning ? (lastSampleAt == nil ? .starting : .healthy) : .off
         activeSourceLabel = isRunning ? label : nil
         status = isRunning
-            ? "Protection on — watching for freezes and falls"
+            ? "Waiting for fresh motion samples"
             : "Motion sensors are not available on this device"
+        healthTimer?.invalidate()
+        if isRunning && automaticHealthChecks {
+            healthTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.checkHealth() }
+            }
+        }
         return isRunning
     }
 
     public func stopSource() {
+        sourceGeneration = UUID()
+        healthTimer?.invalidate()
+        healthTimer = nil
         source?.stop()
         source = nil
         isRunning = false
+        health = .off
+        lastSampleAt = nil
+        lastSampleTimestamp = nil
+        discardStaleMotion()
         isFoGActive = false
         activeSourceLabel = nil
         status = "Protection is off"
@@ -124,6 +178,26 @@ public final class MotionFeed: ObservableObject {
 
     public func clearFall() {
         fallEventUUID = nil
+    }
+
+    public func checkHealth() {
+        guard isRunning else { return }
+        if source?.isActive != true || uptime() - (lastSampleAt ?? startedAt ?? uptime()) > staleAfterSec {
+            if health != .stale {
+                health = .stale
+                discardStaleMotion()
+            }
+            status = "Motion input stopped. Protection is unavailable until fresh samples arrive."
+        }
+    }
+
+    private func discardStaleMotion() {
+        engine?.fogDetector.resetForStreamGap()
+        engine?.fallDetector.resetForStreamGap()
+        engine?.beginSegment()
+        isFoGActive = false
+        armingMode = FoGArmingMode.disarmed.rawValue
+        // An already active fall check-in remains owned by FallAlertCoordinator.
     }
 
     private func apply(_ update: LiveEdgeUpdate) {

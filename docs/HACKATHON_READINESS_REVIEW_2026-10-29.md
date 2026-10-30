@@ -1,5 +1,19 @@
 # Cadence: what to work on next — October 29, 2026
 
+## Follow-up status — item 1 reviewed, item 3 implemented
+
+Item 8's local-history portion is implemented using a single-wearer installation, durable account/server binding, profile-specific files/preferences and an explicit restart-based local erase/reprovisioning flow. Different account/server changes are rejected; legacy unassigned files are not silently adopted. **279 Swift tests and the actual app build pass.** See [local-profile verification](LOCAL_PROFILE_VERIFICATION_2026-10-29.md). Coordination between the dashboard's server wipe and offline pending uploads remains open; local reset explicitly leaves server data unchanged.
+
+Item 6 is implemented: one consistent trailing UTC interval, complete aggregates with disclosed detail limits, unknown monitoring coverage, factual narratives and distinct queued/provider-accepted/caregiver-acknowledged states. The phone consumes incident-bound delivery evidence, and shared PDFs label requests accurately. See [report verification and limits](REPORT_TRUTH_VERIFICATION_2026-10-29.md) for its verification snapshot. The unchanged backend/dashboard checks remain 161 backend tests, five JavaScript checks and isolated headless Chrome. Physical-device and live caregiver proof remain unverified. Server-wipe/upload coordination is the next data-integrity priority while provider setup is pending.
+
+Item 5 is implemented and browser-verified: dynamic dashboard text uses DOM text nodes, GPS links validate coordinates, and nonce-based CSP blocks injected scripts/handlers. See [dashboard security verification](DASHBOARD_SECURITY_VERIFICATION_2026-10-29.md) for its earlier verification snapshot.
+
+Item 4 is implemented: nullable measurements and task validity propagate through phone, API, storage, dashboard and shared summaries; existing database upgrades preserve raw history without treating unknown defaults as observations. See [partial-check verification](EXAM_VALIDITY_VERIFICATION_2026-10-29.md) for that change's verification snapshot.
+
+The user's SAM adapter now uses the documented Responses path and includes live synthetic-image and synthesized-speech evidence. The original endpoint mismatch below is superseded; real-photo scene and Baseten-selection evidence remain open. The parser currently uses box area and does not surface malformed-output diagnostics.
+
+Item 3 now has speech preemption/cancellation/cooldown, audio interruption/reset recovery, explicit Stop/Retry controls, actual route display and sensor freshness health. See [audio/protection verification](AUDIO_PROTECTION_VERIFICATION_2026-10-29.md) for the implementation, 253 passing Swift tests, 137 passing backend tests, successful actual app build and remaining physical-device limits. Other findings below remain the backlog. Original review/test counts below are a snapshot from before these follow-ups.
+
 ## Recommendation
 
 Make one authentic, useful Meta-powered accessibility journey work end to end, then make it effortless for judges to understand and reproduce. The strongest next investment is **repairing and proving the live SAM integration**, followed by audio reliability and a truthful demo. More emergency infrastructure, additional providers, and more clinical features currently offer less submission value.
@@ -75,6 +89,8 @@ Meta's [SAM overview](https://dev.meta.ai/docs/sam/overview) documents the Respo
 
 ### 6. P1 — Factual reports still misrepresent time, coverage and contact status
 
+**Follow-up: implemented.** See [report verification](REPORT_TRUTH_VERIFICATION_2026-10-29.md). The evidence below describes the original finding; unknown physical monitoring and historical phone reconciliation remain explicit limits.
+
 **Evidence:** `get_neurologist_report` fetches row-capped histories without a common time predicate; freeze/fall totals count those histories while doses use a separate last-day filter. `diary_engine.py` anchors on the newest event, so an inactive account can show an old period. `_within_last_day` accepts future timestamps. Timeline colors imply healthy/quiet periods even with no observation coverage. Default mode hides clinical labels but does not fix missing observations or mixed ranges.
 
 `SummaryReport.swift:144` still labels `.helpSent` counts “Falls, help contacted”, while `CadenceAppModel` creates that entry when the alert is only locally queued. Local diary wording has improved, but the PDF reintroduces the overclaim. No phone consumer of the new backend delivery-status endpoint was found.
@@ -92,6 +108,8 @@ Meta's [SAM overview](https://dev.meta.ai/docs/sam/overview) documents the Respo
 **Done when:** a real expected test contact receives the labeled notification, presses 1, and the signed callback resolves the exact attempt. Otherwise demonstrate a clearly labeled mock and do not claim successful real delivery. No additional calls were placed for this review.
 
 ### 8. P1 — Account-bound transport does not isolate the rest of the phone's data
+
+**Follow-up: local-history isolation implemented; server-wipe coordination open.** The app now rejects switching wearer/server without a confirmed local reset and uses profile-specific storage/setup. See [verification and upgrade limits](LOCAL_PROFILE_VERIFICATION_2026-10-29.md). The evidence below describes the original finding. Local erasure is coordinated with that phone's queue; an independent dashboard server wipe still cannot invalidate offline queued data.
 
 **Evidence:** the outbox now binds rows to account and destination. `DiaryStore.default`, `TaskMetricsHistory.default`, pill-photo storage, schedule and summary settings remain shared device locations. `AuthSession.signOut` changes credentials without switching these stores; `CadenceAppModel` retains them.
 

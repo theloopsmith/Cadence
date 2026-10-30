@@ -12,6 +12,7 @@ public struct EmergencySOSView: View {
     private static let flashInterval: TimeInterval = 0.60
 
     @ObservedObject private var coordinator: FallAlertCoordinator
+    @ObservedObject private var audio = AudioCueEngine.shared
     @State private var isFlashOn = false
     @State private var secondsRemaining: Int = Int(FallAlertCoordinator.checkInWindowSec)
     @State private var windowFraction: Double = 1.0
@@ -43,7 +44,7 @@ public struct EmergencySOSView: View {
                     .font(.system(size: 56, weight: .semibold))
                     .foregroundColor(isDispatched ? foregroundColor : CadenceTheme.caution)
                     .accessibilityHidden(true)
-                Text(isDispatched ? "Trying to contact caregiver" : "Are you OK?")
+                Text(isDispatched ? coordinator.contactHeadline : "Are you OK?")
                     .font(.system(size: 40, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundColor(foregroundColor)
@@ -84,7 +85,7 @@ public struct EmergencySOSView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
             isDispatched
-                ? "Trying to contact caregiver. Siren sounding. Tap I'm OK now to stop."
+                ? "\(coordinator.contactHeadline). \(audio.isAudioAvailable ? "Emergency audio is active." : "Emergency audio is unavailable. Use the call buttons.") Tap I'm OK now to stop."
                 : "Are you OK? Say I am okay, or tap I'm OK. Say help, or tap I need help."
         )
     }
@@ -132,7 +133,8 @@ public struct EmergencySOSView: View {
     private var statusLine: String {
         if let warning = coordinator.persistenceWarning { return warning }
         if isDispatched {
-            return "A loud sound is playing so people nearby can find you. Saved on device; retrying caregiver alert. Use the call buttons if you need help now."
+            let sound = audio.isAudioAvailable ? "Emergency audio is active." : "Emergency audio is unavailable. Use the call buttons for help."
+            return "\(sound) \(coordinator.contactHeadline). Provider acceptance does not confirm receipt. Use the call buttons if you need help now."
         }
         return "You can say “I'm okay” or “help”, or tap below. Take your time — \(secondsRemaining) seconds left before anyone is contacted."
     }

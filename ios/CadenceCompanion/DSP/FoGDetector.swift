@@ -393,4 +393,20 @@ public final class FoGDetector {
             ]
         )
     }
+
+    /// Lost/stopped input is not evidence of recovery. Discard the active
+    /// episode and arming history without emitting a successful-recovery event.
+    public func resetForStreamGap() {
+        isEpisodeActive = false
+        armingMode = .disarmed
+        consecutiveWalkingHops = 0
+        consecutiveSeatedStillHops = 0
+        initiationArmedRemainingSec = 0
+        turnArmedRemainingSec = 0
+        recentWalkingRemainingSec = 0
+        consecutiveFreezeHops = 0
+        consecutiveRecoveryHops = 0
+        episodeDurationSec = 0
+        AudioCueEngine.shared.stopRASMetronome()
+    }
 }

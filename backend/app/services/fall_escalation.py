@@ -9,6 +9,7 @@ from app.config import settings
 from app.db import claim_caregiver_alert, execute_write, fetch_all, fetch_one
 from app.models import FallEventCreate
 from app.services import fall_durability as durable
+from app.services.delivery_evidence import delivery_evidence
 from fastapi import HTTPException
 
 TERMINAL_FAILURE_STATUSES = {"busy", "no-answer", "failed", "canceled"}
@@ -358,9 +359,8 @@ class FallEscalationManager:
         job=await fetch_one("SELECT state,next_due,deadline FROM fall_jobs WHERE event_uuid=? AND patient_id=?",(event_uuid,patient_id))
         if not job: raise HTTPException(404,'Fall event not found.')
         attempts=await fetch_all("SELECT attempt_id,attempt_no,state,sms_sid,call_sid,call_status,acknowledged_at,simulated FROM fall_attempts WHERE event_uuid=? AND patient_id=? ORDER BY attempt_no",(event_uuid,patient_id))
-        return {'event_uuid':event_uuid,'job':job,'attempts':attempts,
-                'provider_accepted':any(a['sms_sid'] or a['call_sid'] for a in attempts),
-                'caregiver_acknowledged':any(a['acknowledged_at'] is not None and not a['simulated'] for a in attempts)}
+        fall=await fetch_one('SELECT * FROM fall_events WHERE event_uuid=? AND patient_id=?',(event_uuid,patient_id))
+        return {**delivery_evidence(fall,attempts,job),'job':job,'attempts':attempts}
 
     async def cancel_dispatched_fall(
         self,

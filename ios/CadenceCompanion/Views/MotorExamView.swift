@@ -171,12 +171,13 @@ public struct MotorExamView: View {
                 }) {
                     Label("Start Voice Test", systemImage: "mic.fill")
                 }
+                Button("Skip voice this time") { exam.skipVoice() }
             } else {
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
                     cleanUpTimers()
-                    exam.advanceToHandwriting()
+                    exam.skipVoice()
                 }) {
-                    Text("Skip to next step")
+                    Text("Skip voice this time")
                 }
             }
         }
@@ -186,6 +187,8 @@ public struct MotorExamView: View {
     private func startVoiceStep() {
         voiceSecondsRemaining = 5
         isVoiceCountingDown = false
+        handwritingStatus = nil
+        isAnalyzingHandwriting = false
         exam.startExam()
     }
 
@@ -194,9 +197,11 @@ public struct MotorExamView: View {
         voiceSecondsRemaining = 5
         exam.voiceMonitor.startLiveMonitoring()
         exam.voiceMonitor.startVowelPhonationRecording()
+        let session = exam.examSessionID
 
         voiceTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
             Task { @MainActor in
+                guard exam.examSessionID == session, exam.currentStep == .task1PromptedVoice else { timer.invalidate(); return }
                 if voiceSecondsRemaining > 1 {
                     voiceSecondsRemaining -= 1
                 } else {
@@ -262,7 +267,7 @@ public struct MotorExamView: View {
                 }
 
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
-                    exam.measurements.handwritingMeasured = false
+                    exam.measurements.handwritingStatus = .skipped
                     exam.advanceToTimedWalk()
                 }) {
                     Text("Skip handwriting this time")
@@ -275,7 +280,9 @@ public struct MotorExamView: View {
     private func captureHandwritingWithGlasses() {
         isAnalyzingHandwriting = true
         handwritingStatus = nil
+        let session = exam.examSessionID
         app.glasses.capturePhoto { result in
+            guard exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
             switch result {
             case let .success(jpeg):
                 self.analyzeHandwriting(jpeg: jpeg)
@@ -287,12 +294,15 @@ public struct MotorExamView: View {
     }
 
     private func analyzeHandwriting(jpeg: Data) {
+        guard exam.currentStep == .task2PromptedHandwriting else { return }
+        let session = exam.examSessionID
         isAnalyzingHandwriting = true
         handwritingStatus = nil
         Task {
             do {
                 let result = try await app.settings.api.analyzeHandwriting(jpeg: jpeg, sourceContext: .homeMotorExam)
                 await MainActor.run {
+                    guard exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
                     isAnalyzingHandwriting = false
                     if result.measured, let decay = result.opencvDecayPct {
                         exam.measurements.handwritingOpencvDecayPct = decay
@@ -306,6 +316,7 @@ public struct MotorExamView: View {
                 }
             } catch {
                 await MainActor.run {
+                    guard exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
                     isAnalyzingHandwriting = false
                     handwritingStatus = "Couldn't reach Cadence to measure the photo. Try again, or skip this step."
                 }
@@ -341,6 +352,11 @@ public struct MotorExamView: View {
                 }) {
                     Label("Start 10s Walk", systemImage: "figure.walk")
                 }
+                Button("Skip walk and save") {
+                    cleanUpTimers()
+                    exam.measurements.walkStatus = .skipped
+                    saveExam()
+                }
             } else {
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
                     finishWalkTest()
@@ -363,8 +379,10 @@ public struct MotorExamView: View {
         }
         walkSinkToken = app.motion.addSink { sample in recorder.ingest(sample) }
 
+        let session = exam.examSessionID
         walkTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
             Task { @MainActor in
+                guard exam.examSessionID == session, exam.currentStep == .task3PromptedTimedWalk else { timer.invalidate(); return }
                 if walkSecondsRemaining > 1 {
                     walkSecondsRemaining -= 1
                 } else {
@@ -379,15 +397,21 @@ public struct MotorExamView: View {
         isWalkCountingDown = false
         stopWalkRecording()
         let result = walkRecorder.finish()
-        // Fewer than three seconds or no steps counted is not a measurement.
-        let measured = result.durationSec >= 3.0 && result.stepCount > 0
+        // A sparse/interrupted stream is not a zero-valued walking result.
+        let measured = walkRecorder.hasUsableRecording
         exam.measurements.walkCadenceSpm = measured ? result.cadenceSpm : 0
         exam.measurements.walkMeanFI = measured ? result.meanFreezeIndex : 0
         exam.measurements.walkFogCount = measured ? result.fogCount : 0
         exam.measurements.walkMeasured = measured
 
+        saveExam()
+    }
+
+    private func saveExam() {
+        let session = exam.examSessionID
         Task {
             await exam.completeExam()
+            guard exam.examSessionID == session, exam.currentStep == .completed else { return }
             if let record = exam.lastRecord {
                 app.recordDiary(.motorCheck, detail: TaskMetricsSummary.diaryDetail(record))
             }
@@ -441,9 +465,8 @@ public struct MotorExamView: View {
                 }
             }
 
-            Text(exam.lastResult == nil
-                 ? "Saved on your phone. It will be sent when you're back online."
-                 : "Saved in your diary to share with your care team. These are measurements, not a judgement of how you are doing.")
+            if let warning = exam.historyPersistenceWarning { InlineNotice(text: warning, color: CadenceTheme.caution, systemName: "exclamationmark.triangle.fill") }
+            Text(exam.lastResultSummary ?? "No result was saved. Please try again.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

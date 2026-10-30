@@ -98,25 +98,23 @@ def build_24h_diary_timeline(
     voice_rows: List[Dict[str, Any]],
     exam_rows: List[Dict[str, Any]],
     reference_end_utc: Optional[datetime] = None,
+    include_research_metrics: bool = True,
+    other_rows: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Aggregates all patient telemetry over the trailing 24 hours into 30-minute
     clinical diary buckets (up to 48 buckets) and classifies each bucket using
     classify_diary_bucket(). Also computes ON vs. OFF Home Motor Exam deltas.
     """
-    # Determine anchor time from latest event or current UTC time
-    all_timestamps: List[datetime] = []
-    for rows in (fog_rows, fall_rows, med_rows, writing_rows, voice_rows, exam_rows):
-        for r in rows:
-            dt = _parse_utc(str(r.get("timestamp_utc", "")))
-            if dt:
-                all_timestamps.append(dt)
-
-    end_time = reference_end_utc or (max(all_timestamps) if all_timestamps else datetime.now(timezone.utc))
-    # Align end_time up to the next 30-minute boundary
-    minute_floor = (end_time.minute // 30) * 30
-    bucket_end_anchor = end_time.replace(minute=minute_floor, second=0, microsecond=0) + timedelta(minutes=30)
-
+    end_time = reference_end_utc or datetime.now(timezone.utc)
+    if end_time.tzinfo is None: end_time = end_time.replace(tzinfo=timezone.utc)
+    end_time = end_time.astimezone(timezone.utc)
+    start_time = end_time-timedelta(hours=24)
+    def in_window(rows):
+        return [r for r in rows if (dt := _parse_utc(r.get('timestamp_utc',''))) and start_time <= dt < end_time]
+    fog_rows,fall_rows,med_rows,writing_rows,voice_rows,exam_rows = map(in_window,(fog_rows,fall_rows,med_rows,writing_rows,voice_rows,exam_rows))
+    other_rows = in_window(other_rows or [])
+    bucket_end_anchor = end_time
     # Extract doses & protein-conflict meals
     doses: List[datetime] = []
     conflict_meals: List[datetime] = []
@@ -130,20 +128,10 @@ def build_24h_diary_timeline(
             conflict_meals.append(dt)
     doses.sort()
 
-    # Build 16 buckets (8-hour active clinical window) or 48 buckets (24-hour window)
-    # Using buckets that cover the span of recorded events (min 8 buckets for compact view)
-    if all_timestamps:
-        earliest = min(all_timestamps)
-        earliest_floor = earliest.replace(
-            minute=(earliest.minute // 30) * 30, second=0, microsecond=0
-        )
-        span_buckets = max(8, min(48, int((bucket_end_anchor - earliest_floor).total_seconds() // 1800)))
-    else:
-        span_buckets = 8
-
-    start_anchor = bucket_end_anchor - timedelta(minutes=30 * span_buckets)
+    span_buckets = 48
+    start_anchor = start_time
     buckets: List[Dict[str, Any]] = []
-    state_counts = {"ON": 0, "WEARING_OFF": 0, "OFF": 0, "NO_DOSE": 0}
+    state_counts = {"ON": 0, "WEARING_OFF": 0, "OFF": 0, "NO_DOSE": 0, "UNKNOWN": 0}
 
     for k in range(span_buckets):
         b_start = start_anchor + timedelta(minutes=30 * k)
@@ -154,12 +142,10 @@ def build_24h_diary_timeline(
             r for r in fog_rows
             if (dt := _parse_utc(str(r.get("timestamp_utc", "")))) and b_start <= dt < b_end
         ]
-        b_falls = [
-            r for r in fall_rows
-            if (dt := _parse_utc(str(r.get("timestamp_utc", ""))))
-            and b_start <= dt < b_end
-            and r.get("status") not in {"canceled_false_alarm", "suppressed_unworn_drop"}
-        ]
+        b_all_falls = [r for r in fall_rows if b_start <= _parse_utc(r['timestamp_utc']) < b_end]
+        b_falls = [r for r in b_all_falls if r.get('status') not in {'canceled_false_alarm','suppressed_unworn_drop','candidate_check_in_pending'}]
+        b_meds = [r for r in med_rows if b_start <= _parse_utc(r['timestamp_utc']) < b_end]
+        b_other = [r for r in other_rows if b_start <= _parse_utc(r['timestamp_utc']) < b_end]
         b_writings = [
             r for r in writing_rows
             if (dt := _parse_utc(str(r.get("timestamp_utc", "")))) and b_start <= dt < b_end
@@ -187,24 +173,25 @@ def build_24h_diary_timeline(
             mins_since_dose = None
             protein_conflict = False
 
-        fog_count = len(b_fogs) + sum(int(ex.get("walk_fog_count", 0)) for ex in b_exams)
+        fog_count = len(b_fogs) + sum(int(ex.get("walk_fog_count") or 0) for ex in b_exams)
         fi_values = [float(r["peak_freeze_index"]) for r in b_fogs] + [
-            float(ex["walk_mean_fi"]) for ex in b_exams
+            float(ex["walk_mean_fi"]) for ex in b_exams if ex.get("walk_mean_fi") is not None
         ]
         mean_fi = max(fi_values) if fi_values else 0.8
 
         decay_values = [float(w["opencv_cc_decay_pct"]) for w in b_writings] + [
-            float(ex["handwriting_opencv_decay_pct"]) for ex in b_exams
+            float(ex["handwriting_opencv_decay_pct"]) for ex in b_exams if ex.get("handwriting_opencv_decay_pct") is not None
         ]
         worst_decay = min(decay_values) if decay_values else 0.0
 
         voice_values = [float(v["window_mean_dbfs"]) for v in b_voices] + [
-            float(ex["voice_mean_dbfs"]) for ex in b_exams
+            float(ex["voice_mean_dbfs"]) for ex in b_exams if ex.get("voice_mean_dbfs") is not None
         ]
         mean_voice = min(voice_values) if voice_values else -22.0
 
-        has_exam = len(b_exams) > 0
-        exam_score = float(b_exams[-1]["composite_motor_score"]) if has_exam else 100.0
+        complete_exams = [ex for ex in b_exams if ex.get('composite_motor_score') is not None]
+        has_exam = bool(complete_exams)
+        exam_score = float(complete_exams[0]['composite_motor_score']) if has_exam else 100.0
 
         metrics = DiaryBucketMetrics(
             fall_occurred=len(b_falls) > 0,
@@ -218,7 +205,9 @@ def build_24h_diary_timeline(
             minutes_since_last_dose=mins_since_dose,
             protein_conflict_active=protein_conflict,
         )
-        classified = classify_diary_bucket(metrics)
+        event_count = sum(len(rows) for rows in (b_fogs,b_all_falls,b_writings,b_voices,b_exams,b_meds,b_other))
+        has_motor_observation = bool(b_fogs or b_falls or b_writings or b_voices or any(ex.get('complete',ex.get('composite_motor_score') is not None) for ex in b_exams))
+        classified = classify_diary_bucket(metrics) if include_research_metrics and has_motor_observation else {'clinical_state':'UNKNOWN','symptom_burden_score':None}
         state = classified["clinical_state"]
         state_counts[state] += 1
 
@@ -226,12 +215,20 @@ def build_24h_diary_timeline(
             {
                 "bucket_start_utc": b_start.isoformat(),
                 "bucket_end_utc": b_end.isoformat(),
+                "observation_status": 'events_logged' if event_count else 'no_observations',
+                "event_count": event_count,
+                "check_in_logged": bool(b_all_falls),
+                "dose_logged_count": sum(r.get('event_type')=='dose_taken' for r in b_meds),
+                "meal_logged_count": sum(r.get('event_type')=='meal_logged' for r in b_meds),
+                "scene_check_count": len(b_other),
+                "monitoring_coverage": 'unknown',
                 "label_hhmm": b_start.strftime("%H:%M"),
                 "clinical_state": state,
                 "symptom_burden_score": classified["symptom_burden_score"],
                 "fog_count": fog_count,
                 "fall_occurred": len(b_falls) > 0,
-                "has_exam": has_exam,
+                "has_exam": bool(b_exams),
+                "exam_complete": bool(complete_exams),
                 "exam_composite_score": exam_score if has_exam else None,
                 "minutes_since_last_dose": mins_since_dose,
                 "protein_conflict_active": protein_conflict,
@@ -244,6 +241,7 @@ def build_24h_diary_timeline(
     # only a partial trough, so using the most recent one of either kind would
     # let a late wearing-off reading mask a much worse morning OFF baseline and
     # understate the patient's real medication response.
+    exam_rows = [ex for ex in exam_rows if ex.get("composite_motor_score") is not None]
     on_exams = [ex for ex in exam_rows if ex.get("medication_state_label") == "ON"]
     strict_off_exams = [
         ex for ex in exam_rows if ex.get("medication_state_label") == "OFF"
@@ -253,7 +251,7 @@ def build_24h_diary_timeline(
     ]
     off_exams = strict_off_exams or wearing_off_exams
     exam_delta: Optional[Dict[str, Any]] = None
-    if on_exams and off_exams:
+    if include_research_metrics and on_exams and off_exams:
         # Rows arrive newest-first; within a kind, compare the most recent.
         on_latest = on_exams[0]
         off_latest = off_exams[0]
@@ -284,5 +282,6 @@ def build_24h_diary_timeline(
         "wearing_off_pct": round(100.0 * state_counts["WEARING_OFF"] / total_b, 1),
         "off_pct": round(100.0 * state_counts["OFF"] / total_b, 1),
         "no_dose_pct": round(100.0 * state_counts["NO_DOSE"] / total_b, 1),
+        "unknown_pct": round(100.0 * state_counts["UNKNOWN"] / total_b, 1),
         "exam_on_vs_off_delta": exam_delta,
     }
