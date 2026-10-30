@@ -67,6 +67,13 @@ class DoseLogCreate(BaseModel):
     scheduled_time_utc: Optional[str] = None
 
 
+class DoseRetractionCreate(BaseModel):
+    event_uuid: str = Field(..., min_length=4)
+    retracted_event_uuid: str = Field(..., min_length=4)
+    timestamp_utc: str = Field(default_factory=utc_now_iso)
+    reason: Optional[str] = "user_undo"
+
+
 class MealLogCreate(BaseModel):
     event_uuid: str = Field(..., min_length=4)
     timestamp_utc: str = Field(default_factory=utc_now_iso)

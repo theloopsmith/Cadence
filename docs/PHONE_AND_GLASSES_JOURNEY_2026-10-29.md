@@ -2,6 +2,8 @@
 
 This follow-up prioritizes the working product entry point over adding features: connect a real iPhone to the Mac backend, take a requested photo from Meta glasses, receive Meta-backed observations, and hear the result.
 
+Launch fix: an unbound profile no longer replaces the app with Settings. Today, Diary and Help open before setup, after sign-out, and when a login fails offline. A connection notice/button opens Settings from Today. Hardware attachment/startup now reaches the normal launch path before server setup. Only an explicit pending reset or unreadable local profile blocks normal navigation. The launch regression and reset guard are covered by the current **289 passing Swift tests** and a successful actual app build; no app was launched or audio played during these checks.
+
 ## Findings and changes
 
 The existing backend listener was bound to **127.0.0.1:8000**. On an iPhone, localhost addresses the phone, so that configuration cannot reach the Mac. The previous profile guard also made a mistyped/loopback server address require erasing the local profile. Photo actions were inconsistent: surroundings used raw device capture, pill setup silently opened the phone camera after a glasses failure, and the handwriting/developer entry points emphasized the phone. The real SAM response may omit a confidence score, while iOS required one.
@@ -32,7 +34,7 @@ Local networking behavior and permission descriptions follow [Apple's local-netw
 ## Verification
 
 - **163 backend tests pass**, including authentication/role checks and durable server identity across initialization/separate databases.
-- **288 Swift tests pass** with `CADENCE_TEST_SILENT_AUDIO=1`. Regressions cover owner-preserving address repair, server-ID mismatch rejection, recovery between queue/profile commits, stale sign-out responses, bytes from the glasses, overlap rejection, timeout/empty-frame handling, replacement/disconnect, stalled connections and optional SAM confidence.
+- **289 Swift tests pass** with `CADENCE_TEST_SILENT_AUDIO=1`. Regressions cover launch before setup/after sign-out/offline login, owner-preserving address repair, server-ID mismatch rejection, recovery between queue/profile commits, stale sign-out responses, bytes from the glasses, overlap rejection, timeout/empty-frame handling, replacement/disconnect, stalled connections and optional SAM confidence.
 - The actual iOS simulator app target builds, including DAT. No app was launched and no audio was played.
 - The running backend returned HTTP 200 through **127.0.0.1:8001**, **192.168.86.249:8001**, and the `.local` hostname using macOS curl. The authenticated connection endpoint also returned HTTP 200 via the LAN IP. Python's hostname lookup did not resolve `.local`, so an explicit LAN-IP alternative is documented. These are Mac-side checks, not proof of an iPhone request.
 - No live photo/inference or caregiver notification was initiated in this run. Provider credentials were not printed.

@@ -10,6 +10,7 @@ os.environ["SQLITE_DB_PATH"] = _tmp_db.name
 
 from app.clients.circuit_breaker import PerModelCircuitBreakerRegistry, RequestDeadlineContext
 from app.config import settings
+settings.sqlite_db_path = _tmp_db.name
 from app.db import init_db_sync, _connect_sync
 from app.main import app
 

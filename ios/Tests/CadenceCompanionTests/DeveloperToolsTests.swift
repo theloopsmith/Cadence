@@ -42,6 +42,21 @@ final class DeveloperToolsTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: "cadence.developerMode"), "nothing persisted")
     }
 
+    func testLaunchKeepsHomeAvailableBeforeSetupAfterOfflineLoginAndAfterSignOut() async {
+        let (app, transport) = makeApp(defaultToken: "")
+        XCTAssertFalse(app.settings.profile.isBound)
+        XCTAssertEqual(CadenceLaunchScreen(settings: app.settings), .home)
+        transport.error = URLError(.notConnectedToInternet)
+        await app.auth.signIn(username: "phone", password: "fixture password")
+        XCTAssertNotNil(app.auth.errorMessage)
+        XCTAssertEqual(CadenceLaunchScreen(settings: app.settings), .home)
+        app.settings.deviceToken = "fixture-device-key"
+        XCTAssertTrue(app.settings.profile.isBound)
+        XCTAssertEqual(CadenceLaunchScreen(settings: app.settings), .home)
+        app.auth.signOut()
+        XCTAssertEqual(CadenceLaunchScreen(settings: app.settings), .home)
+    }
+
     func testDeliveryPollingRecordsDistinctEvidenceOnceAndRejectsOtherSessions() async throws {
         let (app, transport) = makeApp(defaultToken: "")
         // Start with no token so the automatic poller cannot consume test responses.
@@ -102,6 +117,7 @@ final class DeveloperToolsTests: XCTestCase {
         app.fallAlert.cancelByUser()
         XCTAssertTrue(app.resetLocalProfile())
         XCTAssertTrue(app.settings.restartRequired)
+        XCTAssertEqual(CadenceLaunchScreen(settings: app.settings), .restart)
         XCTAssertFalse(app.motion.isRunning)
         let before = try app.diary.events(on: Date()).count
         app.recordDiary(.doseTaken, detail: "late callback")

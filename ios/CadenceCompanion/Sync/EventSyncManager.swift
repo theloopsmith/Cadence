@@ -310,6 +310,27 @@ public final class EventSyncManager {
         }
     }
 
+    public func isEventSynced(_ uuid: String) -> Bool {
+        dbQueue.sync {
+            var stmt: OpaquePointer?; defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, "SELECT synced FROM pending_events WHERE event_uuid=? AND owner_id=? AND destination=?", -1, &stmt, nil) == SQLITE_OK else { return false }
+            bind(stmt, 1, uuid); bind(stmt, 2, currentOwner ?? ""); bind(stmt, 3, currentURL)
+            return sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int(stmt, 0) == 1
+        }
+    }
+
+    /// Drops pre-wipe pending events so offline data from before a server reset is never uploaded.
+    public func purgeEventsCreatedBefore(isoUTC: String) {
+        dbQueue.sync {
+            guard let owner = currentOwner else { return }
+            var stmt: OpaquePointer?; defer { sqlite3_finalize(stmt) }
+            let sql = "UPDATE pending_events SET synced=1 WHERE synced=0 AND owner_id=? AND destination=? AND created_at_utc<=?"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            bind(stmt, 1, owner); bind(stmt, 2, currentURL); bind(stmt, 3, isoUTC)
+            sqlite3_step(stmt)
+        }
+    }
+
     /// Only migrate this owner's records after an authenticated address repair.
     func relocateDestination(from: String, to: String, owner: String) throws {
         try dbQueue.sync {

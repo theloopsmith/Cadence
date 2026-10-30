@@ -27,6 +27,7 @@ from app.db import (
 )
 from app.models import (
     DoseLogCreate,
+    DoseRetractionCreate,
     FallEventCreate,
     FoGEventCreate,
     HandwritingAnalyzeRequest,
@@ -95,10 +96,23 @@ async def health_check() -> Dict[str, str]:
 
 
 @app.get('/api/v1/device/connection')
-async def device_connection(auth: AuthContext = Depends(require_device_writer)):
+async def device_connection(
+    auth: AuthContext = Depends(require_device_writer),
+    include_wipe_status: bool = Query(False),
+):
     identity = await fetch_one('SELECT server_id FROM server_identity WHERE singleton=1')
-    return {'service': 'cadence-accessibility-companion', 'server_id': identity['server_id'],
-            'patient_id': auth.patient_id}
+    data = {
+        'service': 'cadence-accessibility-companion',
+        'server_id': identity['server_id'],
+        'patient_id': auth.patient_id,
+    }
+    if include_wipe_status:
+        wipe_row = await fetch_one(
+            'SELECT MAX(wiped_at_utc) AS latest_wipe_utc FROM patient_wipes WHERE patient_id = ?',
+            (auth.patient_id,),
+        )
+        data['latest_wipe_utc'] = wipe_row['latest_wipe_utc'] if wipe_row else None
+    return data
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -191,12 +205,26 @@ async def login(payload: LoginRequest) -> Dict[str, Any]:
     }
 
 
+async def check_event_wiped(patient_id: str, timestamp_utc: Optional[str]) -> bool:
+    if not timestamp_utc:
+        return False
+    row = await fetch_one(
+        "SELECT MAX(wiped_at_utc) AS latest_wipe FROM patient_wipes WHERE patient_id = ?",
+        (patient_id,),
+    )
+    if row and row["latest_wipe"]:
+        return str(timestamp_utc) <= str(row["latest_wipe"])
+    return False
+
+
 # ==================== PIPELINE 1: FREEZING OF GAIT (FoG) ====================
 @app.post("/api/v1/events/fog")
 async def log_fog_event(
     payload: FoGEventCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+        return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     await execute_write(
         """
         INSERT INTO fog_events (
@@ -230,6 +258,8 @@ async def log_and_escalate_fall(
     payload: FallEventCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+        return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     result = await fall_escalation_manager.ingest_fall_event(
         patient_id=auth.patient_id,
         payload=payload,
@@ -303,6 +333,18 @@ async def log_medication_dose(
     payload: DoseLogCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+        return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
+    retracted = await fetch_one(
+        "SELECT 1 FROM medication_retractions WHERE patient_id = ? AND retracted_event_uuid = ?",
+        (auth.patient_id, payload.event_uuid),
+    )
+    if retracted:
+        return {
+            "status": "retracted_ignored",
+            "event_uuid": payload.event_uuid,
+            "detail": "Dose was already retracted by user undo",
+        }
     await execute_write(
         """
         INSERT INTO medication_logs (
@@ -322,8 +364,50 @@ async def log_medication_dose(
     return {"status": "logged", "event_uuid": payload.event_uuid, "event_type": "dose_taken"}
 
 
+@app.post("/api/v1/medication/dose/retract")
+async def retract_medication_dose(
+    payload: DoseRetractionCreate,
+    auth: AuthContext = Depends(require_device_writer),
+) -> Dict[str, Any]:
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+        return {
+            "status": "dropped_wiped",
+            "event_uuid": payload.event_uuid,
+            "detail": "Retraction dropped because it predates a patient data reset",
+        }
+    await execute_write(
+        """
+        INSERT INTO medication_retractions (
+            patient_id, event_uuid, retracted_event_uuid, timestamp_utc, reason
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(event_uuid) DO NOTHING
+        """,
+        (
+            auth.patient_id,
+            payload.event_uuid,
+            payload.retracted_event_uuid,
+            payload.timestamp_utc,
+            payload.reason or "user_undo",
+        ),
+    )
+    await execute_write(
+        """
+        DELETE FROM medication_logs
+        WHERE patient_id = ? AND event_uuid = ?
+        """,
+        (auth.patient_id, payload.retracted_event_uuid),
+    )
+    return {
+        "status": "retracted",
+        "event_uuid": payload.event_uuid,
+        "retracted_event_uuid": payload.retracted_event_uuid,
+    }
+
+
 @app.post("/api/v1/meals/log")
 async def log_meal_time(payload: MealLogCreate, auth: AuthContext = Depends(require_device_writer)) -> Dict[str, Any]:
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+        return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     await execute_write(
         """INSERT INTO medication_logs (patient_id, event_uuid, timestamp_utc, event_type)
            VALUES (?, ?, ?, 'meal_logged') ON CONFLICT(event_uuid) DO NOTHING""",
@@ -407,6 +491,8 @@ async def reality_check_endpoint(
     payload: RealityCheckRequest,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+        return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     img_bytes = (
         base64.b64decode(payload.image_base64) if payload.image_base64 else None
     )
@@ -449,6 +535,8 @@ async def analyze_handwriting_endpoint(
     payload: HandwritingAnalyzeRequest,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+        return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     img_bytes = (
         base64.b64decode(payload.image_base64) if payload.image_base64 else None
     )
@@ -517,6 +605,8 @@ async def log_voice_event(
     payload: VoiceLogCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+        return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     await execute_write(
         """
         INSERT INTO voice_logs (
@@ -543,6 +633,8 @@ async def complete_home_motor_exam(
     payload: HomeMotorExamCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+        return {"status": "dropped_wiped", "exam_uuid": payload.exam_uuid}
     if payload.measurement_source == 'simulated':
         reject_simulated_inputs(simulated_exam=True)
     raw = payload.model_dump()
@@ -737,9 +829,11 @@ async def delete_patient_data(
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
     deleted_counts = await wipe_patient_data(auth.patient_id)
+    wiped_at_utc = deleted_counts.pop("wiped_at_utc", None)
     return {
         "status": "wiped",
         "patient_id": auth.patient_id,
+        "wiped_at_utc": wiped_at_utc,
         "deleted_rows": deleted_counts,
     }
 
@@ -763,6 +857,7 @@ async def seed_demo_patient_timeline(
     re-running the demo never places a live Twilio call.
     """
     pid = auth.patient_id
+    await execute_write("DELETE FROM patient_wipes WHERE patient_id = ?", (pid,))
     seed_base = datetime.now(timezone.utc) - timedelta(hours=21)
     def demo_time(hour,minute):
         return (seed_base+timedelta(hours=hour,minutes=minute)).isoformat()

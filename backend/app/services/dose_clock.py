@@ -38,8 +38,11 @@ async def dose_timestamp_at_or_before(patient_id: str, event_iso: str) -> Option
         """
         SELECT timestamp_utc FROM medication_logs
         WHERE patient_id = ? AND event_type = 'dose_taken'
+          AND event_uuid NOT IN (
+              SELECT retracted_event_uuid FROM medication_retractions WHERE patient_id = ?
+          )
         """,
-        (patient_id,),
+        (patient_id, patient_id),
     )
     return latest_dose_at_or_before(
         (str(row["timestamp_utc"]) for row in rows),

@@ -177,6 +177,25 @@ CREATE TABLE IF NOT EXISTS voice_logs (
     nudge_triggered INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_voice_logs_patient_ts ON voice_logs(patient_id, timestamp_utc);
+
+-- 10. Medication Retractions (Dose Undo Idempotent Ledger)
+CREATE TABLE IF NOT EXISTS medication_retractions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id TEXT NOT NULL DEFAULT 'default_patient',
+    event_uuid TEXT UNIQUE NOT NULL,
+    retracted_event_uuid TEXT NOT NULL,
+    timestamp_utc TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'user_undo'
+);
+CREATE INDEX IF NOT EXISTS idx_medication_retractions_patient_target ON medication_retractions(patient_id, retracted_event_uuid);
+
+-- 11. Patient Wipe History (Server-Wipe & Queue Coordination)
+CREATE TABLE IF NOT EXISTS patient_wipes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id TEXT NOT NULL,
+    wiped_at_utc TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_patient_wipes_patient_ts ON patient_wipes(patient_id, wiped_at_utc);
 """
 
 
@@ -466,13 +485,14 @@ async def purge_expired_telemetry(db_path: Optional[str] = None) -> Dict[str, in
 def wipe_patient_data_sync(
     patient_id: str,
     db_path: Optional[str] = None,
-) -> Dict[str, int]:
+) -> Dict[str, Any]:
     """
     Explicit patient-initiated wipe (DELETE /api/v1/patient/data).
-    Deletes all rows for the bound patient_id across all 8 tables, including incident audit rows.
+    Deletes all rows for the bound patient_id across all tables, including incident audit rows,
+    and logs the wipe timestamp in patient_wipes for offline upload coordination.
     """
     conn = _connect_sync(db_path)
-    deleted: Dict[str, int] = {}
+    deleted: Dict[str, Any] = {}
     try:
         # Delete child caregiver_alerts first due to foreign key
         tables_ordered = [
@@ -481,6 +501,7 @@ def wipe_patient_data_sync(
             "fall_events",
             "fog_events",
             "medication_logs",
+            "medication_retractions",
             "reality_checks",
             "handwriting_logs",
             "motor_exams",
@@ -491,7 +512,14 @@ def wipe_patient_data_sync(
                 f"DELETE FROM {table} WHERE patient_id = ?", (patient_id,)
             )
             deleted[table] = cur.rowcount
+
+        wiped_at_utc = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "INSERT INTO patient_wipes (patient_id, wiped_at_utc) VALUES (?, ?)",
+            (patient_id, wiped_at_utc),
+        )
         conn.commit()
+        deleted["wiped_at_utc"] = wiped_at_utc
         return deleted
     finally:
         conn.close()

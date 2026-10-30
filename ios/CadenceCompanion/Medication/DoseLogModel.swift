@@ -64,8 +64,22 @@ public final class DoseLogModel: ObservableObject {
     /// Takes the last dose back. Available until the next action.
     public func undo() {
         guard let last = lastLogged else { return }
+        let now = clock()
         try? diary.remove(id: last.diaryID)
-        sync.withdrawPending(last.eventUUID)
+        let withdrawn = sync.withdrawPending(last.eventUUID)
+        if !withdrawn || sync.isEventSynced(last.eventUUID) {
+            let retractionUUID = UUID().uuidString
+            _ = sync.saveLocalImmediate(
+                eventUUID: retractionUUID,
+                endpoint: "/api/v1/medication/dose/retract",
+                payload: [
+                    "event_uuid": retractionUUID,
+                    "retracted_event_uuid": last.eventUUID,
+                    "timestamp_utc": ISO8601DateFormatter().string(from: now),
+                    "reason": "user_undo"
+                ]
+            )
+        }
         takenToday.removeAll { $0 == last.at }
         lastLogged = nil
         canUndo = false

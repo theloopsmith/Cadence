@@ -21,10 +21,19 @@ def snapshot_sync(patient_id, end=None):
         # enforce the exact UTC half-open interval in Python, including microseconds.
         params = (patient_id, (start-timedelta(seconds=1)).isoformat(), (end+timedelta(seconds=1)).isoformat())
         predicate = 'patient_id=? AND julianday(timestamp_utc)>=julianday(?) AND julianday(timestamp_utc)<julianday(?)'
+        retracted_uuids = {
+            r[0]
+            for r in conn.execute(
+                "SELECT retracted_event_uuid FROM medication_retractions WHERE patient_id=?",
+                (patient_id,),
+            )
+        }
         def rows_for(table):
             rows = []
             for raw in conn.execute(f'SELECT * FROM {table} WHERE {predicate}',params):
                 row = dict(raw)
+                if table == 'medication_logs' and row.get('event_uuid') in retracted_uuids:
+                    continue
                 try: at = parse_utc(row['timestamp_utc'])
                 except (ValueError,TypeError): continue
                 if start <= at < end:

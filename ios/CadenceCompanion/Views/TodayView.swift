@@ -30,10 +30,14 @@ struct TodayView: View {
                     }
                     if app.auth.needsSignIn {
                         InlineNotice(
-                            text: "Cadence is keeping today's events on this phone until it's signed in. You can sign in anytime in Settings.",
+                            text: app.settings.profile.isBound
+                                ? "Your diary works offline. Sign in through Settings when you want to sync this wearer's events."
+                                : "You can use Cadence now. Connect your server in Settings to enable online checks. Events recorded before account setup stay on this phone.",
                             color: CadenceTheme.accent,
                             systemName: "info.circle.fill"
                         )
+                        Button("Set up connection") { showSettings = true }
+                            .buttonStyle(.bordered)
                     }
                     if app.settings.sync.quarantinedCount() > 0 {
                         InlineNotice(text: "Older events with an unknown account are held on this phone and will not be sent under a new sign-in.", color: CadenceTheme.caution, systemName: "person.crop.circle.badge.exclamationmark")
