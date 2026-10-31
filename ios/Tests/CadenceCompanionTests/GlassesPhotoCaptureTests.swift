@@ -147,6 +147,61 @@ final class GlassesPhotoCaptureTests: XCTestCase {
         XCTAssertTrue(session.cameraError?.contains("disconnected") == true)
     }
 
+    func testFreshVideoFramesClearPriorCameraErrorAndEnableNextCapture() async {
+        let device = HeldPhotoGlasses(); let session = session(); session.attach(device)
+        session.startCameraPreview()
+        device.onCameraError?("Glasses video paused. Check that the glasses are worn and unfolded, then retry.")
+        await Task.yield(); await Task.yield()
+        XCTAssertEqual(session.cameraError, "Glasses video paused. Check that the glasses are worn and unfolded, then retry.")
+        XCTAssertNil(session.previewFrame)
+
+        // Fresh frame arrives once glasses are unfolded or resumed
+        device.onCameraFrame?(Data("fresh live frame".utf8))
+        await Task.yield(); await Task.yield()
+        XCTAssertNil(session.cameraError)
+        XCTAssertEqual(session.previewFrame, Data("fresh live frame".utf8))
+
+        // Can capture photo now that preview is restored
+        var capturedPhoto: Data?
+        session.capturePhoto { result in
+            if case .success(let data) = result { capturedPhoto = data }
+        }
+        XCTAssertTrue(session.isCapturingPhoto)
+        XCTAssertEqual(device.requests.count, 1)
+        device.requests[0](.success(Data("captured jpeg".utf8)))
+        XCTAssertEqual(capturedPhoto, Data("captured jpeg".utf8))
+        XCTAssertFalse(session.isCapturingPhoto)
+        session.stopCameraPreview()
+    }
+
+    func testConsecutivePhotoCapturesSucceedWithoutBreakingPreview() async {
+        let device = HeldPhotoGlasses(); let session = session(); session.attach(device)
+        session.startCameraPreview()
+
+        // First capture
+        var firstPhoto: Data?
+        session.capturePhoto { result in
+            if case .success(let data) = result { firstPhoto = data }
+        }
+        XCTAssertEqual(device.requests.count, 1)
+        device.requests[0](.success(Data("photo 1".utf8)))
+        XCTAssertEqual(firstPhoto, Data("photo 1".utf8))
+        XCTAssertFalse(session.isCapturingPhoto)
+        XCTAssertTrue(session.isPreviewOpen)
+
+        // Second consecutive capture
+        var secondPhoto: Data?
+        session.capturePhoto { result in
+            if case .success(let data) = result { secondPhoto = data }
+        }
+        XCTAssertEqual(device.requests.count, 2)
+        device.requests[1](.success(Data("photo 2".utf8)))
+        XCTAssertEqual(secondPhoto, Data("photo 2".utf8))
+        XCTAssertFalse(session.isCapturingPhoto)
+        XCTAssertTrue(session.isPreviewOpen)
+        session.stopCameraPreview()
+    }
+
     func testMissingOrStaleVideoStopsCameraAndFencesLateFrames() async throws {
         for sendsInitialFrame in [false, true] {
             let device = HeldPhotoGlasses()

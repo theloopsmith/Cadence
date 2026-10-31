@@ -205,6 +205,9 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
                 guard let self, self.isPreviewOpen, self.previewID == id, !data.isEmpty else { return }
                 self.lastFrameAt = Date()
                 self.previewFrame = data
+                if self.cameraError != nil {
+                    self.cameraError = nil
+                }
             }
         }
         device.onCameraPhoto = { [weak self] data in
@@ -226,6 +229,7 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
             while !Task.isCancelled {
                 do { try await Task.sleep(nanoseconds: tick) } catch { return }
                 guard let self, self.previewID == id, self.isPreviewOpen else { return }
+                if self.isCapturingPhoto { continue }
                 let stale = self.lastFrameAt.map { Date().timeIntervalSince($0) > self.previewStaleTimeoutSec }
                     ?? (Date().timeIntervalSince(openedAt) > self.previewFirstFrameTimeoutSec)
                 if stale {

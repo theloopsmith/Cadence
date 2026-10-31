@@ -93,7 +93,9 @@ public struct RealityCheckView: View {
                 stopVoiceInput()
             }
             .sheet(isPresented: $showSignIn) { SettingsView(app: app) }
-            .sheet(isPresented: $showGlassesCamera) {
+            .sheet(isPresented: $showGlassesCamera, onDismiss: {
+                automaticVoiceCapture = false
+            }) {
                 GlassesCameraView(glasses: app.glasses, voice: app.companion, captureWhenReady: automaticVoiceCapture) { jpeg in
                     fromGlasses = true
                     photoSource = app.isUsingMockGlasses ? "Mock glasses (simulated)" : "Meta glasses"
@@ -343,6 +345,7 @@ public struct RealityCheckView: View {
         guard !isChecking else { return }
         stopVoiceInput()
         errorMessage = nil
+        automaticVoiceCapture = false
         showGlassesCamera = true
     }
 

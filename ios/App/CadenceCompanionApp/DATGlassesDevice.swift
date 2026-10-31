@@ -304,15 +304,39 @@ public final class DATGlassesDevice: GlassesDevice {
                 camera.stream.errorPublisher.listen { [weak self] error in
                     Task { @MainActor in
                         guard let self, self.previewGeneration == id else { return }
-                        self.onCameraError?(error.localizedDescription)
+                        let message: String
+                        switch error {
+                        case .hingesClosed:
+                            message = "Glasses hinges are closed. Unfold the glasses to view video."
+                        case .thermalHot:
+                            message = "Glasses are too warm. Allow them to cool down before using the camera."
+                        case .batteryLow, .peakPowerLimit:
+                            message = "Glasses battery is low. Charge glasses to use the camera."
+                        case .permissionDenied:
+                            message = "Camera permission was denied in Meta AI."
+                        default:
+                            message = error.localizedDescription
+                        }
+                        self.onCameraError?(message)
                         self.finishCapture(.failure(.captureFailed))
                     }
                 }.store(in: previewTokens)
                 camera.stream.statePublisher.listen { [weak self] state in
                     Task { @MainActor in
-                        guard let self, self.previewGeneration == id else { return }
-                        if state == .paused || state == .stopped {
-                            self.onCameraError?("Glasses video paused. Check that the glasses are worn and unfolded, then retry.")
+                        guard let self, self.previewGeneration == id, self.previewActive else { return }
+                        switch state {
+                        case .streaming:
+                            // Stream is active and delivering frames; normal operation.
+                            break
+                        case .paused:
+                            // While taking a photo, the hardware stream pauses to capture
+                            // the still image. That is expected and must not trigger an error.
+                            if self.captureCompletion == nil {
+                                self.onCameraError?("Glasses video paused. Check that the glasses are worn and unfolded, then retry.")
+                            }
+                        case .starting, .waitingForDevice, .stopping, .stopped:
+                            // Normal lifecycle transitions during setup and teardown; not an error.
+                            break
                         }
                     }
                 }.store(in: previewTokens)

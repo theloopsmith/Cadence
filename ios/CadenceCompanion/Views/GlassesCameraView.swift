@@ -47,7 +47,11 @@ struct GlassesCameraView: View {
                         onUsePhoto?(captured)
                         dismiss()
                     }.buttonStyle(.borderedProminent)
-                    Button("Retake") { self.captured = nil; error = nil }
+                    Button("Retake") {
+                        self.captured = nil
+                        self.error = nil
+                        glasses.startCameraPreview()
+                    }
                 } else {
                     Text("Look through your glasses. Tap Capture here, or press the glasses shutter if supported. Photos taken outside this camera session are not imported automatically.")
                         .font(.footnote).foregroundColor(.secondary)
@@ -65,7 +69,10 @@ struct GlassesCameraView: View {
             .navigationTitle(title)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             .onAppear {
-                voice.enterFlow(id: voiceFlowID, destination: .camera, step: captured == nil ? .cameraPreview : .photoReview)
+                captured = nil
+                error = nil
+                attemptedAutomaticCapture = false
+                voice.enterFlow(id: voiceFlowID, destination: .camera, step: .cameraPreview)
                 glasses.startCameraPreview()
             }
             .onDisappear { glasses.stopCameraPreview(); voice.leaveFlow(id: voiceFlowID) }
@@ -80,7 +87,11 @@ struct GlassesCameraView: View {
                     guard let captured else { voice.say("Take a photo first. Say capture when you're ready."); return }
                     glasses.stopCameraPreview(); onUsePhoto?(captured); dismiss()
                 case .retry: captured = nil; error = nil; glasses.startCameraPreview()
-                case .retake: captured = nil; error = nil; voice.say("Let's try another photo. Say capture when you're ready.")
+                case .retake:
+                    captured = nil
+                    error = nil
+                    glasses.startCameraPreview()
+                    voice.say("Let's try another photo. Say capture when you're ready.")
                 case .cancel: dismiss()
                 default: break
                 }
