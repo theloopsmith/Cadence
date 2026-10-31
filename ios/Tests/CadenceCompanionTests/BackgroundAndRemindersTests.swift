@@ -75,12 +75,41 @@ final class RecordingNotificationCenter: DoseNotificationCentering {
     var removedAll = 0
 
     func requestAuthorization() async -> Bool { authorized }
-    func add(_ request: DoseReminderRequest) { requested.append(request) }
+    var failAdds = false
+    func pendingIdentifiers() async -> [String] { requested.map(\.identifier) }
+    func add(_ request: DoseReminderRequest) async throws {
+        if failAdds { throw CocoaError(.fileWriteUnknown) }
+        requested.removeAll { $0.identifier == request.identifier }
+        requested.append(request)
+    }
     func removePending(withIdentifiers ids: [String]) {
         removedIdentifiers += ids
         requested.removeAll { ids.contains($0.identifier) }
     }
+    func removeDelivered(withIdentifiers ids: [String]) { deliveredRemovedIdentifiers += ids }
+    var deliveredRemovedIdentifiers: [String] = []
     func removeAllPending() { removedAll += 1; requested.removeAll() }
+}
+
+private final class HeldReminderAdd: DoseNotificationCentering {
+    let started: XCTestExpectation
+    var continuation: CheckedContinuation<Void, Never>?
+    var pending: [DoseReminderRequest] = []
+    var hold = true
+    init(_ started: XCTestExpectation) { self.started = started }
+    func requestAuthorization() async -> Bool { true }
+    func pendingIdentifiers() async -> [String] { pending.map(\.identifier) }
+    func add(_ request: DoseReminderRequest) async throws {
+        if hold {
+            hold = false
+            await withCheckedContinuation { continuation = $0; started.fulfill() }
+        }
+        pending.removeAll { $0.identifier == request.identifier }
+        pending.append(request)
+    }
+    func removePending(withIdentifiers ids: [String]) { pending.removeAll { ids.contains($0.identifier) } }
+    func removeDelivered(withIdentifiers ids: [String]) {}
+    func removeAllPending() { pending.removeAll() }
 }
 
 @MainActor
@@ -109,7 +138,7 @@ final class DoseReminderSchedulerTests: XCTestCase {
         let scheduler = DoseReminderScheduler(center: center)
         await scheduler.sync(schedule)
 
-        XCTAssertEqual(center.removedAll, 1, "old reminders are cleared before new ones are set")
+        XCTAssertEqual(center.removedAll, 0, "sync preserves other notification categories")
         XCTAssertEqual(center.requested.count, 3)
         let hours = center.requested.map(\.hour)
         XCTAssertEqual(hours, [8, 12, 17])
@@ -123,6 +152,60 @@ final class DoseReminderSchedulerTests: XCTestCase {
             XCTAssertFalse(lower.contains("must"))
         }
         XCTAssertEqual(Set(center.requested.map(\.identifier)).count, 3, "identifiers are distinct")
+    }
+
+    func testResetDuringSystemAddCannotLeaveReminderBehind() async {
+        let started = expectation(description: "System add started")
+        let center = HeldReminderAdd(started)
+        let scheduler = DoseReminderScheduler(center: center)
+        let operation = Task { await scheduler.sync(schedule) }
+        await fulfillment(of: [started], timeout: 2)
+        scheduler.suspendForLocalReset()
+        center.continuation?.resume()
+        await operation.value
+        XCTAssertTrue(center.pending.isEmpty)
+        XCTAssertEqual(scheduler.status, .none)
+    }
+
+    func testNewPlanWinsWhenPreviousSystemAddFinishesLate() async {
+        let started = expectation(description: "Old plan add started")
+        let center = HeldReminderAdd(started)
+        let scheduler = DoseReminderScheduler(center: center)
+        let old = Task { await scheduler.sync(schedule) }
+        await fulfillment(of: [started], timeout: 2)
+        let replacement = MedicationSchedule(medicationName: "Replacement", doseTimes: [DoseTime(hour: 9, minute: 0)])
+        let latest = Task { await scheduler.sync(replacement) }
+        await Task.yield()
+        center.continuation?.resume()
+        await old.value; await latest.value
+        XCTAssertEqual(center.pending.count, 1)
+        XCTAssertTrue(center.pending[0].title.contains("Replacement"))
+        XCTAssertEqual(scheduler.status, .scheduled(1))
+    }
+
+    func testRejectedUpdatePreservesValidRemindersAndCanRetry() async {
+        let center = RecordingNotificationCenter()
+        let scheduler = DoseReminderScheduler(center: center)
+        await scheduler.sync(schedule)
+        let original = center.requested
+        center.failAdds = true
+        await scheduler.sync(schedule)
+        XCTAssertEqual(scheduler.status, .failed)
+        XCTAssertEqual(center.requested, original)
+        center.failAdds = false
+        await scheduler.sync(schedule)
+        XCTAssertEqual(scheduler.status, .scheduled(3))
+        XCTAssertEqual(center.requested.count, 3)
+    }
+
+    func testFailedPlanChangeStillRemovesObsoleteMedicationTimes() async {
+        let center = RecordingNotificationCenter()
+        let scheduler = DoseReminderScheduler(center: center)
+        await scheduler.sync(schedule)
+        center.failAdds = true
+        await scheduler.sync(MedicationSchedule(medicationName: "New medicine", doseTimes: [DoseTime(hour: 9, minute: 0)]))
+        XCTAssertEqual(scheduler.status, .failed)
+        XCTAssertTrue(center.requested.isEmpty, "Removed medications must not continue reminding")
     }
 
     func testAnEmptyScheduleClearsEverything() async {
@@ -142,31 +225,37 @@ final class DoseReminderSchedulerTests: XCTestCase {
         XCTAssertEqual(scheduler.status, .notAllowed)
     }
 
-    /// Once today's dose is logged, today's reminder for it is withdrawn so
-    /// the phone does not nag about a pill already taken.
-    func testLoggingADoseWithdrawsTodaysReminderForIt() async {
+    func testLoggingPreservesDailySeriesAndDismissesOnlyMatchingDeliveredReminder() async {
         let center = RecordingNotificationCenter()
         let scheduler = DoseReminderScheduler(center: center)
         await scheduler.sync(schedule)
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC")!
-        let s = MedicationSchedule(medicationName: "Levodopa", doseTimes: schedule.doseTimes, calendar: cal)
-        let eightAM = cal.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 8, minute: 5))!
+        let before = center.requested
+        let date = schedule.doseDates(on: Date())[0].addingTimeInterval(300)
+        scheduler.doseTaken(at: date, schedule: schedule)
+        scheduler.doseTaken(at: date, schedule: schedule)
+        XCTAssertEqual(center.requested, before)
+        XCTAssertTrue(center.removedIdentifiers.isEmpty)
+        let id = DoseReminderScheduler.identifier(for: schedule.doseTimes[0], medication: schedule.medicationName)
+        XCTAssertEqual(center.deliveredRemovedIdentifiers, [id, id])
+        XCTAssertTrue(center.requested.allSatisfy { $0.repeatsDaily && $0.onDay == nil })
+        // No dated one-off replaces the series: the same time-only trigger
+        // remains eligible on tomorrow and every subsequent day without sync.
+        for request in center.requested {
+            var components = DateComponents(); components.hour = request.hour; components.minute = request.minute
+            let tomorrow = Calendar.current.nextDate(after: date, matching: components, matchingPolicy: .nextTime)!
+            let following = Calendar.current.nextDate(after: tomorrow, matching: components, matchingPolicy: .nextTime)!
+            XCTAssertGreaterThan(following, tomorrow)
+            XCTAssertEqual(Calendar.current.component(.hour, from: following), request.hour)
+        }
+    }
 
-        scheduler.doseTaken(at: eightAM, schedule: s)
-
-        XCTAssertEqual(center.removedIdentifiers.count, 1)
-        XCTAssertTrue(center.removedIdentifiers[0].contains("08-00"))
-        // Today's daily reminder is gone; a one-off covers tomorrow. A
-        // repeating trigger cannot start in the future, so the daily series
-        // returns on the next sync, which runs at launch and on any change.
-        let eights = center.requested.filter { $0.hour == 8 }
-        XCTAssertEqual(eights.count, 1)
-        XCTAssertFalse(eights[0].repeatsDaily)
-        XCTAssertEqual(eights[0].onDay?.day, 16)
-        XCTAssertEqual(center.requested.count, 3, "the other dose times are untouched")
-
-        await scheduler.sync(s)
-        XCTAssertEqual(center.requested.filter { $0.hour == 8 && $0.repeatsDaily }.count, 1)
+    func testEarlyDoseDoesNotCancelFutureRemindersAndCopyAsksToCheckRecords() async {
+        let center = RecordingNotificationCenter()
+        let scheduler = DoseReminderScheduler(center: center)
+        await scheduler.sync(schedule)
+        scheduler.doseTaken(at: schedule.doseDates(on: Date())[0].addingTimeInterval(-600), schedule: schedule)
+        XCTAssertEqual(center.requested.count, schedule.doseTimes.count)
+        XCTAssertTrue(center.requested.allSatisfy(\.repeatsDaily))
+        XCTAssertTrue(center.requested.allSatisfy { $0.body.contains("dose record") && $0.body.contains("If unsure") })
     }
 }

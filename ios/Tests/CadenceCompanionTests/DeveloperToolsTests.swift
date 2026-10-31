@@ -44,6 +44,48 @@ final class DeveloperToolsTests: XCTestCase {
         XCTAssertEqual(app.settings.medications.count, 2)
     }
 
+    func testSpokenMedicationSelectionUsesTheChosenRecordAndReadback() throws {
+        let (app, _) = makeApp()
+        try app.settings.saveMedicationPlan([
+            MedicationSchedule(medicationName: "First medicine", doseTimes: [DoseTime(hour: 8, minute: 0)]),
+            MedicationSchedule(medicationName: "Second medicine", doseTimes: [DoseTime(hour: 9, minute: 0)])
+        ])
+        XCTAssertEqual(app.companion.medicationNames?(), ["First medicine", "Second medicine"])
+        XCTAssertEqual(app.companion.selectMedication?("Second medicine"), true)
+        XCTAssertEqual(app.settings.schedule.medicationName, "Second medicine")
+        XCTAssertTrue(app.companion.confirmationPrompt?(.logDose)?.contains("Second medicine") == true)
+        XCTAssertTrue(app.doses.takenToday.isEmpty)
+        _ = app.companion.execute?(.logDose)
+        XCTAssertEqual(app.doses.takenToday.count, 1)
+        app.settings.selectMedication(named: "First medicine")
+        XCTAssertTrue(app.doses.takenToday.isEmpty)
+    }
+
+    func testUndoPreservesRepeatingRemindersForBothMedications() async throws {
+        let center = RecordingNotificationCenter()
+        let (app, _) = makeApp(notifications: center)
+        let now = Date()
+        let cal = Calendar.current
+        let time = DoseTime(hour: cal.component(.hour, from: now), minute: cal.component(.minute, from: now))
+        let first = MedicationSchedule(medicationName: "First medicine", doseTimes: [time])
+        let second = MedicationSchedule(medicationName: "Second medicine", doseTimes: [time])
+        try app.settings.saveMedicationPlan([first, second])
+        // Let the plan update finish before simulating dose actions.
+        for _ in 0..<20 where center.requested.count < 2 { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertTrue(app.doses.markTaken())
+        app.settings.selectMedication(named: "Second medicine")
+        XCTAssertTrue(app.doses.markTaken())
+        XCTAssertTrue(app.doses.undo())
+        let secondID = DoseReminderScheduler.identifier(for: time, medication: second.medicationName)
+        for _ in 0..<20 where !center.requested.contains(where: { $0.identifier == secondID && $0.repeatsDaily }) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(center.requested.contains { $0.identifier == secondID && $0.repeatsDaily })
+        let firstID = DoseReminderScheduler.identifier(for: time, medication: first.medicationName)
+        XCTAssertTrue(center.requested.contains { $0.identifier == firstID && $0.repeatsDaily })
+        XCTAssertFalse(center.requested.contains { $0.identifier.hasSuffix(".next") })
+    }
+
     func testMedicationPlanRejectsAmbiguousNamesWithoutChangingSavedPlan() throws {
         let (app, _) = makeApp()
         let original = MedicationSchedule(medicationName: "First", doseTimes: [DoseTime(hour: 8, minute: 0)])
@@ -103,7 +145,7 @@ final class DeveloperToolsTests: XCTestCase {
         XCTAssertEqual(app.calibration.targetSource, .phoneRecording)
         XCTAssertEqual(app.calibration.source, .phoneRecording)
     }
-    private func makeApp(transport: RecordingJSONTransport = RecordingJSONTransport(), defaultToken: String = AppSettings.developmentToken) -> (CadenceAppModel, RecordingJSONTransport) {
+    private func makeApp(transport: RecordingJSONTransport = RecordingJSONTransport(), defaultToken: String = AppSettings.developmentToken, notifications: RecordingNotificationCenter = RecordingNotificationCenter()) -> (CadenceAppModel, RecordingJSONTransport) {
         let suite = "dev-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         let sync = EventSyncManager(
@@ -124,7 +166,7 @@ final class DeveloperToolsTests: XCTestCase {
             phoneHaptics: RecordingHapticSink(),
             pillPhotos: PillPhotoStore(directory: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(suite)-pill")),
             apiTransport: transport,
-            notifications: RecordingNotificationCenter()
+            notifications: notifications
         )
         return (app, transport)
     }

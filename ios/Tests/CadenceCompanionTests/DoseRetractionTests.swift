@@ -63,6 +63,34 @@ final class DoseRetractionTests: XCTestCase {
         XCTAssertEqual(try diary.events(on: now).filter { $0.kind == .doseTaken }.count, 1)
     }
 
+    func testHistoryRefreshAcrossMidnightDoesNotCarryYesterdaysDose() throws {
+        var now = Calendar.current.date(bySettingHour: 23, minute: 58, second: 0, of: Date())!
+        let (_, diary, sync, _) = make(now: now)
+        let model = DoseLogModel(schedule: MedicationSchedule(medicationName: "Fixture", doseTimes: [DoseTime(hour: 0, minute: 0)]),
+                                 diary: diary, sync: sync, clock: { now })
+        XCTAssertTrue(model.markTaken())
+        XCTAssertEqual(model.takenToday.count, 1)
+        now = now.addingTimeInterval(180)
+        model.refreshHistory()
+        XCTAssertTrue(model.takenToday.isEmpty)
+        XCTAssertNil(model.lastDoseTaken)
+        XCTAssertTrue(model.isDoseDue)
+        XCTAssertEqual(try diary.events(on: now.addingTimeInterval(-180)).count, 1)
+    }
+
+    func testHistoryReadFailureRecoversWithoutRestart() throws {
+        let now = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date())!
+        let (_, diary, sync, _) = make(now: now)
+        try Data("blocked directory".utf8).write(to: diary.directory)
+        let model = DoseLogModel(schedule: MedicationSchedule(medicationName: "Fixture", doseTimes: [DoseTime(hour: 8, minute: 0)]),
+                                 diary: diary, sync: sync, clock: { now })
+        XCTAssertNotNil(model.saveError)
+        try FileManager.default.removeItem(at: diary.directory)
+        model.refreshHistory()
+        XCTAssertNil(model.saveError)
+        XCTAssertTrue(model.isDoseDue)
+    }
+
     func testUnreadableHistoryIsNotReportedAsAConfirmedEmptyRoutine() throws {
         let now = dateAt(hour: 8, minute: 0)
         let (_, diary, sync, _) = make(now: now)

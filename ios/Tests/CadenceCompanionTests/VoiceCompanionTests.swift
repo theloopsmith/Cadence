@@ -114,6 +114,77 @@ final class VoiceCompanionTests: XCTestCase {
         XCTAssertEqual(effects, [.logDose])
     }
 
+    func testUncertainMedicationRequestsReviewWithoutLogging() {
+        let (voice, _, _) = make(); defer { voice.stop() }
+        var effects: [CompanionIntent] = []
+        voice.execute = { effects.append($0); return "Saved records" }
+        voice.start()
+        for text in ["I'm not sure if I took my medication", "Did I take my pill?", "Maybe I took my medicine"] {
+            voice.submit(text)
+            voice.submit("yes")
+        }
+        XCTAssertEqual(effects, [.medication, .medication, .medication])
+    }
+
+    func testCaregiverRequestReplacesDoseConfirmation() {
+        let (voice, _, _) = make(); defer { voice.stop() }
+        var effects: [CompanionIntent] = []
+        voice.execute = { effects.append($0); return "Opening call" }
+        voice.start(); voice.submit("I took my medication")
+        voice.submit("call my caregiver")
+        XCTAssertTrue(effects.isEmpty)
+        voice.submit("yes")
+        XCTAssertEqual(effects, [.caregiver])
+        voice.submit("yes")
+        XCTAssertEqual(effects, [.caregiver])
+    }
+
+    func testMedicationSelectionRequiresNameAndFreshDoseConfirmation() {
+        let (voice, _, _) = make(); defer { voice.stop() }
+        var selected = "First medicine"
+        var records: [String] = []
+        voice.medicationNames = { ["First medicine", "Second medicine"] }
+        voice.selectMedication = { selected = $0; return true }
+        voice.execute = { if $0 == .logDose { records.append(selected) }; return selected }
+        voice.start(); voice.submit("record my dose")
+        voice.submit("yes")
+        XCTAssertTrue(records.isEmpty)
+        voice.submit("Second medicine")
+        XCTAssertTrue(records.isEmpty)
+        voice.submit("yes")
+        XCTAssertEqual(records, ["Second medicine"])
+        voice.submit("I took First medicine")
+        voice.submit("yes")
+        XCTAssertEqual(records, ["Second medicine", "First medicine"])
+    }
+
+    func testAmbiguousMedicationAndCaregiverInterruptionNeverLog() {
+        let (voice, _, _) = make(); defer { voice.stop() }
+        var effects: [CompanionIntent] = []
+        voice.medicationNames = { ["First medicine", "Second medicine"] }
+        voice.selectMedication = { _ in XCTFail("Ambiguous selection"); return false }
+        voice.execute = { effects.append($0); return "Opening call" }
+        voice.start(); voice.submit("I took First medicine and Second medicine")
+        voice.submit("yes")
+        XCTAssertTrue(effects.isEmpty)
+        voice.submit("call my caregiver"); voice.submit("yes")
+        XCTAssertEqual(effects, [.caregiver])
+    }
+
+    func testUncertainNamedDoseOnlyReviewsAndPauseDiscardsSelection() {
+        let (voice, _, _) = make(); defer { voice.stop() }
+        var effects: [CompanionIntent] = []
+        voice.medicationNames = { ["First medicine", "Second medicine"] }
+        voice.selectMedication = { _ in true }
+        voice.execute = { effects.append($0); return "Review" }
+        voice.start(); voice.submit("Maybe I took Second medicine"); voice.submit("yes")
+        XCTAssertEqual(effects, [.medication])
+        voice.submit("record my dose")
+        voice.setPaused("Background", true); voice.setPaused("Background", false)
+        voice.submit("First medicine"); voice.submit("yes")
+        XCTAssertEqual(effects, [.medication, .medication])
+    }
+
     func testUnclearOrNegativeConfirmationNeverWritesOrCalls() {
         let (voice, _, _) = make(); defer { voice.stop() }
         var effects: [CompanionIntent] = []
@@ -197,7 +268,13 @@ final class VoiceCompanionTests: XCTestCase {
         var effects: [CompanionIntent] = []
         voice.execute = { effects.append($0); return "result" }
         voice.start(); voice.submit("call my caregiver")
-        try await Task.sleep(nanoseconds: 80_000_000)
+        // Wait for the observed timeout, not a short wall-clock guess. A busy
+        // CI runner may take longer to start the listening/confirmation tasks.
+        let deadline = ProcessInfo.processInfo.systemUptime + 3
+        while !log.spoken.contains(where: { $0.contains("timed out") }),
+              ProcessInfo.processInfo.systemUptime < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
         voice.submit("yes")
         XCTAssertTrue(effects.isEmpty)
         XCTAssertTrue(log.spoken.contains { $0.contains("timed out") })

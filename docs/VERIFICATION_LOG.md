@@ -224,3 +224,44 @@ Reference photos are stored separately by medication name digest. An older unsco
 Added an opaque 1024-pixel Cadence C-mark app icon to Assets.xcassets and selected AppIcon in Debug and Release build settings. The generated master and generation prompt are retained under docs/branding. Artwork was generated during development with the built-in image tool and bundled as a static asset; no runtime model provider was added.
 
 **Evidence.** The iPhone target builds successfully. The built product contains Assets.car, an AppIcon60x60 PNG, and CFBundlePrimaryIcon metadata naming AppIcon. The artwork was visually inspected after resizing. No app was launched or installed during this check; the home-screen change appears after installing the updated build.
+
+### 2026-10-31 — Medication uncertainty and requests for caregiver assistance
+
+- Uncertain medication statements and questions (including “Did I take my pill?”) route to saved medication review rather than dose-log confirmation. Review explicitly distinguishes saved records from proof of ingestion and offers the caregiver call command.
+- A caregiver or emergency request during an existing confirmation replaces it with a fresh call confirmation. A later yes cannot execute the abandoned dose action.
+- The separate voice dose assistant cancels on uncertainty in the complete transcript, including growing partial results, before processing affirmative suffixes.
+- Added regression coverage for uncertain review, caregiver interruption, and uncertainty after dose readback. Full Swift suite: 385 tests passed. iPhone target build succeeded with signing disabled; git diff --check passed.
+- No app launch, physical-glasses drill, or live caregiver call performed. Medication selection by spoken name and end-to-end caregiver delivery verification remain follow-up work.
+
+### 2026-10-31 — Spoken medication selection and daily history refresh
+
+- Voice medication requests now resolve against complete saved medication names. With multiple saved medications, generic review/log requests ask which medication; name-only replies retain the intended action. Named ingestion statements still require a fresh confirmation. Multiple matches are clarified; there is no fuzzy selection.
+- Selection is abandoned on cancellation, pauses, flow changes, timeout, or another feature request. Caregiver/emergency requests can replace it. App callbacks select the medication before constructing the named readback; selection failures stop the action.
+- Fixed stale dose history when a foreground session spans midnight: the minute refresh, foreground return, and spoken medication review read the current day's diary. Recovering from an unreadable diary clears the history error so review can resume without restarting.
+- Added coverage for multiple-medication selection, ambiguous names, caregiver interruption, pause invalidation, named readbacks/actual per-medication app records, midnight rollover, and history read recovery. No physical glasses or caregiver service drill was performed.
+- Follow-up: successful dose Undo now rebuilds reminders from the complete saved plan and remaining diary records. Added an app-level regression with two medications at the same time: Undo restores the second medication's repeating reminder while the first remains suppressed.
+- Final validation for this batch: 392 Swift tests passed, iPhone target build succeeded with signing disabled, and git diff --check passed. Test logs: /private/tmp/cadence-medication-journey-tests.log and /private/tmp/cadence-medication-journey-build.log.
+
+### 2026-10-31 — Preserve recurring medication reminders after logging
+
+- Fixed the reminder recurrence defect: logging removed the entire repeating request and replaced it with a one-off for tomorrow, leaving no reminders after that unless the app reopened.
+- Dose logging now removes the matching delivered notification while leaving the daily pending request intact. Added delivered-notification removal to the system notification adapter and test doubles. Sync replaces legacy one-offs at the next launch/plan sync.
+- This supersedes the earlier same-day suppression behavior: a dose recorded early may still be followed by the scheduled reminder that day. Reminder wording asks the user to review the saved schedule and dose record, and seek caregiver/pharmacist help if unsure, rather than instructing another dose.
+- Regression checks cover repeat preservation after repeated logging, medication isolation, early logging, recurrence across subsequent days without another sync, and Undo retaining both medications' daily requests. These are scheduler/adapter checks; actual locked-phone notification delivery remains unverified.
+- Validation: 393 Swift tests passed; iPhone target build succeeded with signing disabled; git diff --check passed. Logs: /private/tmp/cadence-reminder-recurrence-tests.log and /private/tmp/cadence-reminder-recurrence-build.log.
+
+### 2026-10-31 — Reminder scheduling failures and retry
+
+- The system notification adapter now awaits add completion and propagates errors. Scheduler status reports failure if any request is rejected, instead of claiming every reminder was scheduled.
+- Reconciliation enumerates pending IDs, clears only obsolete Cadence dose IDs, and replaces desired IDs individually. Valid pending reminders survive a rejected replacement; removed medication times do not linger. Other notification categories are preserved.
+- Updates are serialized and revision-fenced so an older asynchronous add cannot overwrite the latest plan. Profile reset clears any late-finishing add before returning.
+- Settings → Medications now displays permission/scheduling failures and a Retry reminders action. Notification state is observed in a small child view to preserve Settings performance.
+- Added checks for rejected updates/retry, obsolete-time cleanup despite failure, reset during system add, and overlapping plan replacement. No notification permissions were changed on the user's iPhone and no live caregiver action was performed.
+- Validation: 397 Swift tests passed; iPhone target build succeeded with signing disabled; git diff --check passed. Logs: /private/tmp/cadence-reminder-errors-tests.log and /private/tmp/cadence-reminder-errors-build.log. Actual iPhone notification delivery and rejection UI still require device acceptance testing.
+
+### 2026-10-31 — Diagnose and fix failing GitHub CI
+
+- Inspected run 41177956908 at commit 84e3f1785: backend passed; Simulator build failed with exit 70 because forced Xcode 16.2 reported no eligible destination / missing iOS 18.2 platform. Package failures were unordered JSON token fixture comparisons in DeviceProfileTests and QueueDurabilityTests, plus a fixed 80 ms confirmation timeout test.
+- Workflow now uses the runner default Xcode and prints simulator SDK diagnostics. Exact runner image lists Xcode 16.4 as default. JWT fixtures serialize with sorted keys; timeout test waits for the observed timeout with a bounded three-second deadline.
+- Current working tree passed 397 Swift tests with TZ=UTC using scripts/test_ios.sh. The existing CI Simulator build command passed locally on Xcode 27.1. Validation on GitHub's default Xcode requires a new hosted run.
+- CI-only patch saved at /private/tmp/cadence-ci-only.patch and tested separately against the last committed source in /private/tmp/cadence-ci-only-efo16tzx, preserving unrelated local feature edits. Full downloaded failing logs stay in /private/tmp; credentials were used only for user-approved read-only log retrieval and were not printed or saved.

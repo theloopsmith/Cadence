@@ -12,7 +12,16 @@ public enum DoseVoiceIntent: Equatable {
     private static let yesWords = ["yes", "yeah", "yep", "yup", "correct", "that's right", "thats right", "i did"]
     private static let noWords = ["no", "nope", "not yet", "haven't", "havent", "didn't", "didnt", "wrong", "not right", "not correct"]
 
+    /// Questions and uncertainty must never become an assertion of ingestion.
+    static func isUncertain(_ raw: String) -> Bool {
+        let text = " " + CompanionIntent.normalized(raw) + " "
+        return ["not sure", "unsure", "don't remember", "do not remember", "can't remember",
+                "cannot remember", "forgot whether", "forget whether", "maybe", "might have",
+                "think i", "did i", "have i", "whether i"].contains { text.contains(" " + $0 + " ") }
+    }
+
     public static func parse(_ raw: String) -> DoseVoiceIntent {
+        if isUncertain(raw) { return .unclear }
         let text = " " + FallDetector.normalizeTranscript(raw).trimmingCharacters(in: .whitespaces) + " "
         guard text.trimmingCharacters(in: .whitespaces).count > 0 else { return .unclear }
         // Refusals first: "no I haven't taken it" is a no.
@@ -84,6 +93,10 @@ public final class VoiceDoseAssistant: ObservableObject {
         }
         lastTranscript = transcript
         lastHeard = transcript
+        if DoseVoiceIntent.isUncertain(transcript) {
+            finish(.cancelled, saying: "Nothing was recorded. A dose record cannot confirm whether you took medicine. Check with your caregiver or pharmacist before deciding what to do.")
+            return
+        }
         let intent = DoseVoiceIntent.parse(fresh.isEmpty ? transcript : fresh)
         armSilence()
 

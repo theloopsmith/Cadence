@@ -132,6 +132,12 @@ public final class CadenceAppModel: ObservableObject {
             guard intent == .logDose, let self else { return nil }
             return "Have you taken \(self.settings.schedule.medicationName) and want to record it now? Say yes or no."
         }
+        companion.medicationNames = { [weak self] in self?.settings.medications.map(\.medicationName) ?? [] }
+        companion.selectMedication = { [weak self] name in
+            guard let self else { return false }
+            if self.settings.schedule.medicationName != name { self.settings.selectMedication(named: name) }
+            return self.settings.schedule.medicationName == name
+        }
         companion.execute = { [weak self] intent in self?.executeCompanionAction(intent) ?? "That action is unavailable." }
         companion.onDisabled = { [weak self] in
             if self?.companion.preservesVoicePreferenceOnStop != true { self?.settings.voiceCompanionEnabled = false }
@@ -242,6 +248,10 @@ public final class CadenceAppModel: ObservableObject {
             Task { await self?.syncMedicationReminders(plan) }
         }.store(in: &cancellables)
 
+        doses.onDoseUndone = { [weak self] in
+            guard let self else { return }
+            Task { await self.syncMedicationReminders(self.settings.medications) }
+        }
         doses.onDoseTaken = { [weak self] date, schedule in
             self?.reminders.doseTaken(at: date, schedule: schedule)
         }
@@ -518,6 +528,7 @@ public final class CadenceAppModel: ObservableObject {
     }
 
     public func voiceSceneChanged(isActive: Bool, isBackground: Bool) {
+        if isActive { doses.refreshHistory() }
         // Siri can overlay this foreground app without sending it to background.
         if isBackground || (!isActive && isUsingMetaAssistant) { voiceWasBackgrounded = true }
         companion.setPaused("App in background", !isActive)
@@ -586,6 +597,7 @@ public final class CadenceAppModel: ObservableObject {
         guard !settings.restartRequired, !fallAlert.isAlertVisible else { return "Let's finish the current safety check-in first." }
         switch intent {
         case .medication:
+            doses.refreshHistory()
             if let error = doses.saveError { return error }
             let schedule = settings.schedule
             guard !schedule.isEmpty else { return "Your medication plan isn't set up yet. Ask your caregiver to add the prescribed name and times in setup." }
@@ -593,7 +605,7 @@ public final class CadenceAppModel: ObservableObject {
             let next = schedule.dueDose(at: Date(), takenToday: doses.takenToday) ?? schedule.nextDose(after: Date())
             let timing = next.map { "Your saved time for \(schedule.medicationName) is \(formatter.string(from: $0))." } ?? "There isn't another saved medication time."
             let last = doses.lastDoseTaken.map { " The last dose you recorded was at \(formatter.string(from: $0))." } ?? ""
-            return timing + last + " If you've already taken it, tell me and I can record it. I won't change your prescribed dose."
+            return timing + last + " These are your saved records; they cannot confirm whether you took medicine. If you are unsure, check with your caregiver or pharmacist before deciding what to do. You can say call my caregiver. If you have taken it, ask me to record your dose."
         case .logDose:
             guard !settings.schedule.isEmpty else { return "Your medication plan isn't set up yet. Ask your caregiver to add the prescribed name and times first." }
             guard doses.markTaken() else { return doses.saveError ?? "I couldn't save that dose. Nothing was logged. Please try again." }
@@ -619,6 +631,10 @@ public final class CadenceAppModel: ObservableObject {
             return (try? diary.plainFacts(for: Date()).joined(separator: ". ")) ?? "I couldn't read today's diary. Please check your phone's storage."
         default: return "What would you like help with?"
         }
+    }
+
+    public func retryMedicationReminders() async {
+        await syncMedicationReminders(settings.medications)
     }
 
     private func syncMedicationReminders(_ plan: [MedicationSchedule]) async {

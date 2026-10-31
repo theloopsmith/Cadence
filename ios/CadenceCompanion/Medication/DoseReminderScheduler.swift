@@ -16,9 +16,11 @@ public struct DoseReminderRequest: Equatable {
 /// What the scheduler needs from the system notification centre.
 public protocol DoseNotificationCentering: AnyObject {
     func requestAuthorization() async -> Bool
-    func add(_ request: DoseReminderRequest)
+    func pendingIdentifiers() async -> [String]
+    func add(_ request: DoseReminderRequest) async throws
     func removePending(withIdentifiers ids: [String])
     func removeAllPending()
+    func removeDelivered(withIdentifiers ids: [String])
 }
 
 public final class SystemNotificationCenter: DoseNotificationCentering {
@@ -36,8 +38,13 @@ public final class SystemNotificationCenter: DoseNotificationCentering {
         return (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
-    public func add(_ request: DoseReminderRequest) {
-        guard let center else { return }
+    public func pendingIdentifiers() async -> [String] {
+        guard let center else { return [] }
+        return await center.pendingNotificationRequests().map(\.identifier)
+    }
+
+    public func add(_ request: DoseReminderRequest) async throws {
+        guard let center else { throw CocoaError(.featureUnsupported) }
         let content = UNMutableNotificationContent()
         content.title = request.title
         content.body = request.body
@@ -48,11 +55,15 @@ public final class SystemNotificationCenter: DoseNotificationCentering {
         components.hour = request.hour
         components.minute = request.minute
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: request.repeatsDaily)
-        center.add(UNNotificationRequest(identifier: request.identifier, content: content, trigger: trigger))
+        try await center.add(UNNotificationRequest(identifier: request.identifier, content: content, trigger: trigger))
     }
 
     public func removePending(withIdentifiers ids: [String]) {
         center?.removePendingNotificationRequests(withIdentifiers: ids)
+    }
+
+    public func removeDelivered(withIdentifiers ids: [String]) {
+        center?.removeDeliveredNotifications(withIdentifiers: ids)
     }
 
     public func removeAllPending() {
@@ -65,7 +76,7 @@ public final class SystemNotificationCenter: DoseNotificationCentering {
 /// never suggest a change to the schedule.
 @MainActor
 public final class DoseReminderScheduler: ObservableObject {
-    public enum Status: Equatable { case unknown, scheduled(Int), notAllowed, none }
+    public enum Status: Equatable { case unknown, scheduled(Int), notAllowed, none, failed }
 
     @Published public private(set) var status: Status = .unknown
 
@@ -77,33 +88,58 @@ public final class DoseReminderScheduler: ObservableObject {
         self.center = center
     }
 
-    /// Replaces every pending reminder with one per dose time.
+    /// Reconciles medication reminders with one repeating request per saved time.
     public func sync(_ schedule: MedicationSchedule) async { await sync([schedule]) }
 
     private var syncID = UUID()
+    private var syncTask: Task<Void, Never>?
     public func sync(_ schedules: [MedicationSchedule]) async {
         let id = UUID(); syncID = id
-        guard !suspended else { return }
-        center.removeAllPending()
-        guard schedules.contains(where: { !$0.isEmpty }) else {
+        let previous = syncTask
+        let task = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self, !self.suspended, self.syncID == id else { return }
+            await self.apply(schedules, id: id)
+        }
+        syncTask = task
+        await task.value
+    }
+
+    private func apply(_ schedules: [MedicationSchedule], id: UUID) async {
+        let requests = schedules.flatMap { schedule in
+            schedule.doseTimes.map { Self.dailyRequest(for: $0, schedule: schedule) }
+        }
+        let desired = Set(requests.map(\.identifier))
+        let existing = await center.pendingIdentifiers()
+        guard !suspended, syncID == id else { return }
+        if requests.isEmpty {
+            center.removePending(withIdentifiers: existing.filter { $0.hasPrefix(Self.prefix) })
             status = .none
             return
         }
         let authorized = await center.requestAuthorization()
         guard !suspended, syncID == id else { return }
-        guard authorized else {
-            status = .notAllowed
-            return
+        guard authorized else { status = .notAllowed; return }
+        // Remove obsolete dose times, including old one-offs, without clearing
+        // other notification categories or valid reminders before replacement.
+        center.removePending(withIdentifiers: existing.filter { $0.hasPrefix(Self.prefix) && !desired.contains($0) })
+        var failed = false
+        for request in requests {
+            guard !suspended, syncID == id else { return }
+            do { try await center.add(request) } catch { failed = true }
+            if suspended {
+                // An in-flight system add may finish after local reset.
+                center.removePending(withIdentifiers: [request.identifier])
+                return
+            }
         }
-        for schedule in schedules {
-            for time in schedule.doseTimes { center.add(Self.dailyRequest(for: time, schedule: schedule)) }
-        }
-        status = .scheduled(schedules.reduce(0) { $0 + $1.doseTimes.count })
+        guard syncID == id else { return }
+        status = failed ? .failed : .scheduled(requests.count)
     }
 
-    /// Today's dose was logged: withdraw today's reminder for it and put the
-    /// daily one back from tomorrow, so the phone does not nag about a pill
-    /// already taken.
+    /// Dismiss the visible reminder while preserving its repeating request.
+    /// Removing a pending repeat cancels every future occurrence, not just today.
+    /// An early record can still be followed by today's scheduled reminder.
     public func doseTaken(at date: Date, schedule: MedicationSchedule) {
         guard !suspended else { return }
         let cal = schedule.calendar
@@ -112,14 +148,7 @@ public final class DoseReminderScheduler: ObservableObject {
         }
         let time = DoseTime(hour: cal.component(.hour, from: due), minute: cal.component(.minute, from: due))
         let id = Self.identifier(for: time, medication: schedule.medicationName)
-        center.removePending(withIdentifiers: [id])
-
-        guard let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: date)) else { return }
-        // A repeating calendar trigger cannot begin in the future, so tomorrow
-        // gets a one-off and the daily series is restored by the next `sync`.
-        let tomorrowComponents = cal.dateComponents([.year, .month, .day], from: tomorrow)
-        center.add(Self.request(for: time, schedule: schedule, repeatsDaily: false, onDay: tomorrowComponents,
-                                identifierSuffix: ".next"))
+        center.removeDelivered(withIdentifiers: [id])
     }
 
     public func suspendForLocalReset() {
@@ -150,8 +179,8 @@ public final class DoseReminderScheduler: ObservableObject {
     ) -> DoseReminderRequest {
         DoseReminderRequest(
             identifier: identifier(for: time, medication: schedule.medicationName) + identifierSuffix,
-            title: "Time for your \(schedule.medicationName)",
-            body: "Whenever you're ready, take your \(schedule.medicationName). Then open Cadence and tap Taken, or just say it.",
+            title: "Check your \(schedule.medicationName) reminder",
+            body: "Check your saved schedule and dose record for \(schedule.medicationName). If you already took it, record it in Cadence. If unsure, ask your caregiver or pharmacist before deciding what to do.",
             hour: time.hour,
             minute: time.minute,
             repeatsDaily: repeatsDaily,

@@ -30,6 +30,7 @@ public enum CompanionIntent: String, CaseIterable, Codable {
         if has(["call emergency", "call 911", "call an ambulance", "emergency services"]) { return .emergency }
         if has(["call my caregiver", "call caregiver", "call my care partner", "contact my caregiver", "caregiver", "my care partner"]) { return .caregiver }
         if has(["undo dose", "undo medication", "undo my last dose"]) { return .undoDose }
+        if DoseVoiceIntent.isUncertain(raw), has(["medication", "medicine", "pill", "pills", "dose"]) { return .medication }
         if has(["i took my medication", "i took my medicine", "i took my pill", "i have taken my medication", "log my dose", "record my dose"]) { return .logDose }
         if has(["stop walking cues", "stop the beat", "stop protection"]) { return .stopProtection }
         if has(["start walking cues", "start protection", "help me walk"]) { return .startProtection }
@@ -79,6 +80,9 @@ public final class VoiceCompanion: ObservableObject {
     private var flowRevision = UUID()
     public var confirmationPrompt: ((CompanionIntent) -> String?)?
     public var execute: ((CompanionIntent) -> String)?
+    public var medicationNames: (() -> [String])?
+    public var selectMedication: ((String) -> Bool)?
+    private var medicationChoice: CompanionIntent?
     public var understand: ((String, [String]) async -> CompanionIntent?)?
     public private(set) var preservesVoicePreferenceOnStop = false
     public var onDisabled: (() -> Void)?
@@ -118,7 +122,7 @@ public final class VoiceCompanion: ObservableObject {
 
     public func stop(preservePreference: Bool = false) {
         preservesVoicePreferenceOnStop = preservePreference
-        isEnabled = false; pending = nil; generation = UUID(); turn = UUID()
+        isEnabled = false; pending = nil; medicationChoice = nil; generation = UUID(); turn = UUID()
         task?.cancel(); debounce?.cancel(); healthTask?.cancel(); listener.stopListening(); speaker.cancel()
         status = "Voice companion is off"
         onDisabled?()
@@ -128,7 +132,7 @@ public final class VoiceCompanion: ObservableObject {
         guard pauses.contains(reason) != paused else { return }
         if paused { pauses.insert(reason) } else { pauses.remove(reason) }
         guard isEnabled else { return }
-        generation = UUID(); turn = UUID(); pending = nil
+        generation = UUID(); turn = UUID(); pending = nil; medicationChoice = nil
         task?.cancel(); debounce?.cancel(); listener.stopListening()
         if pauses.isEmpty { listenAfterSpeech() }
         else { status = "Voice paused: " + pauses.sorted().joined(separator: ", ") }
@@ -175,7 +179,7 @@ public final class VoiceCompanion: ObservableObject {
     }
 
     private func flowDidChange() {
-        flowRevision = UUID(); pending = nil; turn = UUID()
+        flowRevision = UUID(); pending = nil; medicationChoice = nil; turn = UUID()
         task?.cancel(); debounce?.cancel(); listener.stopListening()
         if isEnabled, pauses.isEmpty { listenAfterSpeech() }
     }
@@ -263,11 +267,11 @@ public final class VoiceCompanion: ObservableObject {
         // Apple recognition tasks end periodically. Reopen between turns rather
         // than leaving a permanently lit microphone after the task has ended.
         task?.cancel()
-        let timeout = UInt64((pending == nil ? 40 : confirmationWindowSeconds) * 1_000_000_000)
+        let timeout = UInt64((pending == nil && medicationChoice == nil ? 40 : confirmationWindowSeconds) * 1_000_000_000)
         task = Task { @MainActor [weak self] in
             do { try await Task.sleep(nanoseconds: timeout) } catch { return }
             guard let self, self.turn == turn, self.isEnabled, self.pauses.isEmpty else { return }
-            if self.pending != nil { self.pending = nil; self.say("That confirmation timed out. Nothing was changed. What would you like to do?") }
+            if self.pending != nil || self.medicationChoice != nil { self.pending = nil; self.medicationChoice = nil; self.say("That confirmation timed out. Nothing was changed. What would you like to do?") }
             else { self.openTurn() }
         }
     }
@@ -282,10 +286,20 @@ public final class VoiceCompanion: ObservableObject {
         let intent = pending == nil ? (step.resolve(text) ?? parsed) : parsed
         if intent == .handoffMeta { handOffToMeta(); return }
         if intent == .cancel {
+            medicationChoice = nil
             if pending != nil { pending = nil; say("Okay. Nothing was changed. " + (context == nil ? "What can I help with?" : step.guidance)); return }
             publish(.cancel); say("Okay, I've stopped that. What else can I help with?"); return
         }
         if intent == .stopListening { stop(); return }
+        if [.caregiver, .emergency].contains(intent) { medicationChoice = nil }
+        if pending == nil, routeMedication(text, intent: intent) { return }
+        // A new request replaces the old confirmation; a later yes belongs only
+        // to the new request. Never swallow a request for human assistance.
+        if pending != nil, [.caregiver, .emergency, .medication].contains(intent) {
+            pending = nil
+            if !routeMedication(text, intent: intent) { handle(intent) }
+            return
+        }
         if let pending {
             self.pending = nil
             if ["yes", "yes please", "confirm", "yes confirm", "please do"].contains(normalized) {
@@ -307,8 +321,40 @@ public final class VoiceCompanion: ObservableObject {
             guard let self else { return }
             let intent = await self.understand?(text, self.history) ?? .unknown
             guard !Task.isCancelled, self.generation == generation, self.flowRevision == revision, self.isEnabled, self.pauses.isEmpty else { return }
-            self.handle(intent)
+            if !self.routeMedication(text, intent: intent) { self.handle(intent) }
         }
+    }
+
+    /// Select by a complete saved name. Never guess from a partial or fuzzy match.
+    private func routeMedication(_ text: String, intent: CompanionIntent) -> Bool {
+        let names = medicationNames?() ?? []
+        guard !names.isEmpty else { return false }
+        let normalized = " " + CompanionIntent.normalized(text) + " "
+        let matches = names.filter { normalized.contains(" " + CompanionIntent.normalized($0) + " ") }
+        let isRequest = [.medication, .logDose].contains(intent)
+        guard isRequest || medicationChoice != nil || (intent == .unknown && !matches.isEmpty) else { return false }
+        // Explicit requests for another feature abandon an unfinished selection.
+        if !isRequest, intent != .unknown { medicationChoice = nil; return false }
+        let nameOnly = matches.contains { CompanionIntent.normalized($0) == CompanionIntent.normalized(text) }
+        var request = nameOnly ? (medicationChoice ?? .medication) : (isRequest ? intent : (medicationChoice ?? .medication))
+        if DoseVoiceIntent.isUncertain(text) { request = .medication }
+        else if [.unknown, .medication].contains(intent), matches.count == 1,
+                ["i took ", "i have taken ", "i've taken ", "record my dose", "log my dose"].contains(where: { normalized.contains(" " + $0) }) {
+            request = .logDose
+        }
+        guard matches.count == 1 || (names.count == 1 && isRequest) else {
+            medicationChoice = request
+            say("Which medication? Say the saved name: " + names.joined(separator: ", ") + ". You can also say call my caregiver.")
+            return true
+        }
+        let name = matches.first ?? names[0]
+        medicationChoice = nil
+        guard selectMedication?(name) == true else {
+            say("I couldn't select that medication. Please check your saved medications in Settings.")
+            return true
+        }
+        handle(request)
+        return true
     }
 
     private func handle(_ intent: CompanionIntent) {

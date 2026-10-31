@@ -80,6 +80,19 @@ final class VoiceDoseAssistantTests: XCTestCase {
         return (assistant, listener, speaker, doses)
     }
 
+    func testUncertaintyInvalidatesDoseConfirmationIncludingGrowingTranscript() {
+        let (assistant, listener, _, doses) = make()
+        assistant.begin()
+        listener.hear("I took my pill")
+        listener.hear("I took my pill maybe")
+        listener.hear("yes")
+        XCTAssertEqual(assistant.state, .cancelled)
+        XCTAssertTrue(doses.takenToday.isEmpty)
+        for phrase in ["yes maybe", "I'm not sure I took it", "did I take my pill"] {
+            XCTAssertEqual(DoseVoiceIntent.parse(phrase), .unclear)
+        }
+    }
+
     /// Nothing is logged until the readback is confirmed.
     func testTakenIsReadBackAndLoggedOnlyAfterYes() {
         let (assistant, listener, speaker, doses) = make()

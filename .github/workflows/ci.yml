@@ -61,7 +61,9 @@ jobs:
 
       - name: Toolchain
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.2.app || true
+          # Use the runner image's supported default Xcode and platform SDKs.
+          # Older side-by-side installations may lack their iOS platform.
+          xcode-select -p
           swift --version
           xcodebuild -version
 
@@ -79,8 +81,12 @@ jobs:
 
       - name: Toolchain
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.2.app || true
+          # Use the runner image's supported default Xcode and platform SDKs.
+          # Older side-by-side installations may lack their iOS platform.
+          xcode-select -p
           xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-path
+          xcodebuild -showsdks
 
       - name: Resolve packages
         run: |

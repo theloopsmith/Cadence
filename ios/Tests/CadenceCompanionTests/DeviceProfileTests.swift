@@ -27,8 +27,11 @@ private final class HeldProfileNotifications: DoseNotificationCentering {
     func requestAuthorization() async -> Bool {
         await withCheckedContinuation { reply = $0; started.fulfill() }
     }
-    func add(_ request: DoseReminderRequest) { added.append(request) }
+    func pendingIdentifiers() async -> [String] { added.map(\.identifier) }
+    func add(_ request: DoseReminderRequest) async throws { added.append(request) }
     func removePending(withIdentifiers ids: [String]) {}
+    func removeDelivered(withIdentifiers ids: [String]) { deliveredRemovedIdentifiers += ids }
+    var deliveredRemovedIdentifiers: [String] = []
     func removeAllPending() { added.removeAll() }
 }
 
@@ -36,7 +39,7 @@ private final class HeldProfileNotifications: DoseNotificationCentering {
 final class DeviceProfileTests: XCTestCase {
     private func root() -> URL { URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("profile-check-\(UUID())") }
     private func token(_ sub: String = "phone-a", pid: String = "wearer-a", issued: Int = 1) -> String {
-        let body = try! JSONSerialization.data(withJSONObject: ["sub":sub,"pid":pid,"iat":issued])
+        let body = try! JSONSerialization.data(withJSONObject: ["sub":sub,"pid":pid,"iat":issued], options: [.sortedKeys])
         return "header." + body.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") + ".signature"
     }
     private func settings(_ profile: DeviceProfile, defaults: UserDefaults? = nil, store: InMemoryTokenStore = InMemoryTokenStore()) -> AppSettings {

@@ -43,6 +43,7 @@ struct SettingsView: View, Equatable {
                 voiceSection
                 Section("Medications") {
                     Button("Manage medications") { app.companion.destination = .medication }
+                    MedicationReminderStatus(scheduler: app.reminders) { await app.retryMedicationReminders() }
                 }
                 developerSection
                 aboutSection
@@ -289,4 +290,30 @@ private struct SettingsGlassesSection: View {
         footer: { Text("Pair in the Meta AI app and allow camera access. Photo actions use the glasses; the iPhone camera is an explicit alternative.") }
     }
 
+}
+
+
+/// Observe notification state without rebuilding the entire settings form.
+private struct MedicationReminderStatus: View {
+    @ObservedObject var scheduler: DoseReminderScheduler
+    let retry: () async -> Void
+    @State private var retrying = false
+
+    var body: some View {
+        switch scheduler.status {
+        case .failed, .notAllowed:
+            Text(scheduler.status == .notAllowed
+                 ? "Medication notifications are off. Allow notifications for Cadence in iPhone Settings, then retry."
+                 : "Some medication reminders could not be scheduled. Your saved medication plan is still available. Retry to update reminders.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Button(retrying ? "Updating reminders…" : "Retry reminders") {
+                retrying = true
+                Task { await retry(); retrying = false }
+            }
+            .disabled(retrying)
+        default:
+            EmptyView()
+        }
+    }
 }

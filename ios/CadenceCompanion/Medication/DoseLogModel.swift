@@ -15,6 +15,7 @@ public final class DoseLogModel: ObservableObject {
     @Published public private(set) var isSimpleMode = false
     @Published public private(set) var takenToday: [Date] = []
 
+    public var onDoseUndone: (() -> Void)?
     public var onDoseTaken: ((Date, MedicationSchedule) -> Void)?
     public var schedule: MedicationSchedule {
         didSet {
@@ -100,10 +101,14 @@ public final class DoseLogModel: ObservableObject {
         lastLogged = nil
         canUndo = false
         refresh()
+        onDoseUndone?()
         return true
     }
 
     public var lastDoseTaken: Date? { takenToday.max() }
+
+    /// Refresh after foregrounding or a significant clock/calendar change.
+    public func refreshHistory() { refresh() }
 
     // MARK: - Text
 
@@ -112,6 +117,7 @@ public final class DoseLogModel: ObservableObject {
         do {
             let events = try diary.events(on: now)
             takenToday = events.filter { $0.kind == .doseTaken && $0.detail == schedule.medicationName }.map(\.at)
+            if historyUnavailable { saveError = nil }
             historyUnavailable = false
         } catch {
             historyUnavailable = true
@@ -120,6 +126,9 @@ public final class DoseLogModel: ObservableObject {
     }
 
     private func refresh() {
+        // A foreground session can span midnight. Read the current day's file
+        // instead of carrying yesterday's doses into today's due calculation.
+        reloadTakenToday()
         let now = clock()
         isSimpleMode = schedule.isPredictedOffPeriod(at: now, lastDoseTaken: lastDoseTaken)
 

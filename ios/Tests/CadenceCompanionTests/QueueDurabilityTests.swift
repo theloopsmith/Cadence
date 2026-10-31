@@ -13,7 +13,7 @@ private final class SessionTransport: EventTransport {
 
 final class QueueDurabilityTests: XCTestCase {
     private func token(_ user: String, patient: String = "wearer", generation: Int = 0) -> String {
-        let data = try! JSONSerialization.data(withJSONObject: ["sub":user,"pid":patient,"generation":generation])
+        let data = try! JSONSerialization.data(withJSONObject: ["sub":user,"pid":patient,"generation":generation], options: [.sortedKeys])
         let payload=data.base64EncodedString().replacingOccurrences(of:"=",with:"").replacingOccurrences(of:"+",with:"-").replacingOccurrences(of:"/",with:"_")
         return "e30.\(payload).test-signature"
     }
