@@ -71,9 +71,19 @@ public final class DeviceProfile {
               ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
               url.host?.isEmpty == false, url.user == nil, url.password == nil,
               url.query == nil, url.fragment == nil else { return false }
-        if let bound = manifest.destination, bound != destination { return false }
+        if let bound = manifest.destination, bound != destination {
+            // Allow moving from a loopback address (e.g. localhost default) to a LAN address
+            guard Self.isLoopback(bound) else { return false }
+        }
         guard let owner = EventSyncManager.owner(for: token) else { return true }
-        if let bound = manifest.owner { return bound == owner }
+        if let bound = manifest.owner {
+            if bound != owner {
+                // Allow transitioning from the shared development placeholder to a real user account
+                guard bound == EventSyncManager.owner(for: AppSettings.developmentToken) || manifest.allowDevelopmentDefault else {
+                    return false
+                }
+            }
+        }
         var next = manifest
         next.owner = owner; next.destination = destination
         next.allowDevelopmentDefault = false
@@ -105,16 +115,22 @@ public final class DeviceProfile {
         let target = Self.normalize(address)
         guard failure == nil, !manifest.resetPending, manifest.serverMove == nil,
               info.service == "cadence-accessibility-companion", UUID(uuidString: info.serverID) != nil,
-              let owner = manifest.owner, EventSyncManager.owner(for: token) == owner,
               let source = manifest.destination,
               let url = URLComponents(string: target), ["http", "https"].contains(url.scheme ?? ""),
               url.host?.isEmpty == false, url.user == nil, url.password == nil, url.query == nil, url.fragment == nil
         else { return false }
+        let tokenOwner = EventSyncManager.owner(for: token)
+        if let boundOwner = manifest.owner {
+            if tokenOwner != boundOwner {
+                guard boundOwner == EventSyncManager.owner(for: AppSettings.developmentToken) else { return false }
+            }
+        }
         if let serverID = manifest.serverID {
             guard serverID == info.serverID else { return false }
         } else if source != target {
             guard repairLocalhost, Self.isLoopback(source), Self.isLAN(target) else { return false }
         }
+        let owner = tokenOwner ?? manifest.owner ?? ""
         var next = manifest
         if source == target { next.serverID = info.serverID }
         else { next.serverMove = ServerMove(from: source, to: target, serverID: info.serverID, owner: owner) }

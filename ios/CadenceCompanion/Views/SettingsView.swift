@@ -148,12 +148,19 @@ struct SettingsView: View, Equatable {
             } else {
                 TextField("Phone account username", text: $username).autocorrectionDisabled()
                 SecureField("Password", text: $password)
-                Button(auth.isWorking ? "Signing in…" : "Sign in") {
-                    Task {
-                        await auth.signIn(username: username, password: password, serverAddress: server)
-                        password = ""
+                HStack(spacing: 12) {
+                    Button(auth.isWorking ? "Signing in…" : "Sign in") {
+                        Task {
+                            await auth.signIn(username: username, password: password, serverAddress: server)
+                            password = ""
+                        }
+                    }.disabled(auth.isWorking)
+                    Button("Use dev token") {
+                        settings.deviceToken = AppSettings.developmentToken
+                        auth.clearExpired()
                     }
-                }.disabled(auth.isWorking)
+                    .buttonStyle(.bordered)
+                }
             }
             if let notice = settings.profileNotice { Text(notice).foregroundColor(CadenceTheme.caution) }
             if let error = auth.errorMessage { Text(error).foregroundColor(CadenceTheme.caution) }

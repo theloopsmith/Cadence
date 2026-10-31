@@ -97,4 +97,10 @@ public final class AuthSession: ObservableObject {
         guard !settings.deviceToken.isEmpty else { return }
         isExpired = true
     }
+
+    /// Resets the expired state when credentials or server connection are updated.
+    public func clearExpired() {
+        isExpired = false
+        errorMessage = nil
+    }
 }

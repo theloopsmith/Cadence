@@ -303,8 +303,17 @@ public struct RealityCheckView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
             if app.auth.needsSignIn {
-                Button("Sign in to check this photo") { showSignIn = true }
-                    .buttonStyle(.borderedProminent)
+                VStack(alignment: .leading, spacing: 8) {
+                    Button("Sign in to check this photo") { showSignIn = true }
+                        .buttonStyle(.borderedProminent)
+                    if !app.settings.deviceToken.isEmpty {
+                        Button("Retry with saved token") {
+                            app.auth.clearExpired()
+                            if let jpeg = retryPhoto { runRealityCheck(jpeg: jpeg) }
+                        }
+                        .font(.footnote)
+                    }
+                }
             } else if let jpeg = retryPhoto, retryProfileID == app.settings.profile.id {
                 Button("Retry this photo") { runRealityCheck(jpeg: jpeg) }
                     .buttonStyle(.borderedProminent)

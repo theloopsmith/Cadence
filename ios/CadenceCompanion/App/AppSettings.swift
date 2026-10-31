@@ -78,14 +78,10 @@ public final class AppSettings: ObservableObject {
         didSet { defaults.set(signedInUsername, forKey: scoped(Key.signedInUsername)) }
     }
 
-    /// The shared development token, available in debug builds so the app
+    /// The shared development token, available so the app
     /// works against a local server before anyone signs in.
     public nonisolated static var developmentToken: String {
-        #if DEBUG
         return "cadence-dev-device-writer-token-2026"
-        #else
-        return ""
-        #endif
     }
 
     /// Server address baked into the build (`CadenceServerURL` in Info.plist),
@@ -268,7 +264,7 @@ public final class AppSettings: ObservableObject {
     public func connectServer(to address: String, repairLocalhost: Bool = false, newToken: String? = nil, isCurrent: () -> Bool = { true }) async -> Bool {
         guard !isConnecting, !restartRequired, fallAlert?.isAlertVisible != true else { return false }
         let oldToken = deviceToken; let oldURL = api.baseURL
-        let token = newToken ?? oldToken
+        let token = (newToken?.isEmpty == false ? newToken : nil) ?? (!oldToken.isEmpty ? oldToken : AppSettings.developmentToken)
         let target = DeviceProfile.normalize(address)
         guard !token.isEmpty else { connectionMessage = "Sign in with this phone's account to verify the server."; return false }
         isConnecting = true; connectionMessage = "Connecting…"

@@ -490,7 +490,7 @@ public final class CadenceAppModel: ObservableObject {
                 transcribe: { [weak self] wav in
                     guard let self else { return nil }
                     let request: (CadenceAPIClient, [String])? = await MainActor.run {
-                        guard self.settings.cloudListeningEnabled else { return nil }
+                        guard self.settings.cloudListeningEnabled, !self.auth.needsSignIn, !self.settings.deviceToken.isEmpty else { return nil }
                         let keywords = purpose == .dose ? [self.settings.schedule.medicationName] : []
                         return (self.settings.api, keywords)
                     }
