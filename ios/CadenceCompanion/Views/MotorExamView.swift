@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -10,6 +11,14 @@ public struct MotorExamView: View {
     @ObservedObject private var exam: HomeMotorExamManager
     @Environment(\.dismiss) private var dismiss
 
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var hasEntered = false
+    @State private var measurementID = UUID()
+    @State private var narrationID = UUID()
+    @State private var narrationTask: Task<Void, Never>?
+    @State private var measurementTask: Task<Void, Never>?
+    @State private var analysisTask: Task<Void, Never>?
+    @State private var isPreparingMeasurement = false
     @State private var voiceFlowID = UUID()
     @State private var voiceSecondsRemaining: Int = 5
     @State private var isVoiceCountingDown = false
@@ -63,7 +72,7 @@ public struct MotorExamView: View {
             .navigationTitle("Motor Check")
             .onAppear {
                 app.companion.enterFlow(id: voiceFlowID, destination: .motor, step: voiceStep)
-                if app.companion.isEnabled { app.companion.say(voiceStep.guidance) }
+                if !hasEntered { hasEntered = true; announceStep() }
             }
             .onChange(of: isVoiceCountingDown) { _ in app.companion.updateFlow(id: voiceFlowID, step: voiceStep) }
             .onChange(of: isWalkCountingDown) { _ in app.companion.updateFlow(id: voiceFlowID, step: voiceStep) }
@@ -72,9 +81,14 @@ public struct MotorExamView: View {
             .onChange(of: exam.currentStep) { step in
                 app.companion.updateFlow(id: voiceFlowID, step: voiceStep)
                 app.companion.setPaused("Voice measurement", false)
-                if step == .task2PromptedHandwriting { app.companion.say("Now write a line on paper. Look at it through your glasses and say take a photo. You can also say skip.") }
-                if step == .task3PromptedTimedWalk { app.companion.say("If you can walk comfortably and have a clear path, say ready for a ten second walk. Or say skip.") }
-                if step == .completed { app.companion.say(exam.lastResultSummary ?? "Your check is finished. Say done to close.") }
+                announceStep()
+            }
+            .onChange(of: scenePhase) { phase in
+                if phase == .background {
+                    cleanUpTimers()
+                    voiceErrorMessage = "The check paused while Cadence was in the background. Start this step again, or skip."
+                    walkErrorMessage = voiceErrorMessage
+                }
             }
             .onDisappear {
                 // Presenting a handwriting camera must not cancel its parent exam.
@@ -151,7 +165,7 @@ public struct MotorExamView: View {
     private var introCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             IconBadge(systemName: "figure.walk.motion", color: CadenceTheme.accent, size: 48)
-            Text("1-Minute Motor Check")
+            Text("Guided Motor Check")
                 .font(.title2.weight(.bold))
             Text("Three short tasks: your voice, your handwriting, and a short walk. Cadence keeps the measurements in your diary so you can share how they change over time with your care team.")
                 .font(.body)
@@ -159,7 +173,7 @@ public struct MotorExamView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 stepRow(number: "1", title: "Voice", subtitle: "Say “Ahhh” steadily for 5 seconds")
-                stepRow(number: "2", title: "Handwriting", subtitle: "Photo of a written line or “eee”")
+                stepRow(number: "2", title: "Handwriting", subtitle: "Write a sentence, then photograph it")
                 stepRow(number: "3", title: "Walk", subtitle: "Walk forward normally for 10 seconds")
             }
             .padding(.vertical, 8)
@@ -192,7 +206,7 @@ public struct MotorExamView: View {
     private var voiceTaskCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             StatusPill(text: "Step 1 of 3: Voice", color: CadenceTheme.accent, filled: true)
-            Text("Take a deep breath and say “Ahhh” steadily")
+            Text("Use a comfortable breath and say “Ahhh” steadily")
                 .font(.title3.weight(.semibold))
             Text("Hold a steady tone for 5 seconds. Cadence notes how loud and how steady it is.")
                 .font(.body)
@@ -206,7 +220,7 @@ public struct MotorExamView: View {
                 Text("\(voiceSecondsRemaining)")
                     .font(.system(size: 64, weight: .bold, design: .rounded))
                     .foregroundColor(isVoiceCountingDown ? CadenceTheme.accent : .secondary)
-                Text(isVoiceCountingDown ? "Listening…" : "Tap Start when ready")
+                Text(isPreparingMeasurement ? "Preparing… wait for the spoken cue" : (isVoiceCountingDown ? "Listening…" : "Say ready, or tap Start"))
                     .font(.headline)
                     .foregroundColor(.secondary)
             }
@@ -238,20 +252,21 @@ public struct MotorExamView: View {
     }
 
     private func handleVoiceAction() {
-        guard app.companion.context == .motor else { return }
+        guard app.companion.actionContext == .motor else { return }
         let action = app.companion.action
+        if action == .repeatPrompt { announceStep(); return }
         if action == .cancel { cleanUpTimers(); exam.cancelExam(); dismiss(); return }
         switch (exam.currentStep, action) {
         case (.idle, .start):
             startVoiceStep()
-            app.companion.say("First, we'll record a steady ah for five seconds. Say ready, then hold the sound until I speak again.")
+
         case (.task1PromptedVoice, .start): if !isVoiceCountingDown { beginVoiceCountdown() }
         case (.task1PromptedVoice, .skip):
             cleanUpTimers()
             voiceErrorMessage = nil
             exam.skipVoice()
-        case (.task2PromptedHandwriting, .capture), (.task2PromptedHandwriting, .start): automaticVoiceCapture = true; showGlassesCamera = true
-        case (.task2PromptedHandwriting, .skip): exam.skipHandwriting()
+        case (.task2PromptedHandwriting, .capture), (.task2PromptedHandwriting, .start), (.task2PromptedHandwriting, .retry): automaticVoiceCapture = true; showGlassesCamera = true
+        case (.task2PromptedHandwriting, .skip): analysisTask?.cancel(); isAnalyzingHandwriting = false; exam.skipHandwriting()
         case (.task3PromptedTimedWalk, .start): if !isWalkCountingDown { beginWalkCountdown() }
         case (.task3PromptedTimedWalk, .skip):
             cleanUpTimers()
@@ -278,30 +293,74 @@ public struct MotorExamView: View {
         isVoiceCountingDown = true
         voiceSecondsRemaining = 5
         let startingSession = exam.examSessionID
-        Task { @MainActor in
+        narrationID = UUID()
+        let previousNarration = narrationTask
+        previousNarration?.cancel()
+        measurementTask?.cancel()
+        isPreparingMeasurement = true
+        let operation = UUID(); measurementID = operation
+        measurementTask = Task { @MainActor in
+            await previousNarration?.value
+            guard !Task.isCancelled else { return }
             await app.companion.releaseMicrophone(for: "Voice measurement")
+            app.companion.setPaused("Motor narration", false)
+            let permitted = await AVCaptureDevice.requestAccess(for: .audio)
+            guard measurementID == operation, exam.examSessionID == startingSession else { return }
+            guard !Task.isCancelled, permitted else {
+                isVoiceCountingDown = false; isPreparingMeasurement = false
+                voiceErrorMessage = "Microphone access is required. Allow it in iPhone Settings, or skip voice."
+                app.companion.setPaused("Voice measurement", false)
+                return
+            }
+            exam.voiceMonitor.startLiveMonitoring()
+            guard exam.voiceMonitor.isMonitoring else {
+                isVoiceCountingDown = false; isPreparingMeasurement = false
+                voiceErrorMessage = "The microphone could not start. Check the audio connection, retry, or skip."
+                app.companion.setPaused("Voice measurement", false)
+                return
+            }
+            // Settle the input route before the cue. The tap is live, but
+            // phonation samples are not collected until narration is finished.
+            do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
+            guard measurementID == operation, !Task.isCancelled else { return }
+            let spoken = await AudioCueEngine.shared.narrateMotorInstruction("Hold a steady ah after I say begin. Begin.")
+            guard measurementID == operation, exam.examSessionID == startingSession else { return }
+            guard !Task.isCancelled, spoken else {
+                exam.voiceMonitor.stopLiveMonitoring()
+                isVoiceCountingDown = false; isPreparingMeasurement = false
+                voiceErrorMessage = "The start cue was interrupted. Start voice again when ready, or skip."
+                app.companion.setPaused("Voice measurement", false)
+                return
+            }
             guard exam.examSessionID == startingSession, exam.currentStep == .task1PromptedVoice else {
                 app.companion.setPaused("Voice measurement", false); return
             }
-            exam.voiceMonitor.startLiveMonitoring()
+            isPreparingMeasurement = false
             exam.voiceMonitor.startVowelPhonationRecording()
+            let deadline = ProcessInfo.processInfo.systemUptime + 5
             let session = exam.examSessionID
 
-            voiceTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+            voiceTimer = Timer(timeInterval: 0.1, repeats: true) { timer in
                 Task { @MainActor in
                     guard exam.examSessionID == session, exam.currentStep == .task1PromptedVoice else { timer.invalidate(); return }
-                    if voiceSecondsRemaining > 1 {
-                        voiceSecondsRemaining -= 1
+                    if ProcessInfo.processInfo.systemUptime < deadline {
+                        voiceSecondsRemaining = max(1, Int(ceil(deadline - ProcessInfo.processInfo.systemUptime)))
                     } else {
                         timer.invalidate()
                         voiceTimer = nil
                         isVoiceCountingDown = false
                         voiceErrorMessage = nil
-                        exam.advanceToHandwriting()
-                        Haptics.success()
+                        if exam.finishVoiceMeasurement() {
+                            Haptics.success()
+                        } else {
+                            voiceErrorMessage = "There was not enough steady voice to measure. Try a comfortable ah again, or skip this step."
+                            app.companion.setPaused("Voice measurement", false)
+                            app.companion.say(voiceErrorMessage!)
+                        }
                     }
                 }
             }
+            if let voiceTimer { RunLoop.main.add(voiceTimer, forMode: .common) }
         }
     }
 
@@ -310,14 +369,14 @@ public struct MotorExamView: View {
     private var handwritingTaskCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             StatusPill(text: "Step 2 of 3: Handwriting", color: CadenceTheme.accent, filled: true)
-            Text("Write a line or repeated “eee” on paper")
+            Text("Write the sentence on paper")
                 .font(.title3.weight(.semibold))
             Text("Take a photo of the line. Cadence measures whether the letters change size from start to end.")
                 .font(.body)
                 .foregroundColor(.secondary)
 
             VStack(spacing: 8) {
-                Text("“The quick brown fox jumps over the lazy dog”")
+                Text("“\(MotorExamGuidance.writingSentence)”")
                     .font(.body.italic())
                     .padding(12)
                     .frame(maxWidth: .infinity)
@@ -326,6 +385,9 @@ public struct MotorExamView: View {
                     InlineNotice(text: status)
                 }
             }
+
+            Button("Hear the sentence slowly again") { announceStep() }
+                .disabled(isAnalyzingHandwriting)
 
             if isAnalyzingHandwriting {
                 HStack(spacing: 12) {
@@ -338,12 +400,15 @@ public struct MotorExamView: View {
             } else {
                 if app.glasses.canCapturePhoto {
                     GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
+                        narrationTask?.cancel()
+                        automaticVoiceCapture = false
                         showGlassesCamera = true
                     }) {
                         Label("Open glasses camera", systemImage: "eyeglasses")
                     }
 
                     Button("Or use phone camera") {
+                        narrationTask?.cancel()
                         showCamera = true
                     }
                     .font(.footnote)
@@ -358,7 +423,7 @@ public struct MotorExamView: View {
                 }
 
                 if !app.glasses.canCapturePhoto {
-                    Button("Use iPhone camera instead") { showCamera = true }
+                    Button("Use iPhone camera instead") { narrationTask?.cancel(); showCamera = true }
                 }
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
                     exam.skipHandwriting()
@@ -375,11 +440,12 @@ public struct MotorExamView: View {
         let session = exam.examSessionID
         isAnalyzingHandwriting = true
         handwritingStatus = nil
-        Task {
+        analysisTask?.cancel()
+        analysisTask = Task {
             do {
                 let result = try await app.settings.api.analyzeHandwriting(jpeg: jpeg, sourceContext: .homeMotorExam)
                 await MainActor.run {
-                    guard exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
+                    guard !Task.isCancelled, exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
                     isAnalyzingHandwriting = false
                     if result.measured, let decay = result.opencvDecayPct {
                         exam.measurements.handwritingOpencvDecayPct = decay
@@ -390,13 +456,15 @@ public struct MotorExamView: View {
                     } else {
                         // Stay on this step: an unreadable photo is not a result.
                         handwritingStatus = "Couldn't read enough of the line. Try another photo with the whole line in view, or skip."
+                        app.companion.say(handwritingStatus!)
                     }
                 }
             } catch {
                 await MainActor.run {
-                    guard exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
+                    guard !Task.isCancelled, exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
                     isAnalyzingHandwriting = false
                     handwritingStatus = "Couldn't reach Cadence to measure the photo. Try again, or skip this step."
+                    app.companion.say(handwritingStatus!)
                 }
             }
         }
@@ -421,7 +489,7 @@ public struct MotorExamView: View {
                 Text("\(walkSecondsRemaining)")
                     .font(.system(size: 64, weight: .bold, design: .rounded))
                     .foregroundColor(isWalkCountingDown ? CadenceTheme.accent : .secondary)
-                Text(isWalkCountingDown ? "Walking… keep moving forward" : "Tap Start when standing and ready")
+                Text(isPreparingMeasurement ? "Preparing… wait for the spoken cue" : (isWalkCountingDown ? "Walking… stop if uncomfortable" : "Say ready, or tap Start when ready"))
                     .font(.headline)
                     .foregroundColor(.secondary)
             }
@@ -455,24 +523,53 @@ public struct MotorExamView: View {
         walkErrorMessage = nil
         isWalkCountingDown = true
         walkSecondsRemaining = 10
-        let recorder = WalkTestRecorder()
-        walkRecorder = recorder
-        if !app.motion.isRunning {
-            app.walking.setProtection(enabled: true)
-            startedMotionForWalk = app.motion.isRunning
-        }
-        walkSinkToken = app.motion.addSink { sample in recorder.ingest(sample) }
+        narrationID = UUID()
+        let previousNarration = narrationTask
+        previousNarration?.cancel()
+        measurementTask?.cancel()
+        isPreparingMeasurement = true
+        let startingSession = exam.examSessionID
+        let operation = UUID(); measurementID = operation
+        measurementTask = Task { @MainActor in
+            await previousNarration?.value
+            guard !Task.isCancelled else { return }
+            await app.companion.releaseMicrophone(for: "Motor narration")
+            let spoken = await AudioCueEngine.shared.narrateMotorInstruction("Walk at your usual comfortable pace for ten seconds. Begin.")
+            guard measurementID == operation else { return }
+            app.companion.setPaused("Motor narration", false)
+            isPreparingMeasurement = false
+            guard !Task.isCancelled, spoken, exam.examSessionID == startingSession,
+                  exam.currentStep == .task3PromptedTimedWalk else {
+                isWalkCountingDown = false
+                walkErrorMessage = "The start cue was interrupted. Start walking again when ready, or skip."
+                return
+            }
+            let recorder = WalkTestRecorder()
+            walkRecorder = recorder
+            if !app.motion.isRunning {
+                app.walking.setProtection(enabled: true)
+                startedMotionForWalk = app.motion.isRunning
+            }
+            guard app.motion.isRunning else {
+                isWalkCountingDown = false
+                walkErrorMessage = "Motion recording could not start. Check motion permissions, retry, or skip walking."
+                return
+            }
+            walkSinkToken = app.motion.addSink { sample in recorder.ingest(sample) }
 
-        let session = exam.examSessionID
-        walkTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-            Task { @MainActor in
-                guard exam.examSessionID == session, exam.currentStep == .task3PromptedTimedWalk else { timer.invalidate(); return }
-                if walkSecondsRemaining > 1 {
-                    walkSecondsRemaining -= 1
-                } else {
-                    finishWalkTest()
+            let session = exam.examSessionID
+            let deadline = ProcessInfo.processInfo.systemUptime + 10
+            walkTimer = Timer(timeInterval: 0.1, repeats: true) { timer in
+                Task { @MainActor in
+                    guard exam.examSessionID == session, exam.currentStep == .task3PromptedTimedWalk else { timer.invalidate(); return }
+                    if ProcessInfo.processInfo.systemUptime < deadline {
+                        walkSecondsRemaining = max(1, Int(ceil(deadline - ProcessInfo.processInfo.systemUptime)))
+                    } else {
+                        finishWalkTest()
+                    }
                 }
             }
+            if let walkTimer { RunLoop.main.add(walkTimer, forMode: .common) }
         }
     }
 
@@ -489,6 +586,11 @@ public struct MotorExamView: View {
         exam.measurements.walkFogCount = measured ? result.fogCount : 0
         exam.measurements.walkMeasured = measured
 
+        guard measured else {
+            walkErrorMessage = "There was not enough continuous motion data to measure this walk. Try again if comfortable, or skip and save."
+            announceStep()
+            return
+        }
         saveExam()
     }
 
@@ -583,7 +685,51 @@ public struct MotorExamView: View {
         .accessibilityElement(children: .combine)
     }
 
+    private func announceStep() {
+        guard !isAnalyzingHandwriting else { return }
+        let previousNarration = narrationTask
+        previousNarration?.cancel()
+        let id = UUID(); narrationID = id
+        let session = exam.examSessionID
+        let step = exam.currentStep
+        narrationTask = Task { @MainActor in
+            await previousNarration?.value
+            guard !Task.isCancelled, narrationID == id else { return }
+            await app.companion.releaseMicrophone(for: "Motor narration")
+            defer { if narrationID == id { app.companion.setPaused("Motor narration", false) } }
+            let audio = AudioCueEngine.shared
+            switch step {
+            case .idle:
+                _ = await audio.narrateMotorInstruction("This check has three tasks: voice, handwriting, and walking. You can skip any task. Say start when ready.")
+            case .task1PromptedVoice:
+                _ = await audio.narrateMotorInstruction(MotorExamGuidance.voiceReady)
+            case .task2PromptedHandwriting:
+                guard await audio.narrateMotorInstruction(MotorExamGuidance.writingIntro) else { return }
+                for chunk in MotorExamGuidance.writingChunks {
+                    guard !Task.isCancelled, exam.examSessionID == session, exam.currentStep == step,
+                          await audio.narrateMotorInstruction(chunk, slowly: true) else { return }
+                    do { try await Task.sleep(nanoseconds: 6_000_000_000) } catch { return }
+                }
+                _ = await audio.narrateMotorInstruction(MotorExamGuidance.writingFinish)
+            case .task3PromptedTimedWalk:
+                _ = await audio.narrateMotorInstruction(MotorExamGuidance.walkReady)
+            case .completed:
+                _ = await audio.narrateMotorInstruction((exam.lastResultSummary ?? "Your check is finished.") + " Say done to close.")
+            case .submitting: break
+            }
+        }
+    }
+
     private func cleanUpTimers() {
+        measurementID = UUID()
+        narrationID = UUID()
+        narrationTask?.cancel(); measurementTask?.cancel(); analysisTask?.cancel()
+        AudioCueEngine.shared.cancelNonEmergencySpeech()
+        isPreparingMeasurement = false
+        _ = exam.voiceMonitor.stopVowelPhonationRecording()
+        exam.voiceMonitor.stopLiveMonitoring()
+        app.companion.setPaused("Motor narration", false)
+        isAnalyzingHandwriting = false
         voiceTimer?.invalidate()
         voiceTimer = nil
         isVoiceCountingDown = false

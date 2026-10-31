@@ -250,11 +250,12 @@ final class HomeMotorExamTests: XCTestCase {
         mgr.startExam()
         XCTAssertEqual(mgr.currentStep, .task1PromptedVoice)
 
+        voiceMonitor.startVowelPhonationRecording()
         // Feed steady sustained vowel samples
-        voiceMonitor.updateSampleLevel(dbfs: -22.0)
-        voiceMonitor.updateSampleLevel(dbfs: -23.0)
-        voiceMonitor.updateSampleLevel(dbfs: -21.0)
-        voiceMonitor.updateSampleLevel(dbfs: -22.0)
+        voiceMonitor.updateSampleLevel(dbfs: -22.0, durationSec: 1.25)
+        voiceMonitor.updateSampleLevel(dbfs: -23.0, durationSec: 1.25)
+        voiceMonitor.updateSampleLevel(dbfs: -21.0, durationSec: 1.25)
+        voiceMonitor.updateSampleLevel(dbfs: -22.0, durationSec: 1.25)
 
         mgr.advanceToHandwriting()
         XCTAssertEqual(mgr.currentStep, .task2PromptedHandwriting)

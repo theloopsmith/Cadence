@@ -323,3 +323,28 @@ def test_the_dashboard_no_longer_ships_a_token(server):
         assert settings.cadence_device_token not in content
         assert settings.cadence_clinician_token not in content
     assert "/api/v1/auth/login" in script
+
+
+def test_public_demo_requires_accounts_secret_and_simulated_caregiver(monkeypatch):
+    monkeypatch.setattr(settings, 'cadence_env', 'public_demo')
+    monkeypatch.setattr(settings, 'jwt_secret', 's' * 48)
+    monkeypatch.setattr(settings, 'allow_static_tokens', False)
+    monkeypatch.setattr(settings, 'demo_mode', True)
+    for field in ('twilio_account_sid', 'twilio_auth_token', 'twilio_api_key_sid', 'twilio_api_key_secret', 'twilio_from_phone'):
+        monkeypatch.setattr(settings, field, '')
+    auth.validate_security_settings()
+    monkeypatch.setattr(settings, 'jwt_secret', '')
+    with pytest.raises(RuntimeError, match='JWT_SECRET'):
+        auth.validate_security_settings()
+    monkeypatch.setattr(settings, 'jwt_secret', 's' * 48)
+    monkeypatch.setattr(settings, 'allow_static_tokens', True)
+    with pytest.raises(RuntimeError, match='STATIC_TOKENS'):
+        auth.validate_security_settings()
+    monkeypatch.setattr(settings, 'allow_static_tokens', False)
+    monkeypatch.setattr(settings, 'demo_mode', False)
+    with pytest.raises(RuntimeError, match='DEMO_MODE'):
+        auth.validate_security_settings()
+    monkeypatch.setattr(settings, 'demo_mode', True)
+    monkeypatch.setattr(settings, 'twilio_auth_token', 'a-real-token')
+    with pytest.raises(RuntimeError, match='Twilio credentials'):
+        auth.validate_security_settings()

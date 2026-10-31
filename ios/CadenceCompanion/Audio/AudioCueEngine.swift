@@ -419,7 +419,31 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
         speak(text, priority: priority)
     }
 
-    private func speak(_ text: String, priority: Int, cue: Bool = false, voiceID: String? = nil) {
+    private var lastFinishedPromptID: UUID?
+
+    /// Await this utterance's completion before opening the measurement input.
+    /// A canceled or preempted instruction must never start a timed task.
+    @MainActor
+    public func narrateMotorInstruction(_ text: String, slowly: Bool = false) async -> Bool {
+        guard !Task.isCancelled, !isSirenActive, !isMetronomeActive else { return false }
+        speak(text, priority: 2, rate: slowly ? 0.36 : 0.48)
+        guard let prompt = prompts.active, prompt.text == text, prompt.priority == 2 else { return false }
+        if !playbackEnabled { prompts.finished(prompt.id); return true }
+        let deadline = ProcessInfo.processInfo.systemUptime + 60
+        while prompts.active?.id == prompt.id {
+            if Task.isCancelled || ProcessInfo.processInfo.systemUptime >= deadline {
+                if prompts.active?.id == prompt.id { cancelNonEmergencySpeech() }
+                return false
+            }
+            do { try await Task.sleep(nanoseconds: 30_000_000) } catch {
+                if prompts.active?.id == prompt.id { cancelNonEmergencySpeech() }
+                return false
+            }
+        }
+        return lastFinishedPromptID == prompt.id && !Task.isCancelled
+    }
+
+    private func speak(_ text: String, priority: Int, cue: Bool = false, voiceID: String? = nil, rate: Float = 0.48) {
         if isSirenActive && priority > 0 { return }
         if isMetronomeActive && priority > 1 { return }
         guard !isInterrupted, !awaitingExplicitResume,
@@ -430,7 +454,7 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
         utteranceIDs.removeAll()
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voiceID.flatMap(AVSpeechSynthesisVoice.init(identifier:)) ?? currentVoice()
-        utterance.rate = 0.48
+        utterance.rate = rate
         utterance.pitchMultiplier = 1.0
         utterance.volume = priority == 0 ? 1.0 : 0.85
         utteranceIDs[ObjectIdentifier(utterance)] = prompt.id
@@ -498,8 +522,9 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
         speak("Hello. This is how Cadence will sound. Step with the beat.", priority: 2, voiceID: voiceIdentifier)
     }
 
-    fileprivate func speechFinished(_ utterance: AVSpeechUtterance) {
+    fileprivate func speechFinished(_ utterance: AVSpeechUtterance, completed: Bool = true) {
         guard let id = utteranceIDs.removeValue(forKey: ObjectIdentifier(utterance)) else { return }
+        if completed { lastFinishedPromptID = id }
         prompts.finished(id)
         speechDidEnd()
     }
@@ -540,7 +565,7 @@ private final class SpeechObserver: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        engine.speechFinished(utterance)
+        engine.speechFinished(utterance, completed: false)
     }
 }
 

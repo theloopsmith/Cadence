@@ -60,3 +60,27 @@ async def test_muse_open_uses_low_reasoning_with_room_for_a_final_answer(monkeyp
     sent = client.post.call_args.kwargs['json']
     assert sent['reasoning_effort'] == 'low'
     assert sent['max_tokens'] >= 512
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('intent', [
+    'doseHistoryQuestion', 'doseHistoryTodayQuestion', 'doseHistoryYesterdayQuestion',
+    'nextDoseQuestion', 'medicationPlanQuestion', 'lastMotorCheckQuestion',
+    'caregiverStatusQuestion', 'capabilitiesQuestion', 'motorExplanationQuestion',
+])
+async def test_meta_questions_return_only_allowlisted_topic_not_generated_patient_facts(monkeypatch, intent):
+    monkeypatch.setattr(settings, 'baseten_api_key', 'fixture-key')
+    monkeypatch.setattr(settings, 'baseten_model', 'meta-models/muse-spark-open-question-' + intent)
+    response = Mock()
+    response.json.return_value = {'choices': [{'message': {'content': json.dumps({
+        'intent': intent, 'answer': 'Invented dose at 8 AM', 'patient_id': 'another-patient',
+    })}}]}
+    client = AsyncMock(); client.post.return_value = response
+    context = AsyncMock(); context.__aenter__.return_value = client
+    monkeypatch.setattr(companion.httpx, 'AsyncClient', Mock(return_value=context))
+    result = await companion.interpret('Catch me up on my pill log', [])
+    assert result['intent'] == intent
+    assert result['source'] == 'meta_open_weights'
+    assert 'answer' not in result and 'patient_id' not in result
+    prompt = client.post.call_args.kwargs['json']['messages'][0]['content']
+    assert 'never logDose' in prompt

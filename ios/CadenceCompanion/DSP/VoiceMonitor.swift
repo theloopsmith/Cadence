@@ -18,6 +18,10 @@ public final class VoiceMonitor {
     private var isRecordingVowel: Bool = false
     private var recordedVowelSamples: [Double] = []
     public private(set) var lastVowelSampleCount = 0
+    public private(set) var lastVowelVoicedSampleCount = 0
+    public private(set) var lastVowelVoicedDuration: TimeInterval = 0
+    private var vowelVoicedDuration: TimeInterval = 0
+    private var monitoringSession = UUID()
     private var hasInstalledTap: Bool = false
 
     public init() {
@@ -32,10 +36,12 @@ public final class VoiceMonitor {
     deinit { if let pauseObserver { NotificationCenter.default.removeObserver(pauseObserver) } }
 
     /// Manual level update (used by mock streams, simulator replayers, or tests)
-    public func updateSampleLevel(dbfs: Double) {
+    public func updateSampleLevel(dbfs: Double, durationSec: TimeInterval = 0.1) {
+        guard dbfs.isFinite, durationSec.isFinite, durationSec > 0 else { return }
         self.currentLevelDbfs = dbfs
         if isRecordingVowel {
             recordedVowelSamples.append(dbfs)
+            if dbfs > -38 { vowelVoicedDuration += durationSec }
         }
     }
 
@@ -43,6 +49,8 @@ public final class VoiceMonitor {
     public func startLiveMonitoring() {
         guard !isMonitoring else { return }
         isMonitoring = true
+        monitoringSession = UUID()
+        let session = monitoringSession
 
         guard AudioCueEngine.shared.prepareMicrophoneSession(owner: .motorVoice) else {
             isMonitoring = false
@@ -81,8 +89,10 @@ public final class VoiceMonitor {
                 }
                 let rms = sqrt(sumSquares / Float(max(1, frameLength)))
                 let dbfs = Double(20.0 * log10(max(1e-5, rms)))
+                let duration = Double(frameLength) / recordingFormat.sampleRate
                 DispatchQueue.main.async {
-                    self.updateSampleLevel(dbfs: dbfs)
+                    guard self.isMonitoring, self.monitoringSession == session else { return }
+                    self.updateSampleLevel(dbfs: dbfs, durationSec: duration)
                 }
             }
             hasInstalledTap = true
@@ -96,6 +106,7 @@ public final class VoiceMonitor {
     }
 
     public func stopLiveMonitoring() {
+        monitoringSession = UUID()
         let generation = AudioCueEngine.shared.currentMediaServicesGeneration()
         if generation != audioGeneration {
             audioEngine = AVAudioEngine()
@@ -121,12 +132,17 @@ public final class VoiceMonitor {
         isRecordingVowel = true
         recordedVowelSamples.removeAll()
         lastVowelSampleCount = 0
+        lastVowelVoicedSampleCount = 0
+        lastVowelVoicedDuration = 0
+        vowelVoicedDuration = 0
     }
 
     /// Finishes recording and returns (meanDbfs, stabilityDb)
     public func stopVowelPhonationRecording() -> (meanDbfs: Double, stabilityDb: Double) {
         isRecordingVowel = false
+        lastVowelVoicedDuration = vowelVoicedDuration
         lastVowelSampleCount = recordedVowelSamples.count
+        lastVowelVoicedSampleCount = recordedVowelSamples.filter { $0 > -38 }.count
         guard !recordedVowelSamples.isEmpty else {
             return (currentLevelDbfs, 0.0)
         }

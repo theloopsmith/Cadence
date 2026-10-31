@@ -61,7 +61,8 @@ final class ExamValidityTests: XCTestCase {
         let monitor = VoiceMonitor()
         let manager = HomeMotorExamManager(submitter: StubExamSubmitter(result: nil), sync: queue(), voiceMonitor: monitor)
         manager.startExam()
-        monitor.updateSampleLevel(dbfs: -25); monitor.updateSampleLevel(dbfs: -25)
+        monitor.startVowelPhonationRecording()
+        monitor.updateSampleLevel(dbfs: -25, durationSec: 2.5); monitor.updateSampleLevel(dbfs: -25, durationSec: 2.5)
         manager.advanceToHandwriting()
         XCTAssertTrue(manager.measurements.voiceMeasured)
         XCTAssertEqual(manager.measurements.voiceStabilityDb, 0)
@@ -69,6 +70,52 @@ final class ExamValidityTests: XCTestCase {
         manager.skipVoice()
         XCTAssertEqual(manager.measurements.voiceStatus, .skipped)
         XCTAssertFalse(manager.measurements.voiceMeasured)
+    }
+
+    func testVoiceDoesNotCollectInstructionsAndSilentOrBriefAudioCanRetry() {
+        let monitor = VoiceMonitor()
+        let manager = HomeMotorExamManager(submitter: StubExamSubmitter(result: nil), sync: queue(), voiceMonitor: monitor)
+        manager.startExam()
+        monitor.updateSampleLevel(dbfs: -20, durationSec: 5)
+        XCTAssertFalse(manager.finishVoiceMeasurement(), "Instructions are outside recording")
+        XCTAssertEqual(manager.currentStep, .task1PromptedVoice)
+        monitor.startVowelPhonationRecording()
+        for _ in 0..<50 { monitor.updateSampleLevel(dbfs: -70) }
+        XCTAssertFalse(manager.finishVoiceMeasurement(), "Silence isn't a measurement")
+        monitor.startVowelPhonationRecording()
+        monitor.updateSampleLevel(dbfs: -20, durationSec: 0.1)
+        monitor.updateSampleLevel(dbfs: -20, durationSec: 0.1)
+        XCTAssertFalse(manager.finishVoiceMeasurement(), "A brief sound isn't a sustained vowel")
+        monitor.startVowelPhonationRecording()
+        for _ in 0..<50 { monitor.updateSampleLevel(dbfs: -25) }
+        XCTAssertTrue(manager.finishVoiceMeasurement())
+        XCTAssertEqual(manager.currentStep, .task2PromptedHandwriting)
+    }
+
+    func testWritingScriptUsesExactlyTheDisplayedSentence() {
+        XCTAssertEqual(MotorExamGuidance.writingChunks.joined(separator: " "), MotorExamGuidance.writingSentence)
+        XCTAssertTrue(MotorExamGuidance.writingFinish.contains("repeat"))
+        XCTAssertTrue(MotorExamGuidance.voiceReady.contains("Wait until"))
+    }
+
+    func testLateStepCallbacksCannotMoveACanceledExam() {
+        let manager = HomeMotorExamManager(submitter: StubExamSubmitter(result: nil), sync: queue())
+        manager.startExam(); manager.cancelExam()
+        manager.advanceToHandwriting(); manager.advanceToTimedWalk()
+        manager.skipVoice(); manager.skipHandwriting(); manager.skipTimedWalk()
+        XCTAssertEqual(manager.currentStep, .idle)
+    }
+
+    func testCompletedExamCannotCreateDuplicateHistoryOrQueueEntries() async {
+        let sync = queue()
+        let manager = HomeMotorExamManager(submitter: StubExamSubmitter(result: nil), sync: sync)
+        manager.startExam(); manager.skipVoice(); manager.skipHandwriting(); manager.skipTimedWalk()
+        _ = await manager.completeExam(examUUID: "one-check")
+        let record = manager.lastRecord
+        let queued = sync.pendingCount()
+        _ = await manager.completeExam(examUUID: "duplicate-check")
+        XCTAssertEqual(manager.lastRecord, record)
+        XCTAssertEqual(sync.pendingCount(), queued)
     }
 
     func testInvalidNumbersAreUnavailableInsteadOfBreakingJsonOrLeakingToTrends() async {

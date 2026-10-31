@@ -86,6 +86,31 @@ final class DeveloperToolsTests: XCTestCase {
         XCTAssertFalse(center.requested.contains { $0.identifier.hasSuffix(".next") })
     }
 
+    func testLocalQuestionsUseDiaryWithoutBackendOrChangingSelectedMedication() async throws {
+        let (app, _) = makeApp(defaultToken: "")
+        try app.settings.saveMedicationPlan([
+            MedicationSchedule(medicationName: "First medicine", doseTimes: [DoseTime(hour: 8, minute: 0)]),
+            MedicationSchedule(medicationName: "Second medicine", doseTimes: [DoseTime(hour: 9, minute: 0)])
+        ])
+        try app.diary.append(DiaryEvent(kind: .doseTaken, at: Date(), detail: "Second medicine"))
+        let queued = app.settings.sync.pendingCount()
+        let answer = await app.answerCompanionQuestion(.doseHistory, text: "Did I take Second medicine today?")
+        XCTAssertTrue(answer.contains("You recorded Second medicine"))
+        XCTAssertEqual(app.settings.schedule.medicationName, "First medicine")
+        XCTAssertEqual(app.settings.sync.pendingCount(), queued)
+        let status = await app.answerCompanionQuestion(.caregiverStatus, text: "Has my caregiver responded?")
+        XCTAssertTrue(status.contains("no active tracked caregiver alert"))
+    }
+
+    func testLocalQuestionReportsUnreadableDiaryInsteadOfClaimingNoDose() async throws {
+        let (app, _) = makeApp(defaultToken: "")
+        try app.settings.saveMedicationPlan([MedicationSchedule(medicationName: "First", doseTimes: [DoseTime(hour: 8, minute: 0)])])
+        try Data("blocked directory".utf8).write(to: app.diary.directory)
+        let answer = await app.answerCompanionQuestion(.doseHistory, text: "Did I take my medicine today?")
+        XCTAssertTrue(answer.contains("couldn't read"))
+        XCTAssertFalse(answer.contains("no dose record"))
+    }
+
     func testMedicationPlanRejectsAmbiguousNamesWithoutChangingSavedPlan() throws {
         let (app, _) = makeApp()
         let original = MedicationSchedule(medicationName: "First", doseTimes: [DoseTime(hour: 8, minute: 0)])

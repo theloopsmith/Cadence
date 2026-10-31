@@ -305,7 +305,7 @@ public final class AppSettings: ObservableObject {
             if profile.pendingServerMove != nil {
                 connectionMessage = "Address repair saved but not complete. Wait for uploads to finish, then close and reopen Cadence."
             } else if DeviceProfile.isLoopback(target) {
-                connectionMessage = "On an iPhone, localhost is the iPhone itself. Enter your Mac's .local address from the phone-server script."
+                connectionMessage = "On an iPhone, localhost is the iPhone itself. Enter your cloud server's HTTPS address or your Mac's .local address from the phone-server script."
             } else {
                 connectionMessage = "Could not connect: \(error.localizedDescription). Start the Mac backend, keep both devices on the same Wi-Fi, and allow Local Network access for Cadence."
             }

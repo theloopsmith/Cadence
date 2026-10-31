@@ -10,6 +10,22 @@ public enum CompanionIntent: String, CaseIterable, Codable {
     case help, motor, medication, surroundings, logDose, undoDose, caregiver, emergency
     case camera, diary, meal, settings, start, skip, capture, usePhoto, retake, retry, finish, repeatPrompt
     case handoffMeta, cancel, stopListening, startProtection, stopProtection, unknown
+    case doseHistoryQuestion, doseHistoryTodayQuestion, doseHistoryYesterdayQuestion
+    case nextDoseQuestion, medicationPlanQuestion, lastMotorCheckQuestion
+    case caregiverStatusQuestion, capabilitiesQuestion, motorExplanationQuestion
+
+    var readOnlyQuestion: CompanionQuestion? {
+        switch self {
+        case .doseHistoryQuestion, .doseHistoryTodayQuestion, .doseHistoryYesterdayQuestion: return .doseHistory
+        case .nextDoseQuestion: return .nextDose
+        case .medicationPlanQuestion: return .medicationPlan
+        case .lastMotorCheckQuestion: return .lastMotorCheck
+        case .caregiverStatusQuestion: return .caregiverStatus
+        case .capabilitiesQuestion: return .capabilities
+        case .motorExplanationQuestion: return .motorExplanation
+        default: return nil
+        }
+    }
 
     static func normalized(_ raw: String) -> String {
         raw.lowercased().replacingOccurrences(of: "’", with: "'")
@@ -83,6 +99,8 @@ public final class VoiceCompanion: ObservableObject {
     public var medicationNames: (() -> [String])?
     public var selectMedication: ((String) -> Bool)?
     private var medicationChoice: CompanionIntent?
+    public var answerQuestion: ((CompanionQuestion, String) async -> String)?
+    private var lastQuestion: CompanionQuestion?
     public var understand: ((String, [String]) async -> CompanionIntent?)?
     public private(set) var preservesVoicePreferenceOnStop = false
     public var onDisabled: (() -> Void)?
@@ -122,7 +140,7 @@ public final class VoiceCompanion: ObservableObject {
 
     public func stop(preservePreference: Bool = false) {
         preservesVoicePreferenceOnStop = preservePreference
-        isEnabled = false; pending = nil; medicationChoice = nil; generation = UUID(); turn = UUID()
+        isEnabled = false; lastQuestion = nil; pending = nil; medicationChoice = nil; generation = UUID(); turn = UUID()
         task?.cancel(); debounce?.cancel(); healthTask?.cancel(); listener.stopListening(); speaker.cancel()
         status = "Voice companion is off"
         onDisabled?()
@@ -132,7 +150,7 @@ public final class VoiceCompanion: ObservableObject {
         guard pauses.contains(reason) != paused else { return }
         if paused { pauses.insert(reason) } else { pauses.remove(reason) }
         guard isEnabled else { return }
-        generation = UUID(); turn = UUID(); pending = nil; medicationChoice = nil
+        generation = UUID(); turn = UUID(); pending = nil; medicationChoice = nil; lastQuestion = nil
         task?.cancel(); debounce?.cancel(); listener.stopListening()
         if pauses.isEmpty { listenAfterSpeech() }
         else { status = "Voice paused: " + pauses.sorted().joined(separator: ", ") }
@@ -179,7 +197,7 @@ public final class VoiceCompanion: ObservableObject {
     }
 
     private func flowDidChange() {
-        flowRevision = UUID(); pending = nil; medicationChoice = nil; turn = UUID()
+        flowRevision = UUID(); pending = nil; medicationChoice = nil; lastQuestion = nil; turn = UUID()
         task?.cancel(); debounce?.cancel(); listener.stopListening()
         if isEnabled, pauses.isEmpty { listenAfterSpeech() }
     }
@@ -283,6 +301,22 @@ public final class VoiceCompanion: ObservableObject {
         lastHeard = text
         let normalized = CompanionIntent.normalized(text)
         let parsed = CompanionIntent.parse(text)
+        let followup = ["yesterday", "what about yesterday", "and yesterday", "today", "what about today", "and today"].contains(normalized) && lastQuestion == .doseHistory
+        if parsed != .emergency, let question = CompanionQuestion.parse(text) ?? (followup ? .doseHistory : nil), let answerQuestion {
+            pending = nil; medicationChoice = nil
+            history.append("user: " + String(text.prefix(1000))); history = Array(history.suffix(6))
+            let generation = self.generation; let revision = flowRevision
+            status = "Checking your saved information"
+            task = Task { @MainActor [weak self] in
+                let reply = await answerQuestion(question, text)
+                guard let self, !Task.isCancelled, self.generation == generation,
+                      self.flowRevision == revision, self.isEnabled, self.pauses.isEmpty else { return }
+                self.lastQuestion = question
+                self.say(reply)
+            }
+            return
+        }
+        lastQuestion = nil
         let intent = pending == nil ? (step.resolve(text) ?? parsed) : parsed
         if intent == .handoffMeta { handOffToMeta(); return }
         if intent == .cancel {
@@ -321,7 +355,19 @@ public final class VoiceCompanion: ObservableObject {
             guard let self else { return }
             let intent = await self.understand?(text, self.history) ?? .unknown
             guard !Task.isCancelled, self.generation == generation, self.flowRevision == revision, self.isEnabled, self.pauses.isEmpty else { return }
-            if !self.routeMedication(text, intent: intent) { self.handle(intent) }
+            if let question = intent.readOnlyQuestion, let answerQuestion = self.answerQuestion {
+                // Only an allowlisted intent is accepted from Meta. Patient facts
+                // and the final answer still come from this phone's saved data.
+                let scopedText: String
+                if intent == .doseHistoryTodayQuestion { scopedText = text + " today" }
+                else if intent == .doseHistoryYesterdayQuestion { scopedText = text + " yesterday" }
+                else { scopedText = text }
+                let reply = await answerQuestion(question, scopedText)
+                guard !Task.isCancelled, self.generation == generation, self.flowRevision == revision,
+                      self.isEnabled, self.pauses.isEmpty else { return }
+                self.lastQuestion = question
+                self.say(reply)
+            } else if !self.routeMedication(text, intent: intent) { self.handle(intent) }
         }
     }
 
@@ -386,6 +432,7 @@ public final class VoiceCompanion: ObservableObject {
             if context == .surroundings { publish(.settings) } else { destination = .settings }
             say("Opening settings. Your care partner can help with setup and sign-in here.")
         case .repeatPrompt:
+            if context == .motor { publish(.repeatPrompt); return }
             if context != nil { say(step.guidance); return }
             say(lastReply.isEmpty ? "What can I help you with?" : lastReply)
         case .start, .skip, .capture, .usePhoto, .retake, .retry, .finish:

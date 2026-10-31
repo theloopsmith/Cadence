@@ -209,53 +209,58 @@ public final class HomeMotorExamManager: ObservableObject {
         measurements.voiceMeasured = false
         measurements.handwritingMeasured = false
         measurements.walkMeasured = false
-        voiceMonitor.startVowelPhonationRecording()
-        audio.speakPrompt(
-            "Step 1: Take a deep breath and say Ahhh steadily for 5 seconds.",
-            priority: 2
-        )
     }
 
-    public func advanceToHandwriting() {
-        currentStep = .task2PromptedHandwriting
+    private func collectVoiceMeasurement() {
         let (meanDbfs, stabilityDb) = voiceMonitor.stopVowelPhonationRecording()
-        if voiceMonitor.lastVowelSampleCount >= 2 && meanDbfs.isFinite && stabilityDb.isFinite {
+        measurements.voiceStatus = .unavailable
+        if voiceMonitor.lastVowelVoicedSampleCount >= 2,
+           voiceMonitor.lastVowelVoicedDuration >= 2.5,
+           meanDbfs.isFinite, stabilityDb.isFinite {
             measurements.voiceMeanDbfs = meanDbfs
             measurements.voiceStabilityDb = stabilityDb
             measurements.voiceMeasured = true
         }
         voiceMonitor.stopLiveMonitoring()
-        audio.speakPrompt(
-            "Step 2: Write the test sentence on your pad, then look down at the line.",
-            priority: 2
-        )
+    }
+
+    public func advanceToHandwriting() {
+        guard currentStep == .task1PromptedVoice else { return }
+        collectVoiceMeasurement()
+        currentStep = .task2PromptedHandwriting
+    }
+
+    /// Failed or silent recordings remain retryable; a deliberate skip advances.
+    @discardableResult
+    public func finishVoiceMeasurement() -> Bool {
+        guard currentStep == .task1PromptedVoice else { return false }
+        collectVoiceMeasurement()
+        guard measurements.voiceMeasured else { return false }
+        currentStep = .task2PromptedHandwriting
+        return true
     }
 
     public func skipVoice() {
+        guard currentStep == .task1PromptedVoice else { return }
         _ = voiceMonitor.stopVowelPhonationRecording()
         voiceMonitor.stopLiveMonitoring()
         measurements.voiceStatus = .skipped
         currentStep = .task2PromptedHandwriting
-        audio.speakPrompt(
-            "Step 2: Write the test sentence on your pad, then look down at the line.",
-            priority: 2
-        )
     }
 
     public func advanceToTimedWalk() {
+        guard currentStep == .task2PromptedHandwriting else { return }
         currentStep = .task3PromptedTimedWalk
-        audio.speakPrompt(
-            "Step 3: Stand up when ready and walk forward in a straight line for 10 seconds.",
-            priority: 2
-        )
     }
 
     public func skipHandwriting() {
+        guard currentStep == .task2PromptedHandwriting else { return }
         measurements.handwritingStatus = .skipped
         advanceToTimedWalk()
     }
 
     public func skipTimedWalk() {
+        guard currentStep == .task3PromptedTimedWalk else { return }
         measurements.walkStatus = .skipped
     }
 
@@ -266,7 +271,7 @@ public final class HomeMotorExamManager: ObservableObject {
     /// that case the exam is queued for retry.
     @discardableResult
     public func completeExam(examUUID: String = UUID().uuidString) async -> HomeMotorExamResult? {
-        guard currentStep != .submitting else { return nil }
+        guard currentStep != .submitting, currentStep != .completed else { return nil }
         let session = examSessionID
         let token = deviceBearerToken; let base = backendBaseURL
         let dataGeneration = sync.currentDataGeneration
@@ -322,9 +327,6 @@ public final class HomeMotorExamManager: ObservableObject {
             lastResult = result
             lastResultSummary = TaskMetricsSummary.diaryDetail(record)
             currentStep = .completed
-            audio.speakPrompt(historyPersistenceWarning == nil
-                ? "Motor check done. Your results are in your diary."
-                : "Your check was sent, but this phone's history could not be saved.", priority: 2)
             return result
         }
 
@@ -335,15 +337,10 @@ public final class HomeMotorExamManager: ObservableObject {
         ) {
             lastResultSummary = error.message
             currentStep = .completed
-            audio.speakPrompt("Your check could not be saved safely. Keep Cadence open and try again.", priority: 2)
             return nil
         }
         lastResultSummary = "Saved on this phone. Sharing will retry when connected."
         currentStep = .completed
-        audio.speakPrompt(
-            "Motor check done. It's saved on your phone. Sharing will retry when connected.",
-            priority: 2
-        )
         return nil
     }
 

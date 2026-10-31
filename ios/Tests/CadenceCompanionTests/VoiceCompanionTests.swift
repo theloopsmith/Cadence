@@ -280,6 +280,15 @@ final class VoiceCompanionTests: XCTestCase {
         XCTAssertTrue(log.spoken.contains { $0.contains("timed out") })
     }
 
+    func testRepeatInMotorFlowAsksTheOwningExamToNarrateAgain() {
+        let (voice, _, _) = make(); defer { voice.stop() }
+        voice.start(); voice.setContext(.motor)
+        voice.submit("repeat")
+        XCTAssertEqual(voice.action, .repeatPrompt)
+        XCTAssertEqual(voice.actionContext, .motor)
+        XCTAssertNil(voice.destination)
+    }
+
     func testGrowingPartialTranscriptsAreDebouncedBeforeAnyAction() async throws {
         let listener = MockTranscriptListener(); let echo = CompanionEcho()
         let voice = VoiceCompanion(listener: listener, speaker: SpokenLog(), echo: echo,

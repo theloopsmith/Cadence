@@ -106,8 +106,8 @@ struct SettingsView: View, Equatable {
 
     private var accountSection: some View {
         Section {
-            Text("1. Start the Cadence server on the Mac and keep it running.")
-            Text("2. Keep both devices on the same Wi-Fi, then find the Mac below.")
+            Text("1. Enter your Cadence server's HTTPS address below. A cloud server works without keeping your Mac open or sharing Wi-Fi.")
+            Text("Using a Mac server instead? Start it, keep both devices on the same Wi-Fi, then find it below.")
             Button("Find my Mac server") { discovery.start() }
             ForEach(discovery.servers) { found in
                 Button {
@@ -121,9 +121,9 @@ struct SettingsView: View, Equatable {
                 }
             }
             if !discovery.message.isEmpty { Text(discovery.message).font(.footnote) }
-            Text("3. Enter the phone account's username and password, then tap Sign in. The person who set up the server has them.")
+            Text("2. Enter the phone account's username and password, then tap Sign in. The person who set up the server has them.")
 
-            TextField("Mac server address", text: $server)
+            TextField("Cadence server address", text: $server)
                 .autocorrectionDisabled()
                 #if os(iOS)
                 .textInputAutocapitalization(.never)
@@ -139,7 +139,7 @@ struct SettingsView: View, Equatable {
                 }.disabled(settings.isConnecting || fallAlert.isAlertVisible)
             }
             if DeviceProfile.isLoopback(settings.api.baseURL) {
-                Text("This phone is still pointed at itself. Choose the Mac above, then tap Connect. Your history on this phone is kept.")
+                Text("This phone is still pointed at itself. Enter your cloud server's HTTPS address or choose your Mac above, then tap Connect. Your history on this phone is kept.")
                     .font(.footnote)
             }
             if let message = settings.connectionMessage { Text(message).font(.footnote) }

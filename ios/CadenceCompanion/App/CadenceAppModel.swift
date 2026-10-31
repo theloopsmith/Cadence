@@ -138,6 +138,9 @@ public final class CadenceAppModel: ObservableObject {
             if self.settings.schedule.medicationName != name { self.settings.selectMedication(named: name) }
             return self.settings.schedule.medicationName == name
         }
+        companion.answerQuestion = { [weak self] question, text in
+            await self?.answerCompanionQuestion(question, text: text) ?? "Your saved information is unavailable."
+        }
         companion.execute = { [weak self] intent in self?.executeCompanionAction(intent) ?? "That action is unavailable." }
         companion.onDisabled = { [weak self] in
             if self?.companion.preservesVoicePreferenceOnStop != true { self?.settings.voiceCompanionEnabled = false }
@@ -590,6 +593,50 @@ public final class CadenceAppModel: ObservableObject {
             metaHandoffError = nil
         } catch {
             metaHandoffError = "The glasses audio route could not be released. Close Cadence before using Hey Meta."
+        }
+    }
+
+    public func answerCompanionQuestion(_ question: CompanionQuestion, text: String) async -> String {
+        guard !settings.restartRequired else { return "Reopen Cadence to finish changing profiles before reading saved information." }
+        let token = settings.deviceToken; let profileID = settings.profile.id
+        let now = Date(); let calendar = Calendar.current
+        switch question {
+        case .capabilities: return CompanionAnswers.capabilities
+        case .motorExplanation:
+            return "The motor check records observations from a steady voice, a handwritten sentence, and a short walk. They help you compare your own checks over time. They do not diagnose a condition. You can skip any step."
+        case .caregiverStatus:
+            guard fallAlert.isDispatched else {
+                return "There is no active tracked caregiver alert on this phone. Opening a phone call does not tell Cadence whether someone answered. You can say call my caregiver to open a call."
+            }
+            if fallAlert.contactState == "acknowledged" { return "The last verified status for this alert is caregiver acknowledged." }
+            return "The last observed alert status is: " + fallAlert.contactHeadline + ". I do not have a verified caregiver acknowledgment."
+        case .lastMotorCheck:
+            let history = exam.history
+            let record = await Task.detached(priority: .userInitiated) { history.latest() }.value
+            guard settings.deviceToken == token, settings.profile.id == profileID, !settings.restartRequired else { return "Your profile changed. Please ask again." }
+            guard let record else { return "I couldn't find a readable saved motor check on this phone. No result is available to summarize." }
+            let date = DateFormatter(); date.dateStyle = .medium; date.timeStyle = .short
+            return "Your latest saved motor check was \(date.string(from: record.date)). " + TaskMetricsSummary.diaryDetail(record) + ". These are task observations, not a diagnosis."
+        case .doseHistory, .nextDose, .medicationPlan:
+            let plan = settings.medications
+            if question != .doseHistory { return CompanionAnswers.medication(question, text: text, plan: plan, events: [], now: now) }
+            let diary = self.diary
+            let normalized = " " + CompanionIntent.normalized(text) + " "
+            if ["last week", "last month", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "tomorrow"].contains(where: { normalized.contains(" " + $0 + " ") }) {
+                return "I can check today, yesterday, or the latest dose record in the last 30 days. Which would you like?"
+            }
+            let offsets = normalized.contains(" yesterday ") ? [1] : (normalized.contains(" today ") ? [0] : Array(0..<30))
+            let result = await Task.detached(priority: .userInitiated) { () -> [DiaryEvent]? in
+                do {
+                    return try offsets.flatMap { offset in
+                        guard let day = calendar.date(byAdding: .day, value: -offset, to: now) else { return [DiaryEvent]() }
+                        return try diary.events(on: day)
+                    }
+                } catch { return nil }
+            }.value
+            guard settings.deviceToken == token, settings.profile.id == profileID, !settings.restartRequired else { return "Your profile changed. Please ask again." }
+            guard let events = result else { return "I couldn't read your medication history. I can't tell which doses were recorded. Check phone storage or ask your care partner for help." }
+            return CompanionAnswers.medication(question, text: text, plan: plan, events: events, now: now)
         }
     }
 

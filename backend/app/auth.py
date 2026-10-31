@@ -219,6 +219,18 @@ def decode_token(token: str) -> Optional[Dict[str, str]]:
 # ---------------------------------------------------------------- startup
 def validate_security_settings() -> None:
     """Refuse to run a production server with development defaults."""
+    if settings.cadence_env.strip().lower() == "public_demo":
+        if len(settings.jwt_secret) < _MIN_SECRET_LENGTH:
+            raise RuntimeError("Public demo requires a durable JWT_SECRET of at least 32 characters.")
+        if settings.static_tokens_enabled:
+            raise RuntimeError("Public demo requires ALLOW_STATIC_TOKENS=false.")
+        if not settings.demo_mode_enabled:
+            raise RuntimeError("Public demo requires DEMO_MODE=true for simulated caregiver delivery.")
+        if any(getattr(settings, name) for name in (
+            "twilio_account_sid", "twilio_auth_token", "twilio_api_key_sid", "twilio_api_key_secret", "twilio_from_phone"
+        )):
+            raise RuntimeError("Public demo must not contain Twilio credentials; caregiver delivery is simulated.")
+        return
     if not settings.is_production:
         return
     if len(settings.jwt_secret) < _MIN_SECRET_LENGTH:
