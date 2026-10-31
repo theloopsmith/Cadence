@@ -135,9 +135,14 @@ public struct DiaryStore {
     }
 
     private func load(day: Date) throws -> [DiaryEvent] {
-        let url = fileURL(day: day)
-        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        return try decode(url)
+        do {
+            let info = try FileManager.default.attributesOfItem(atPath: directory.path)
+            guard info[.type] as? FileAttributeType == .typeDirectory else { throw CocoaError(.fileReadUnknown) }
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            return []
+        }
+        do { return try decode(fileURL(day: day)) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return [] }
     }
 
     private func save(_ events: [DiaryEvent], day: Date) throws {

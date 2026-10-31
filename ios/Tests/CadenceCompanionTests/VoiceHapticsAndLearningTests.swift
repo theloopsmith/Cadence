@@ -24,7 +24,13 @@ final class MockTranscriptListener: TranscriptListening {
 
 final class SpokenLog: PromptSpeaking {
     var spoken: [String] = []
-    func speak(_ text: String) { spoken.append(text) }
+    /// Simulates walking cues holding the speaker.
+    var refusesSpeech = false
+    @discardableResult
+    func speak(_ text: String) -> Bool {
+        if refusesSpeech { return false }
+        spoken.append(text); return true
+    }
 }
 
 final class DoseVoiceIntentTests: XCTestCase {
@@ -39,9 +45,11 @@ final class DoseVoiceIntentTests: XCTestCase {
         for phrase in ["yes", "yeah", "yep", "that's right", "correct", "I did"] {
             XCTAssertEqual(DoseVoiceIntent.parse(phrase), .yes, phrase)
         }
-        for phrase in ["no", "nope", "not yet", "I haven't", "wrong"] {
+        for phrase in ["no", "nope", "not yet", "I haven't", "wrong", "that's not right", "not right", "that's wrong", "not correct"] {
             XCTAssertEqual(DoseVoiceIntent.parse(phrase), .no, phrase)
         }
+        // A bare "right" is too easy to hear in "all right" or "right now".
+        XCTAssertEqual(DoseVoiceIntent.parse("right now I'm busy"), .unclear)
     }
 
     func testUnclearSpeechIsUnclearNotNo() {

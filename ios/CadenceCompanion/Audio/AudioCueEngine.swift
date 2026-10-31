@@ -30,6 +30,9 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
     private var resumeAfterInterruption = false
     private var resetRequiresUserAction = false
     private var sessionConfigured = false
+    private var inputOwnership = AudioInputOwnership()
+    private var plannedCategoryChangeUntil: TimeInterval = 0
+    private var plannedOutputNames: Set<String> = []
     private(set) var mediaServicesGeneration = 0
 
     /// A voice chosen in setup. Nil, or a voice that has been deleted, means
@@ -93,8 +96,18 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
         observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in self?.mediaServicesReset() })
         observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] notification in
             guard let self, let changed = notification.object as? AVAudioEngine, changed === self.engine else { return }
-            if !self.engine.isRunning && (self.isSirenActive || self.isMetronomeActive || self.keepAlive.isActive) {
-                self.pauseOutput(reason: "Audio configuration changed. Check the route and tap Retry audio.")
+            if !self.engine.isRunning && (self.isSirenActive || self.isMetronomeActive || (self.keepAlive as? SilentAudioKeepAlive)?.isRequested == true) {
+                let outputs = Set(AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portName))
+                if ProcessInfo.processInfo.systemUptime < self.plannedCategoryChangeUntil,
+                   !self.awaitingExplicitResume, !self.isInterrupted,
+                   self.isSirenActive || !outputs.isDisjoint(with: self.plannedOutputNames) {
+                    guard self.ensureEngineRunning() else { return }
+                    if self.isSirenActive { self.playSiren() }
+                    else if self.isMetronomeActive { self.playMetronome() }
+                    (self.keepAlive as? SilentAudioKeepAlive)?.resumeIfRequested()
+                } else {
+                    self.pauseOutput(reason: "Audio configuration changed. Check the route and tap Retry audio.")
+                }
             }
         })
         observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] notification in
@@ -132,6 +145,9 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
 
     func interruptionEnded(shouldResume: Bool) {
         isInterrupted = false
+        // An emergency siren resumes unconditionally: the wearer is on the
+        // floor and the interruption was most likely the caregiver calling back.
+        if isSirenActive { resetRequiresUserAction = false; retryAudio(); return }
         if shouldResume && resumeAfterInterruption && !resetRequiresUserAction { retryAudio() }
         else { audioProblem = "Audio paused. Tap Retry audio when ready." }
     }
@@ -140,6 +156,15 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
         resetRequiresUserAction = true
         mediaServicesGeneration += 1
         pauseOutput(reason: "Audio services restarted. Tap Retry audio when ready.")
+        // No automatic playback after a media-services reset, except the
+        // siren, which comes back by itself once the system has settled.
+        if isSirenActive {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, self.isSirenActive else { return }
+                self.resetRequiresUserAction = false
+                self.retryAudio()
+            }
+        }
         guard playbackEnabled else { return }
         engine = AVAudioEngine()
         playerNode = AVAudioPlayerNode()
@@ -150,7 +175,6 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
         engine.mainMixerNode.outputVolume = 1
         playerNode.volume = 1
         (keepAlive as? SilentAudioKeepAlive)?.rebuild(using: engine)
-        // No automatic playback after a media-services reset.
     }
 
     public func retryAudio() {
@@ -189,10 +213,11 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
 
     /// Reconfigure after an explicit retry or an interrupt that permits resuming.
     @discardableResult
-    public func configureLaunchAudioSession(preferVoiceChat: Bool = true, requiresInput: Bool = false) -> Bool {
+    public func configureLaunchAudioSession(preferVoiceChat: Bool = false, requiresInput: Bool = false) -> Bool {
         guard !isInterrupted, !awaitingExplicitResume else { return false }
         guard playbackEnabled else { sessionConfigured = true; return true }
         sessionConfigured = false
+        let requiresInput = requiresInput || inputOwnership.requiresInput || isSirenActive
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         #if targetEnvironment(simulator)
@@ -211,13 +236,21 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
         }
         #else
         do {
-            var options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
-            #if swift(>=5.9)
-            options.insert(.allowBluetoothHFP)
-            #endif
-            try session.setCategory(.playAndRecord, mode: preferVoiceChat ? .voiceChat : .default, options: options)
-            try session.setActive(true)
-            AudioRouteManager.shared.routeToGlassesIfAvailable()
+            let desiredCategory: AVAudioSession.Category = requiresInput ? .playAndRecord : .playback
+            if session.category != desiredCategory {
+                plannedOutputNames = Set(session.currentRoute.outputs.map(\.portName))
+                plannedCategoryChangeUntil = ProcessInfo.processInfo.systemUptime + 1
+            }
+            if requiresInput {
+                let options: AVAudioSession.CategoryOptions = isSirenActive ? [.defaultToSpeaker] : [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
+                try session.setCategory(.playAndRecord, mode: preferVoiceChat ? .voiceChat : .default, options: options)
+                try session.setActive(true)
+                if !isSirenActive { AudioRouteManager.shared.routeToGlassesIfAvailable() }
+            } else {
+                try? session.setPreferredInput(nil)
+                try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                try session.setActive(true)
+            }
         } catch {
             // Fallback for devices without bluetooth or microphone permissions
             if requiresInput {
@@ -243,9 +276,32 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
 
     /// Microphone setup runs on worker queues; session policy and published
     /// health remain on the main thread. Hardware taps still open off-main.
-    func prepareMicrophoneSession() -> Bool {
-        if Thread.isMainThread { return configureLaunchAudioSession(requiresInput: true) }
-        return DispatchQueue.main.sync { self.configureLaunchAudioSession(requiresInput: true) }
+    func prepareMicrophoneSession(owner: AudioInputOwner = .transcript) -> Bool {
+        if !Thread.isMainThread { return DispatchQueue.main.sync { self.prepareMicrophoneSession(owner: owner) } }
+        inputOwnership.acquire(owner)
+        guard configureLaunchAudioSession(requiresInput: true) else { inputOwnership.release(owner); return false }
+        return true
+    }
+
+    func releaseMicrophoneSession(owner: AudioInputOwner) {
+        if !Thread.isMainThread { DispatchQueue.main.sync { self.releaseMicrophoneSession(owner: owner) }; return }
+        inputOwnership.release(owner)
+        if !inputOwnership.requiresInput, !isSirenActive { _ = configureLaunchAudioSession() }
+    }
+
+    /// Intentional handoff: release the Bluetooth call route as well as the tap.
+    public func releaseForMetaAssistant() throws {
+        guard !isSirenActive else { return }
+        pauseOutput(reason: "Cadence audio is paused so you can use Hey Meta. Tap Talk to Cadence to return.")
+        #if os(iOS)
+        if playbackEnabled {
+            let session = AVAudioSession.sharedInstance()
+            try? session.setPreferredInput(nil)
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(false, options: [.notifyOthersOnDeactivation])
+        }
+        #endif
+        AudioRouteManager.shared.updateCurrentInput()
     }
 
     func currentMediaServicesGeneration() -> Int {
@@ -269,7 +325,7 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
     }
 
     private func playSiren() {
-        guard ensureEngineRunning(), playbackEnabled else { return }
+        guard configureLaunchAudioSession(requiresInput: true), ensureEngineRunning(), playbackEnabled else { return }
         playerNode.stop()
         #if os(iOS)
         do { try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker) }
@@ -289,10 +345,15 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
         #if os(iOS)
         try? AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
         #endif
+        _ = configureLaunchAudioSession()
     }
 
+    /// True while a fall check-in is listening. Walking cues must not start
+    /// then: the click would reach the check-in microphone as a "voice".
+    public var checkInActive = false
+
     public func startRASMetronome(bpm: Int = 100) {
-        guard !isSirenActive, !isMetronomeActive else { return }
+        guard !isSirenActive, !isMetronomeActive, !checkInActive else { return }
         isMetronomeActive = true
         metronomeBPM = bpm
         // Preempt lower-priority speech even when the cue prompt is cooling down.
@@ -398,6 +459,8 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
 
     // MARK: - Voice
 
+    public func refreshVoiceSelection() { cachedVoice = nil }
+
     /// The voice prompts are spoken in.
     public func currentVoice() -> AVSpeechSynthesisVoice? {
         if let cachedVoice { return cachedVoice }
@@ -423,7 +486,9 @@ public final class AudioCueEngine: ObservableObject, EchoGuarding {
 
     public func isInEchoWindow(at date: Date) -> Bool {
         echoLock.lock(); defer { echoLock.unlock() }
-        return (playbackEnabled && synthesizer.isSpeaking) || echoWindow.isActive(at: date)
+        // Anything the phone plays can come back through its own microphone.
+        return (playbackEnabled && synthesizer.isSpeaking) || isMetronomeActive || isSirenActive
+            || echoWindow.isActive(at: date)
     }
 
     fileprivate func speechDidStart(_ utterance: AVSpeechUtterance) {

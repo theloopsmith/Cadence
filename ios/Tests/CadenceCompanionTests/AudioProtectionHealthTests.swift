@@ -55,6 +55,67 @@ final class AudioRecoveryTests: XCTestCase {
         audio.stopRASMetronome()
     }
 
+    /// The caregiver calling back is the most likely interruption during a fall.
+    /// Nobody on the floor taps Retry, so an active siren resumes on its own.
+    func testAnActiveSirenResumesAfterAnInterruptionWithoutATap() {
+        let audio = AudioCueEngine(playbackEnabled: false)
+        audio.activateBystanderSiren()
+        audio.interruptionBegan()
+        XCTAssertFalse(audio.isAudioAvailable)
+        audio.interruptionEnded(shouldResume: false)
+        XCTAssertTrue(audio.isAudioAvailable, "siren must come back even when the system says not to resume")
+        XCTAssertTrue(audio.isSirenActive)
+        audio.deactivateBystanderSiren()
+    }
+
+    func testAnActiveSirenResumesAfterAMediaServicesReset() {
+        let audio = AudioCueEngine(playbackEnabled: false)
+        audio.activateBystanderSiren()
+        audio.mediaServicesReset()
+        let resumed = expectation(description: "siren resumed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            XCTAssertTrue(audio.isAudioAvailable)
+            XCTAssertTrue(audio.isSirenActive)
+            resumed.fulfill()
+        }
+        wait(for: [resumed], timeout: 2)
+        audio.deactivateBystanderSiren()
+    }
+
+    func testWalkingCuesStillWaitForATapAfterAMediaServicesReset() {
+        let audio = AudioCueEngine(playbackEnabled: false)
+        audio.startRASMetronome()
+        audio.mediaServicesReset()
+        XCTAssertFalse(audio.isAudioAvailable)
+        audio.interruptionEnded(shouldResume: true)
+        XCTAssertFalse(audio.isAudioAvailable, "non-emergency audio keeps the explicit-resume rule")
+        audio.stopRASMetronome()
+    }
+
+    /// The echo guard must cover everything the phone plays, not only speech:
+    /// a metronome click in the microphone must not be mistaken for a voice.
+    func testEchoWindowCoversPCMPlaybackNotOnlySpeech() {
+        let audio = AudioCueEngine(playbackEnabled: false)
+        XCTAssertFalse(audio.isInEchoWindow(at: Date()))
+        audio.startRASMetronome()
+        XCTAssertTrue(audio.isInEchoWindow(at: Date()))
+        audio.stopRASMetronome()
+        audio.activateBystanderSiren()
+        XCTAssertTrue(audio.isInEchoWindow(at: Date()))
+        audio.deactivateBystanderSiren()
+    }
+
+    func testWalkingCuesCannotStartDuringAFallCheckIn() {
+        let audio = AudioCueEngine(playbackEnabled: false)
+        audio.checkInActive = true
+        audio.startRASMetronome()
+        XCTAssertFalse(audio.isMetronomeActive)
+        audio.checkInActive = false
+        audio.startRASMetronome()
+        XCTAssertTrue(audio.isMetronomeActive)
+        audio.stopRASMetronome()
+    }
+
     func testStoppedCueCannotRestartAfterInterruptionAndSirenPreemptsSpeech() {
         let audio = AudioCueEngine(playbackEnabled: false)
         audio.speakPrompt("Long scene description")

@@ -10,7 +10,6 @@ struct HelpView: View {
     }
 
     @State private var pendingSetup: Setup?
-    @State private var openSetup: Setup?
 
     private var caregiverName: String {
         let name = app.settings.caregiverName.trimmingCharacters(in: .whitespaces)
@@ -70,7 +69,7 @@ struct HelpView: View {
                 titleVisibility: .visible
             ) {
                 Button("Open") {
-                    openSetup = pendingSetup
+                    app.companion.destination = pendingSetup == .medication ? .medication : .settings
                     pendingSetup = nil
                 }
                 Button("Not now", role: .cancel) { pendingSetup = nil }
@@ -81,12 +80,7 @@ struct HelpView: View {
                         : "Voice, glasses, server connection, and contacts."
                 )
             }
-            .sheet(item: $openSetup) { setup in
-                switch setup {
-                case .medication: MedicationSetupView(app: app)
-                case .carePartner: SettingsView(app: app)
-                }
-            }
+
         }
     }
 }

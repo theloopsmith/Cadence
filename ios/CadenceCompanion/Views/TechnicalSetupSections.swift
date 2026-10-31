@@ -179,7 +179,7 @@ struct TechnicalSetupSections: View {
         } header: {
             Text("Connection")
         } footer: {
-            Text("Events are saved on the phone first and sent when a connection is available.")
+            Text("Events are saved on the phone first and sent when a connection is available. On an iPhone, localhost points to the phone itself: run scripts/run_phone_backend.py on the Mac and use the .local address it prints; the phone account's username and password are written to .local/phone-login.txt there.")
         }
     }
 

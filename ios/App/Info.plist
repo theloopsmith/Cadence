@@ -44,7 +44,7 @@
 		<key>MetaAppID</key>
 		<string>1211184641853598</string>
 		<key>TeamID</key>
-		<string>3MV78XV6K9</string>
+		<string>$(DEVELOPMENT_TEAM)</string>
 	</dict>
 	<key>NSAppTransportSecurity</key>
 	<dict>
@@ -55,6 +55,7 @@
 	<string>Cadence maintains a continuous Bluetooth connection to your Meta Gen 3 AI Glasses for Freeze-of-Gait rhythmic auditory cueing and fall detection.</string>
 	<key>NSBonjourServices</key>
 	<array>
+		<string>_cadence._tcp</string>
 		<string>_bonjour._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
@@ -71,10 +72,16 @@
 	<string>Cadence reads iPhone motion to detect freezing of gait and falls when the glasses motion stream is not available.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Cadence uses on-device Apple Speech recognition to listen for "I'm okay" or "Help" during the 30-second post-fall check-in when recognition is available.</string>
+	<key>UISupportedExternalAccessoryProtocols</key>
+	<array>
+		<string>com.meta.ar.wearable</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 		<string>bluetooth-central</string>
+		<string>bluetooth-peripheral</string>
+		<string>external-accessory</string>
 		<string>location</string>
 		<string>processing</string>
 	</array>

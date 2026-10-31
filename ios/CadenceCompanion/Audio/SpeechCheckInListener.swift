@@ -66,7 +66,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
     private var pauseObserver: NSObjectProtocol?
     private var hasInstalledTap: Bool = false
     /// Opening `AVAudioEngine.inputNode` can block. Hardware setup runs here so
-    /// `startListening` returns and the 12-second check-in timer stays armed.
+    /// `startListening` returns and the check-in timer stays armed.
     private let audioQueue = DispatchQueue(label: "com.cadence.speechcheckin")
     /// Bumped on start and stop. A setup block that loses the race with stop
     /// sees a newer value and does not open the microphone.
@@ -132,19 +132,27 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
             guard let self, self.isListening, self.session == session else { return }
             self.acceptTranscript(text, source: .cloud)
         }
-        audioQueue.async { [weak self] in
-            self?.openMicrophone(session: session)
+        // A safety check-in takes microphone ownership before starting either
+        // recognizer. Waiting off the main thread does not delay its deadline.
+        LiveTranscriptListener.shared.stopListening()
+        Task { [weak self] in
+            await LiveTranscriptListener.shared.waitUntilStopped()
+            guard let self, self.isListening, self.session == session else { return }
+            self.audioQueue.async { [weak self] in self?.openMicrophone(session: session) }
         }
     }
 
     private func openMicrophone(session: Int) {
         guard session == self.session else { return }
 
-        guard AudioCueEngine.shared.prepareMicrophoneSession() else {
+        guard AudioCueEngine.shared.prepareMicrophoneSession(owner: .checkIn) else {
             isListening = false
             return
         }
-        guard session == self.session else { return }
+        guard session == self.session else {
+            AudioCueEngine.shared.releaseMicrophoneSession(owner: .checkIn)
+            return
+        }
         let generation = AudioCueEngine.shared.currentMediaServicesGeneration()
         if generation != audioGeneration {
             // Audio objects from before a media-services reset are invalid.
@@ -158,9 +166,8 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
             // Enforce on-device recognition if available for offline safety
-            if #available(iOS 13, macOS 10.15, *), recognizer?.supportsOnDeviceRecognition == true {
-                request.requiresOnDeviceRecognition = true
-            }
+            // Do not fall back to a non-Meta cloud recognizer.
+            request.requiresOnDeviceRecognition = true
             self.recognitionRequest = request
 
             let inputNode = audioEngine.inputNode
@@ -168,6 +175,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
 
             guard recordingFormat.sampleRate > 0 && recordingFormat.channelCount > 0 else {
                 print("[SpeechCheckInListener] Input node has invalid format (sampleRate=\(recordingFormat.sampleRate), channels=\(recordingFormat.channelCount)). Skipping tap.")
+                _ = stopListening()
                 return
             }
 
@@ -224,7 +232,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
             }
         } catch {
             print("SpeechCheckInListener start error: \(error)")
-            isListening = false
+            _ = stopListening()
         }
     }
 
@@ -264,5 +272,6 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
         recognitionRequest = nil
         recognitionTask?.cancel()
         recognitionTask = nil
+        AudioCueEngine.shared.releaseMicrophoneSession(owner: .checkIn)
     }
 }

@@ -8,6 +8,13 @@ private final class HeldPhotoGlasses: GlassesDevice {
     let capabilities = GlassesCapabilities(imu: false, microphone: false, camera: true, audioOutput: true, imuSampleRateHz: nil)
     var onStateChange: ((GlassesDevice) -> Void)?
     let motion: MotionSource = MockGlassesMotionSource(samples: [], sampleRateHz: 50)
+    var onCameraFrame: ((Data) -> Void)?
+    var onCameraPhoto: ((Data) -> Void)?
+    var onCameraError: ((String) -> Void)?
+    var previewStarts = 0
+    var previewStops = 0
+    func startCameraPreview() { previewStarts += 1 }
+    func stopCameraPreview() { previewStops += 1 }
     var requests: [(Result<Data, GlassesError>) -> Void] = []
     var cancellations = 0
     var connectsImmediately = true
@@ -78,6 +85,83 @@ final class GlassesPhotoCaptureTests: XCTestCase {
         session.capturePhoto { if case .failure(.captureFailed) = $0 { emptyFailed = true } }
         device.requests[1](.success(Data()))
         XCTAssertTrue(emptyFailed)
+    }
+
+    func testPreviewStartsAfterConnectionAndFencesCallbacksAfterClosingOrReplacingDevice() async {
+        let device = HeldPhotoGlasses()
+        device.connectionState = .disconnected
+        device.connectsImmediately = false
+        let session = session(); session.attach(device)
+        session.startCameraPreview()
+        XCTAssertEqual(device.previewStarts, 0)
+        device.connectionState = .connected; device.onStateChange?(device)
+        XCTAssertEqual(device.previewStarts, 1)
+        let staleFrame = device.onCameraFrame
+        let stalePhoto = device.onCameraPhoto
+        let staleError = device.onCameraError
+        device.onCameraFrame?(Data("live".utf8))
+        await Task.yield(); await Task.yield()
+        XCTAssertEqual(session.previewFrame, Data("live".utf8))
+        let photoID = session.cameraPhotoID
+        device.onCameraPhoto?(Data("physical shutter photo".utf8))
+        await Task.yield(); await Task.yield()
+        XCTAssertNotEqual(session.cameraPhotoID, photoID)
+        XCTAssertEqual(session.cameraPhoto, Data("physical shutter photo".utf8))
+        session.stopCameraPreview()
+        staleFrame?(Data("late frame".utf8)); stalePhoto?(Data("late photo".utf8)); staleError?("stale error")
+        await Task.yield(); await Task.yield()
+        XCTAssertNil(session.previewFrame)
+        XCTAssertNil(session.cameraPhoto)
+        XCTAssertNil(session.cameraError)
+        session.attach(HeldPhotoGlasses()); session.startCameraPreview()
+        staleFrame?(Data("old device".utf8))
+        await Task.yield(); await Task.yield()
+        XCTAssertNil(session.previewFrame)
+        session.stopCameraPreview()
+    }
+
+    func testCaptureDuringPreviewPublishesPhotoOnceWithoutEndingPreview() async {
+        let device = HeldPhotoGlasses(); let session = session(); session.attach(device)
+        session.startCameraPreview()
+        var count = 0
+        session.capturePhoto { _ in count += 1 }
+        device.requests[0](.success(Data("photo".utf8)))
+        let id = session.cameraPhotoID
+        XCTAssertEqual(session.cameraPhoto, Data("photo".utf8))
+        XCTAssertTrue(session.isPreviewOpen)
+        device.requests[0](.success(Data("duplicate".utf8)))
+        XCTAssertEqual(session.cameraPhotoID, id)
+        XCTAssertEqual(count, 1)
+        session.stopCameraPreview()
+        XCTAssertNil(device.onCameraFrame)
+    }
+
+    func testDisconnectClearsLiveFrameAndMakesFailureVisible() async {
+        let device = HeldPhotoGlasses(); let session = session(); session.attach(device)
+        session.startCameraPreview()
+        device.onCameraFrame?(Data("live".utf8))
+        await Task.yield(); await Task.yield()
+        device.disconnect()
+        XCTAssertNil(session.previewFrame)
+        XCTAssertFalse(session.isPreviewOpen)
+        XCTAssertTrue(session.cameraError?.contains("disconnected") == true)
+    }
+
+    func testMissingOrStaleVideoStopsCameraAndFencesLateFrames() async throws {
+        for sendsInitialFrame in [false, true] {
+            let device = HeldPhotoGlasses()
+            let session = GlassesSessionManager(phoneMotion: device.motion, previewFirstFrameTimeoutSec: 0.01, previewStaleTimeoutSec: 0.01)
+            session.attach(device); session.startCameraPreview()
+            let lateFrame = device.onCameraFrame
+            if sendsInitialFrame { device.onCameraFrame?(Data("first frame".utf8)) }
+            try await Task.sleep(nanoseconds: 60_000_000)
+            XCTAssertFalse(session.isPreviewOpen)
+            XCTAssertNil(session.previewFrame)
+            XCTAssertTrue(session.cameraError?.contains("Video stopped") == true)
+            lateFrame?(Data("late".utf8))
+            await Task.yield(); await Task.yield()
+            XCTAssertNil(session.previewFrame)
+        }
     }
 
     func testLiveMetaMasksWithoutConfidenceDecodeWithoutInventingAValue() throws {

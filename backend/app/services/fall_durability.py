@@ -7,7 +7,7 @@ import asyncio
 import time
 import uuid
 from app.config import settings
-from app.db import _connect_sync
+from app.db import _connect_sync, require_data_generation
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fall_jobs (
@@ -51,8 +51,9 @@ async def transact(fn):
     return await asyncio.to_thread(transaction, fn)
 
 
-async def persist(sql, params, patient_id, event_uuid, status):
+async def persist(sql, params, patient_id, event_uuid, status, data_generation=0):
     def write(c):
+        require_data_generation(c, patient_id, data_generation)
         row = c.execute('SELECT patient_id FROM fall_events WHERE event_uuid=?', (event_uuid,)).fetchone()
         if row and row['patient_id'] != patient_id:
             from fastapi import HTTPException
@@ -137,8 +138,9 @@ async def finish(token, result):
     return await transact(commit)
 
 
-async def cancel(patient_id,event_uuid):
+async def cancel(patient_id,event_uuid,data_generation=0):
     def stop(c):
+        require_data_generation(c, patient_id, data_generation)
         owner=c.execute("SELECT patient_id FROM fall_events WHERE event_uuid=?",(event_uuid,)).fetchone()
         if owner and owner['patient_id'] != patient_id:
             from fastapi import HTTPException

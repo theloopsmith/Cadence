@@ -13,7 +13,7 @@ public enum FallDetectorStage {
 /// - Evaluates Stage 1 Free-Fall (<0.45g for >=60ms), Stage 2 Impact (>2.8g & Jerk >35g/s),
 ///   and Stage 3 Post-Impact Orientation Change (>55 deg) & Stillness (<0.015 g^2).
 /// - Immediately saves P0 local SQLite row (candidate_check_in_pending + CoreLocation GPS) at Stage 3
-///   completion BEFORE starting the 12-second voice check-in timer.
+///   completion BEFORE starting the voice check-in timer (30 s, owned by the coordinator).
 /// - Requires explicit multi-word affirmative cancel phrase; distress/negation/groans always escalate.
 public final class FallDetector {
     public static let affirmativeCancelPhrases: [String] = [
@@ -153,7 +153,7 @@ public final class FallDetector {
                     let eventUUID = UUID().uuidString
                     let preWearRms = computePreImpactWearRmsG(beforeTimestamp: impactTime - 2.0)
 
-                    // Immediate P0 Local Persistence BEFORE 12s check-in starts!
+                    // Immediate local persistence BEFORE the check-in starts.
                     var localPayload: [String: Any] = [
                         "event_uuid": eventUUID,
                         "timestamp_utc": ISO8601DateFormatter().string(from: Date()),
@@ -177,7 +177,8 @@ public final class FallDetector {
                     )
 
                     stage = .stage3CheckInActive(eventUUID: eventUUID, startedAt: sample.timestamp)
-                    AudioCueEngine.shared.speakPrompt(Self.checkInPrompt, priority: 0)
+                    // The coordinator speaks the prompt once the microphone session
+                    // is configured, so the category switch cannot cut it off.
                     return eventUUID
                 }
             } else if postImpactElapsed > 2.5 {
@@ -213,7 +214,7 @@ public final class FallDetector {
         return sqrt(sumSq / Double(window.count))
     }
 
-    /// Evaluates 12s check-in transcript and vocal activity to decide cancellation vs. escalation.
+    /// Evaluates the check-in transcript and vocal activity to decide cancellation vs. escalation.
     public func evaluateCheckInOutcome(
         transcript: String?,
         maxVocalLevelDbfs: Double,

@@ -9,8 +9,8 @@ public enum DoseVoiceIntent: Equatable {
     case unclear
 
     private static let takenWords = ["taken", "took", "had my", "have had", "i've had", "swallowed"]
-    private static let yesWords = ["yes", "yeah", "yep", "yup", "correct", "that's right", "thats right", "i did", "right"]
-    private static let noWords = ["no", "nope", "not yet", "haven't", "havent", "didn't", "didnt", "wrong"]
+    private static let yesWords = ["yes", "yeah", "yep", "yup", "correct", "that's right", "thats right", "i did"]
+    private static let noWords = ["no", "nope", "not yet", "haven't", "havent", "didn't", "didnt", "wrong", "not right", "not correct"]
 
     public static func parse(_ raw: String) -> DoseVoiceIntent {
         let text = " " + FallDetector.normalizeTranscript(raw).trimmingCharacters(in: .whitespaces) + " "
@@ -97,9 +97,10 @@ public final class VoiceDoseAssistant: ObservableObject {
         case (.listening, .unclear):
             speaker.speak(Self.reaskPrompt)
         case (.confirming, .yes):
-            doses.markTaken()
-            Haptics.success()
-            finish(.done, saying: "Logged. Thank you.")
+            if doses.markTaken() {
+                Haptics.success()
+                finish(.done, saying: doses.saveError ?? "Logged. Thank you.")
+            } else { finish(.cancelled, saying: doses.saveError ?? "I couldn't save that dose. Please try again.") }
         case (.confirming, .no):
             finish(.cancelled, saying: "No problem. Nothing was logged.")
         case (.confirming, .unclear):

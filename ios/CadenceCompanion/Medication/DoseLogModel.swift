@@ -6,6 +6,8 @@ import Foundation
 /// the predicted off window.
 @MainActor
 public final class DoseLogModel: ObservableObject {
+    @Published public private(set) var saveError: String?
+    private var historyUnavailable = false
     @Published public private(set) var headline = ""
     @Published public private(set) var detail = ""
     @Published public private(set) var isDoseDue = false
@@ -20,7 +22,7 @@ public final class DoseLogModel: ObservableObject {
     private let diary: DiaryStore
     private let sync: EventSyncManager
     private let clock: () -> Date
-    private var lastLogged: (eventUUID: String, diaryID: String, at: Date)?
+    private var lastLogged: (eventUUID: String, diaryID: String, at: Date, dataGeneration: Int)?
     private var timer: AnyCancellable?
 
     public init(
@@ -41,31 +43,40 @@ public final class DoseLogModel: ObservableObject {
     }
 
     /// Logs the dose now. Queued for the backend, written to the diary.
-    public func markTaken() {
+    @discardableResult
+    public func markTaken() -> Bool {
         let now = clock()
         let eventUUID = UUID().uuidString
+        let dataGeneration = sync.currentDataGeneration
         let diaryEvent = DiaryEvent(kind: .doseTaken, at: now, detail: schedule.medicationName)
-        try? diary.append(diaryEvent)
-        sync.saveLocalImmediate(
+        do { try diary.append(diaryEvent) }
+        catch { saveError = "I couldn't save the dose on this phone. Nothing was logged. Check storage and try again."; return false }
+        saveError = nil
+        let queued = sync.saveLocalImmediate(
             eventUUID: eventUUID,
             endpoint: "/api/v1/medication/dose",
             payload: [
                 "event_uuid": eventUUID,
                 "timestamp_utc": ISO8601DateFormatter().string(from: now),
                 "medication_name": schedule.medicationName,
-            ]
+            ], dataGeneration: dataGeneration
         )
-        lastLogged = (eventUUID, diaryEvent.id, now)
-        takenToday.append(now)
+        lastLogged = (eventUUID, diaryEvent.id, now, dataGeneration)
+        reloadTakenToday()
         canUndo = true
+        if case .failure = queued { saveError = "The dose is recorded on this phone, but sharing could not be saved. Keep Cadence open and check storage." }
         refresh()
+        return true
     }
 
     /// Takes the last dose back. Available until the next action.
-    public func undo() {
-        guard let last = lastLogged else { return }
+    @discardableResult
+    public func undo() -> Bool {
+        guard let last = lastLogged else { return false }
         let now = clock()
-        try? diary.remove(id: last.diaryID)
+        do { try diary.remove(id: last.diaryID) }
+        catch { saveError = "I couldn't undo that dose record on this phone. Check storage and try again."; return false }
+        saveError = nil
         let withdrawn = sync.withdrawPending(last.eventUUID)
         if !withdrawn || sync.isEventSynced(last.eventUUID) {
             let retractionUUID = UUID().uuidString
@@ -77,13 +88,14 @@ public final class DoseLogModel: ObservableObject {
                     "retracted_event_uuid": last.eventUUID,
                     "timestamp_utc": ISO8601DateFormatter().string(from: now),
                     "reason": "user_undo"
-                ]
+                ], dataGeneration: last.dataGeneration
             )
         }
         takenToday.removeAll { $0 == last.at }
         lastLogged = nil
         canUndo = false
         refresh()
+        return true
     }
 
     public var lastDoseTaken: Date? { takenToday.max() }
@@ -92,14 +104,23 @@ public final class DoseLogModel: ObservableObject {
 
     private func reloadTakenToday() {
         let now = clock()
-        let events = (try? diary.events(on: now)) ?? []
-        takenToday = events.filter { $0.kind == .doseTaken }.map(\.at)
+        do {
+            let events = try diary.events(on: now)
+            takenToday = events.filter { $0.kind == .doseTaken }.map(\.at)
+            historyUnavailable = false
+        } catch {
+            historyUnavailable = true
+            saveError = "Medication history could not be read. I can't reliably tell which doses were logged."
+        }
     }
 
     private func refresh() {
         let now = clock()
         isSimpleMode = schedule.isPredictedOffPeriod(at: now, lastDoseTaken: lastDoseTaken)
 
+        if historyUnavailable {
+            isDoseDue = false; headline = "Medication history unavailable"; detail = saveError ?? "Check phone storage."; return
+        }
         if schedule.isEmpty {
             isDoseDue = false
             headline = "No medication times set"

@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
-from app.db import _connect_sync
+from app.db import _connect_sync, data_generation_sync
 from app.services.delivery_evidence import delivery_evidence
 from app.services.dose_clock import parse_utc
 
@@ -48,6 +48,7 @@ def snapshot_sync(patient_id, end=None):
         for fall in result['fall_events']:
             fall.update(delivery_evidence(fall,[a for a in attempts if a['event_uuid']==fall['event_uuid']], jobs.get(fall['event_uuid'])))
         result['start'] = start; result['end'] = end
+        result['data_generation'] = data_generation_sync(patient_id, conn)
         return result
     finally:
         conn.close()

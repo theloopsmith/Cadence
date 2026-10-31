@@ -39,6 +39,12 @@ def mask_area(mask: Dict[str, Any]) -> float:
     return 0.0
 
 
+def _stated_confidence(mask: Dict[str, Any]) -> float:
+    """Live SAM may omit confidence. Treat missing as fully stated so a real plate is not dropped."""
+    value = mask.get("confidence")
+    return 1.0 if value is None else float(value)
+
+
 def estimate_meal_protein(masks: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Computes plate-normalized protein grams from SAM 3.1 masks.
@@ -49,7 +55,7 @@ def estimate_meal_protein(masks: List[Dict[str, Any]]) -> Dict[str, Any]:
             mask_area(m)
             for m in masks
             if str(m.get("label", "")).lower() in PLATE_LABELS
-            and float(m.get("confidence", 0.0)) >= 0.60
+            and _stated_confidence(m) >= 0.60
         ),
         default=0.0,
     )
@@ -59,7 +65,7 @@ def estimate_meal_protein(masks: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     for m in masks:
         label = str(m.get("label", "")).lower()
-        conf = float(m.get("confidence", 0.0))
+        conf = _stated_confidence(m)
         area = mask_area(m)
         if label not in PROTEIN_LOOKUP_TABLE or conf < 0.60:
             continue

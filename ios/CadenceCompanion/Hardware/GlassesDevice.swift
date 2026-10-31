@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Motion source
 
@@ -76,7 +79,13 @@ public enum GlassesError: Error, Equatable, LocalizedError {
 /// Settings screen says so. Nothing here names a toolkit API.
 public protocol GlassesDevice: AnyObject {
     var connectionError: String? { get }
+    var connectionDetails: String? { get }
     func cancelPhotoCapture()
+    var onCameraFrame: ((Data) -> Void)? { get set }
+    var onCameraPhoto: ((Data) -> Void)? { get set }
+    var onCameraError: ((String) -> Void)? { get set }
+    func startCameraPreview()
+    func stopCameraPreview()
     var name: String { get }
     var connectionState: GlassesConnectionState { get }
     var wearState: GlassesWearState { get }
@@ -97,7 +106,13 @@ public protocol GlassesDevice: AnyObject {
 
 public extension GlassesDevice {
     var connectionError: String? { nil }
+    var connectionDetails: String? { nil }
     func cancelPhotoCapture() {}
+    var onCameraFrame: ((Data) -> Void)? { get { nil } set {} }
+    var onCameraPhoto: ((Data) -> Void)? { get { nil } set {} }
+    var onCameraError: ((String) -> Void)? { get { nil } set {} }
+    func startCameraPreview() { onCameraError?("Live preview is unavailable on this device.") }
+    func stopCameraPreview() {}
 }
 
 /// Lets the fall check-in ask whether the glasses are on a head without
@@ -117,6 +132,18 @@ public final class MockGlassesDevice: GlassesDevice {
     public private(set) var wearState: GlassesWearState = .unknown
     public let capabilities: GlassesCapabilities
     public var onStateChange: ((GlassesDevice) -> Void)?
+
+    public var onCameraFrame: ((Data) -> Void)?
+    public var onCameraPhoto: ((Data) -> Void)?
+    public var onCameraError: ((String) -> Void)?
+    private var previewTimer: Timer?
+    public func startCameraPreview() {
+        stopCameraPreview()
+        guard connectionState == .connected, let frame else { onCameraError?("Mock photo unavailable."); return }
+        onCameraFrame?(frame)
+        previewTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in self?.onCameraFrame?(frame) }
+    }
+    public func stopCameraPreview() { previewTimer?.invalidate(); previewTimer = nil }
 
     private let loop: MockGlassesMotionSource
     private let frame: Data?
@@ -147,6 +174,7 @@ public final class MockGlassesDevice: GlassesDevice {
     }
 
     public func disconnect() {
+        stopCameraPreview()
         loop.stop()
         connectionState = .disconnected
         wearState = .unknown
@@ -165,22 +193,18 @@ public final class MockGlassesDevice: GlassesDevice {
     }
 
     public static let sampleFrameJPEG: Data = {
-        // Minimal valid 1x1 JPEG (63 bytes)
-        Data([
-            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
-            0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
-            0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08, 0x07, 0x07, 0x07, 0x09,
-            0x09, 0x08, 0x0A, 0x0C, 0x14, 0x0D, 0x0C, 0x0B, 0x0B, 0x0C, 0x19, 0x12,
-            0x13, 0x0F, 0x14, 0x1D, 0x1A, 0x1F, 0x1E, 0x1D, 0x1A, 0x1C, 0x1C, 0x20,
-            0x24, 0x2E, 0x27, 0x20, 0x22, 0x2C, 0x23, 0x1C, 0x1C, 0x28, 0x37, 0x29,
-            0x2C, 0x30, 0x31, 0x34, 0x34, 0x34, 0x1F, 0x27, 0x39, 0x3D, 0x38, 0x32,
-            0x3C, 0x2E, 0x33, 0x34, 0x32, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x01,
-            0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xFF, 0xC4, 0x00, 0x1F, 0x00, 0x00,
-            0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-            0x09, 0x0A, 0x0B, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F,
-            0x00, 0xBF, 0x00, 0xFF, 0xD9
-        ])
+        #if canImport(UIKit)
+        return UIGraphicsImageRenderer(size: CGSize(width: 640, height: 480)).image { context in
+            UIColor.darkGray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 640, height: 480))
+            ("MOCK GLASSES CAMERA\nSimulated photo" as NSString).draw(
+                in: CGRect(x: 40, y: 180, width: 560, height: 120),
+                withAttributes: [.font: UIFont.systemFont(ofSize: 30), .foregroundColor: UIColor.white]
+            )
+        }.jpegData(compressionQuality: 0.8) ?? Data()
+        #else
+        return Data("Mock camera frame — not a real photo".utf8)
+        #endif
     }()
 
     public func playHaptic(_ pattern: HapticPattern) {

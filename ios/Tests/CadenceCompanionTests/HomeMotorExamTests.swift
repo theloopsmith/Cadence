@@ -195,7 +195,7 @@ final class HomeMotorExamTests: XCTestCase {
 
         let queued = sync.dueEvents().first
         XCTAssertEqual(queued?.endpoint, "/api/v1/exam/complete")
-        XCTAssertTrue(mgr.lastResultSummary?.lowercased().contains("online") == true)
+        XCTAssertTrue(mgr.lastResultSummary?.lowercased().contains("retry when connected") == true)
     }
 
     /// An exam with no SAM refinement omits the field rather than sending a

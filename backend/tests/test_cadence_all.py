@@ -143,6 +143,7 @@ def test_plate_normalized_protein_lookup():
 
 
 def test_end_to_end_api_pipelines_and_rbac():
+    device_headers = dict(DEVICE_HEADERS)
     with TestClient(app) as client:
         # 1. Public health & dashboard HTML shell
         assert client.get("/health").status_code == 200
@@ -166,12 +167,14 @@ def test_end_to_end_api_pipelines_and_rbac():
         )
         assert forbidden_post.status_code == 403
         assert client.delete("/api/v1/patient/data", headers=CLINICIAN_HEADERS).status_code == 403
-        assert client.delete("/api/v1/patient/data", headers=DEVICE_HEADERS).status_code == 200
+        wiped = client.delete("/api/v1/patient/data", headers=device_headers)
+        assert wiped.status_code == 200
+        device_headers["X-Cadence-Data-Generation"] = str(wiped.json()["data_generation"])
 
         # 3. Device token logs FoG, Dose, Meal Protein, Reality Check, Handwriting, Fall & Exam
         fog_ok = client.post(
             "/api/v1/events/fog",
-            headers=DEVICE_HEADERS,
+            headers=device_headers,
             json={
                 "event_uuid": "fog-test-001",
                 "duration_sec": 4.2,
@@ -187,7 +190,7 @@ def test_end_to_end_api_pipelines_and_rbac():
         # Reality Check: SAM detects coat on chair (no person) -> grounded to 'coat'
         rc_ok = client.post(
             "/api/v1/reality-check",
-            headers=DEVICE_HEADERS,
+            headers=device_headers,
             json={
                 "event_uuid": "rc-test-001",
                 "user_query": "Is someone sitting in that chair?",
@@ -206,7 +209,7 @@ def test_end_to_end_api_pipelines_and_rbac():
         # Fall Event with GPS & Post-Dispatch Cancel -> All-Clear SMS
         fall_ok = client.post(
             "/api/v1/events/fall",
-            headers=DEVICE_HEADERS,
+            headers=device_headers,
             json={
                 "event_uuid": "fall-test-001",
                 "peak_impact_g": 3.6,
@@ -225,7 +228,7 @@ def test_end_to_end_api_pipelines_and_rbac():
 
         cancel_ok = client.post(
             "/api/v1/events/fall/fall-test-001/cancel",
-            headers=DEVICE_HEADERS,
+            headers=device_headers,
         )
         assert cancel_ok.status_code == 200
         assert cancel_ok.json()["all_clear_sms_sent"] >= 1
@@ -233,7 +236,7 @@ def test_end_to_end_api_pipelines_and_rbac():
         # Guided Home Motor Exam
         exam_ok = client.post(
             "/api/v1/exam/complete",
-            headers=DEVICE_HEADERS,
+            headers=device_headers,
             json={
                 "exam_uuid": "exam-test-001",
             "voice_status": "measured", "handwriting_status": "measured", "walk_status": "measured", "measurement_source": "device",

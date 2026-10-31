@@ -49,3 +49,8 @@ htmlcov/
 .build/
 .swiftpm/
 .local/
+
+# Node (dashboard browser check installs Playwright locally in CI)
+node_modules/
+backend/package.json
+backend/package-lock.json

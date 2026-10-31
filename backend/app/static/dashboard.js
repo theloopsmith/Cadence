@@ -20,6 +20,7 @@ function element(tag, text, className) {
     }
 
     const STORAGE_KEY = "cadence_bearer_token";
+    let dataGeneration = 0;
 
     function getToken() {
       return sessionStorage.getItem(STORAGE_KEY);
@@ -56,6 +57,7 @@ function element(tag, text, className) {
         return;
       }
       sessionStorage.setItem(STORAGE_KEY, body.access_token);
+      dataGeneration = 0;
       document.getElementById("passwordInput").value = "";
       document.getElementById("authModal").style.display = "none";
       loadReport();
@@ -65,17 +67,26 @@ function element(tag, text, className) {
       const token = getToken();
       if (!token) {
         document.getElementById("authModal").style.display = "flex";
-        return null;
+        throw new Error("Sign in before saving changes.");
       }
       const res = await fetch(path, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer " + token
+          "Authorization": "Bearer " + token,
+          "X-Cadence-Data-Generation": String(dataGeneration)
         },
         body: bodyObj ? JSON.stringify(bodyObj) : undefined
       });
-      return await res.json();
+      const body = await res.json();
+      if (getToken() !== token) throw new Error("Account changed. Please refresh the summary.");
+      if (!res.ok) {
+        if (body.error === "data_generation_changed" && Number.isSafeInteger(body.data_generation)) {
+          dataGeneration = Math.max(dataGeneration, body.data_generation);
+        }
+        throw new Error(body.message || "The action was not saved. Please try again.");
+      }
+      return body;
     }
 
     async function loadReport() {
@@ -93,6 +104,12 @@ function element(tag, text, className) {
         return;
       }
       const data = await res.json();
+      if (!res.ok || getToken() !== token) return;
+      const generation = data.report_metadata && data.report_metadata.data_generation;
+      if (Number.isSafeInteger(generation) && generation >= 0) {
+        if (generation < dataGeneration) return;
+        dataGeneration = generation;
+      }
       document.getElementById("narrativeText").textContent = data.clinical_narrative;
       const meta = data.report_metadata;
       const truncated = meta && Object.values(meta.details_truncated || {}).some(Boolean);
@@ -231,10 +248,14 @@ function element(tag, text, className) {
     async function wipePatientData() {
       const token = getToken();
       if (!token) return;
-      await fetch("/api/v1/patient/data", {
+      const res = await fetch("/api/v1/patient/data", {
         method: "DELETE",
         headers: { "Authorization": "Bearer " + token }
       });
+      const body = await res.json();
+      if (getToken() !== token) return;
+      if (!res.ok) throw new Error(body.message || "Server data could not be erased.");
+      if (Number.isSafeInteger(body.data_generation)) dataGeneration = Math.max(dataGeneration, body.data_generation);
       setGlassesBanner("Diary data wiped.");
       await loadReport();
     }
@@ -342,7 +363,9 @@ function element(tag, text, className) {
         realityButton: simRealityCheck, writingButton: simMicrographia,
         examButton: simHomeMotorExam, fallButton: simFallAndCancel, signInButton: signIn,
       };
-      for (const [id, handler] of Object.entries(actions)) document.getElementById(id).addEventListener("click", handler);
+      for (const [id, handler] of Object.entries(actions)) document.getElementById(id).addEventListener("click", () => {
+        Promise.resolve().then(handler).catch(error => { document.getElementById("narrativeText").textContent = error.message; });
+      });
       loadReport();
     }
     window.addEventListener("DOMContentLoaded", initializeDashboard);

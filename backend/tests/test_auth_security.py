@@ -157,7 +157,46 @@ def test_production_refuses_to_start_without_a_strong_secret(monkeypatch):
     with pytest.raises(RuntimeError):
         auth.validate_security_settings()
     monkeypatch.setattr(settings, "jwt_secret", "s" * 48)
+    _configure_caregiver_dispatch(monkeypatch)
     auth.validate_security_settings()
+
+
+def _configure_caregiver_dispatch(monkeypatch):
+    monkeypatch.setattr(settings, "twilio_account_sid", "AC" + "0" * 32)
+    monkeypatch.setattr(settings, "twilio_auth_token", "t" * 32)
+    monkeypatch.setattr(settings, "twilio_from_phone", "+15550000000")
+    monkeypatch.setattr(settings, "caregiver_primary_phone", "+15550000001")
+    monkeypatch.setattr(settings, "public_webhook_base_url", "https://cadence.example.org")
+    monkeypatch.setattr(settings, "demo_mode", None)
+    monkeypatch.setattr(settings, "allow_static_tokens", None)
+
+
+def test_production_refuses_to_start_with_no_way_to_reach_a_caregiver(monkeypatch):
+    """A fall alert that can never be delivered must fail at startup, not at 3 a.m."""
+    monkeypatch.setattr(settings, "cadence_env", "production")
+    monkeypatch.setattr(settings, "jwt_secret", "s" * 48)
+    _configure_caregiver_dispatch(monkeypatch)
+    auth.validate_security_settings()
+
+    for field in ("twilio_account_sid", "twilio_auth_token", "twilio_from_phone", "caregiver_primary_phone"):
+        monkeypatch.setattr(settings, field, "")
+        with pytest.raises(RuntimeError, match=field.upper()):
+            auth.validate_security_settings()
+        _configure_caregiver_dispatch(monkeypatch)
+
+    monkeypatch.setattr(settings, "public_webhook_base_url", "http://cadence.example.org")
+    with pytest.raises(RuntimeError, match="https"):
+        auth.validate_security_settings()
+    _configure_caregiver_dispatch(monkeypatch)
+
+    monkeypatch.setattr(settings, "demo_mode", True)
+    with pytest.raises(RuntimeError, match="DEMO_MODE"):
+        auth.validate_security_settings()
+    _configure_caregiver_dispatch(monkeypatch)
+
+    monkeypatch.setattr(settings, "allow_static_tokens", True)
+    with pytest.raises(RuntimeError, match="STATIC_TOKENS"):
+        auth.validate_security_settings()
 
 
 def test_production_defaults_turn_off_demo_and_static_tokens(monkeypatch):

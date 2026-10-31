@@ -11,6 +11,70 @@ from app.config import settings
 class DatabaseEncryptionError(RuntimeError):
     """Raised when a configured key would otherwise leave the database readable."""
 
+
+class DataGenerationChanged(Exception):
+    def __init__(self, generation):
+        self.generation = generation
+        super().__init__('Server data was erased. Old pending changes cannot be restored.')
+
+
+def data_generation_sync(patient_id, conn=None):
+    owned = conn is None
+    conn = conn or _connect_sync()
+    try:
+        return conn.execute('SELECT COUNT(*) FROM patient_wipes WHERE patient_id=?', (patient_id,)).fetchone()[0]
+    finally:
+        if owned: conn.close()
+
+
+def require_data_generation(conn, patient_id, generation):
+    current = data_generation_sync(patient_id, conn)
+    if generation != current:
+        raise DataGenerationChanged(current)
+
+
+def patient_transaction_sync(patient_id, generation, operation):
+    conn = _connect_sync()
+    try:
+        conn.execute('PRAGMA synchronous=FULL')
+        conn.execute('BEGIN IMMEDIATE')
+        require_data_generation(conn, patient_id, generation)
+        result = operation(conn)
+        conn.commit()
+        return result
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+async def execute_patient_write(auth, query, params=()):
+    return await asyncio.to_thread(patient_transaction_sync, auth.patient_id, auth.data_generation,
+                                  lambda conn: conn.execute(query, params).rowcount)
+
+
+async def record_dose_retraction(auth, payload):
+    def retract(conn):
+        prior = conn.execute('SELECT patient_id,retracted_event_uuid FROM medication_retractions WHERE event_uuid=?',
+                             (payload.event_uuid,)).fetchone()
+        if prior and prior['patient_id'] != auth.patient_id:
+            from fastapi import HTTPException
+            raise HTTPException(404, 'Undo record not found.')
+        if prior and prior['retracted_event_uuid'] != payload.retracted_event_uuid:
+            from fastapi import HTTPException
+            raise HTTPException(409, 'This undo identifier already refers to a different dose.')
+        target = conn.execute('SELECT patient_id FROM medication_logs WHERE event_uuid=?', (payload.retracted_event_uuid,)).fetchone()
+        if target and target['patient_id'] != auth.patient_id:
+            from fastapi import HTTPException
+            raise HTTPException(404, 'Dose not found.')
+        conn.execute('''INSERT INTO medication_retractions(patient_id,event_uuid,retracted_event_uuid,timestamp_utc,reason)
+            VALUES(?,?,?,?,?) ON CONFLICT(event_uuid) DO NOTHING''',
+            (auth.patient_id,payload.event_uuid,payload.retracted_event_uuid,payload.timestamp_utc,payload.reason or 'user_undo'))
+        conn.execute('DELETE FROM medication_logs WHERE patient_id=? AND event_uuid=?',
+                     (auth.patient_id,payload.retracted_event_uuid))
+    await asyncio.to_thread(patient_transaction_sync, auth.patient_id, auth.data_generation, retract)
+
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
@@ -209,12 +273,11 @@ def _refuse_plaintext_database(path: str) -> None:
         header = handle.read(16)
     if not header.startswith(b"SQLite format 3"):
         return
-    for suffix in ("", "-wal", "-shm"):
-        candidate = f"{path}{suffix}"
-        if os.path.exists(candidate):
-            os.remove(candidate)
+    # Refuse, never delete: this file may hold the fall ledger. The operator
+    # decides whether to migrate it or point the key at a new path.
     raise DatabaseEncryptionError(
-        f"{path} is a plaintext SQLite file while SQLITE_ENCRYPTION_KEY is set."
+        f"{path} is a plaintext SQLite file while SQLITE_ENCRYPTION_KEY is set. "
+        "Move it aside or choose a new SQLITE_DB_PATH; Cadence will not delete data."
     )
 
 
@@ -266,6 +329,8 @@ def _migrate_exam_validity(conn):
 
 
 def init_db_sync(db_path: Optional[str] = None) -> None:
+    target = db_path or settings.sqlite_db_path
+    existed_before = bool(target) and target != ":memory:" and os.path.exists(target)
     conn = _connect_sync(db_path)
     try:
         from app.services.fall_durability import SCHEMA as FALL_OUTBOX_SCHEMA
@@ -276,7 +341,18 @@ def init_db_sync(db_path: Optional[str] = None) -> None:
     finally:
         conn.close()
     if settings.sqlite_encryption_key:
-        _refuse_plaintext_database(db_path or settings.sqlite_db_path)
+        try:
+            _refuse_plaintext_database(target)
+        except DatabaseEncryptionError:
+            if not existed_before:
+                # Cadence created this file seconds ago through a module that did
+                # not encrypt; it holds only an empty schema. Pre-existing files
+                # are never removed.
+                for suffix in ("", "-wal", "-shm"):
+                    candidate = f"{target}{suffix}"
+                    if os.path.exists(candidate):
+                        os.remove(candidate)
+            raise
 
 
 async def init_db(db_path: Optional[str] = None) -> None:
@@ -494,6 +570,8 @@ def wipe_patient_data_sync(
     conn = _connect_sync(db_path)
     deleted: Dict[str, Any] = {}
     try:
+        conn.execute('PRAGMA synchronous=FULL')
+        conn.execute('BEGIN IMMEDIATE')
         # Delete child caregiver_alerts first due to foreign key
         tables_ordered = [
             "fall_clear_jobs", "fall_attempts", "fall_jobs",
@@ -518,6 +596,7 @@ def wipe_patient_data_sync(
             "INSERT INTO patient_wipes (patient_id, wiped_at_utc) VALUES (?, ?)",
             (patient_id, wiped_at_utc),
         )
+        deleted['data_generation'] = data_generation_sync(patient_id, conn)
         conn.commit()
         deleted["wiped_at_utc"] = wiped_at_utc
         return deleted

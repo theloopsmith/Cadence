@@ -1,5 +1,7 @@
 import Combine
 import Foundation
+import AVFoundation
+import Speech
 
 /// Everything the screens share. Built once at launch by `CadenceRootView`.
 @MainActor
@@ -7,6 +9,10 @@ public final class CadenceAppModel: ObservableObject {
     public static let shared = CadenceAppModel()
     @Published public private(set) var persistenceWarning: String?
     @Published public private(set) var profileResetError: String?
+    @Published public private(set) var syncNotice: String?
+    /// Set when today's diary could not be written. A fall that was escalated
+    /// must not silently vanish from the Diary tab.
+    @Published public private(set) var diaryWarning: String?
     public let settings: AppSettings
     public let motion: MotionFeed
     public let fallAlert: FallAlertCoordinator
@@ -19,6 +25,12 @@ public final class CadenceAppModel: ObservableObject {
     public let diary: DiaryStore
     public let transcripts: TranscriptListening
     public let haptics: HapticRouter
+    public let companion: VoiceCompanion
+    @Published public private(set) var isUsingMetaAssistant = false
+    @Published public private(set) var isHandingOffToMeta = false
+    @Published public private(set) var metaHandoffError: String?
+    @Published public private(set) var voicePermissionError: String?
+    private var voiceActivationID = UUID()
     public let voiceDose: VoiceDoseAssistant
     public let pillPhotos: PillPhotoStore
     public let offHours: OffHourLearner
@@ -75,6 +87,7 @@ public final class CadenceAppModel: ObservableObject {
         self.reminders = DoseReminderScheduler(center: notifications)
         let auth = AuthSession(settings: settings)
         self.auth = auth
+        settings.onUnauthorized = { [weak auth] in auth?.markExpired() }
         settings.sync.onUnauthorized = { [weak auth] in
             Task { @MainActor in auth?.markExpired() }
         }
@@ -99,9 +112,38 @@ public final class CadenceAppModel: ObservableObject {
         self.doses = doses
         self.haptics = HapticRouter(phone: phoneHaptics, glasses: glasses)
         self.voiceDose = VoiceDoseAssistant(doses: doses, listener: transcripts, speaker: AudioCueEngine.shared)
+        self.companion = VoiceCompanion(listener: transcripts, speaker: AudioCueEngine.shared, echo: AudioCueEngine.shared)
         settings.bind(fallAlert: fallAlert, exam: exam)
+        companion.execute = { [weak self] intent in self?.executeCompanionAction(intent) ?? "That action is unavailable." }
+        companion.onDisabled = { [weak self] in
+            self?.settings.voiceCompanionEnabled = false
+            self?.voiceDose.cancel()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.transcripts.waitUntilStopped()
+                // A rapid off/on must not release a newly acquired conversation.
+                if !self.companion.isEnabled { AudioCueEngine.shared.releaseMicrophoneSession(owner: .companion) }
+            }
+        }
+        companion.onMetaHandoff = { [weak self] in Task { @MainActor in await self?.useMetaAssistant() } }
+        companion.understand = { [weak self] text, history in
+            guard let self, self.settings.cloudListeningEnabled, !self.auth.needsSignIn else { return nil }
+            let client = self.settings.api
+            let result = try? await client.companionIntent(text: text, history: history)
+            guard self.settings.deviceToken == client.bearerToken, self.settings.api.baseURL == client.baseURL,
+                  !self.settings.restartRequired else { return nil }
+            return result
+        }
         calibration.recalibrate()
         refreshSimpleMode()
+        settings.sync.onServerDataErased = { [weak self] in
+            Task { @MainActor in
+                self?.syncNotice = "Server data was erased. Older pending changes were discarded. Your local diary is still on this phone."
+                self?.fallAlert.serverDataWasErased()
+                self?.companion.setPaused("Server data changed", true)
+                self?.companion.setPaused("Server data changed", false)
+            }
+        }
 
         // Signals the wearer feels: cue when the beat starts, reminder when a
         // dose comes due, alert when a check-in opens.
@@ -128,11 +170,33 @@ public final class CadenceAppModel: ObservableObject {
 
         fallAlert.$phase
             .sink { [weak self] phase in
-                if case .checkIn = phase { self?.haptics.play(.alert) }
-                self?.deliveryTask?.cancel()
-                if case .dispatched = phase { self?.startDeliveryMonitoring() }
+                guard let self else { return }
+                // A fall alert preempts the optional Hey Meta handoff. Restore
+                // Cadence audio before the coordinator opens its check-in mic.
+                let alertIsActive: Bool
+                if case .idle = phase { alertIsActive = false } else { alertIsActive = true }
+                if self.isUsingMetaAssistant && alertIsActive {
+                    AudioCueEngine.shared.retryAudio()
+                    self.isUsingMetaAssistant = false
+                }
+                if case .idle = phase { self.companion.setPaused("Safety check-in", false) }
+                else { self.companion.setPaused("Safety check-in", true) }
+                if case .checkIn = phase {
+                    self.haptics.play(.alert)
+                    // Only one microphone owner during a check-in: an exam voice
+                    // step or its live level monitor would hold the input engine
+                    // and the wearer's spoken answer would never be heard.
+                    if self.exam.isRunning { self.exam.cancelExam() }
+                    VoiceMonitor.shared.stopLiveMonitoring()
+                }
+                self.deliveryTask?.cancel()
+                if case .dispatched = phase { self.startDeliveryMonitoring() }
             }
             .store(in: &cancellables)
+
+        voiceDose.$state.removeDuplicates().sink { [weak self] state in
+            self?.companion.setPaused("Dose confirmation", state == .listening || state == .confirming)
+        }.store(in: &cancellables)
 
         settings.$schedule
             .dropFirst()
@@ -228,6 +292,7 @@ public final class CadenceAppModel: ObservableObject {
             doses.objectWillChange.eraseToAnyPublisher(),
             voiceDose.objectWillChange.eraseToAnyPublisher(),
             auth.objectWillChange.eraseToAnyPublisher(),
+            companion.objectWillChange.eraseToAnyPublisher(),
         ] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
@@ -252,6 +317,7 @@ public final class CadenceAppModel: ObservableObject {
         func stillOwned() -> Bool {
             !client.bearerToken.isEmpty && !settings.restartRequired && fallAlert.isDispatched && fallAlert.activeEventUUID == eventUUID &&
                 settings.deviceToken == client.bearerToken && settings.api.baseURL == client.baseURL
+                && settings.sync.currentDataGeneration == client.dataGeneration
         }
         guard stillOwned() else { return false }
         do {
@@ -274,7 +340,7 @@ public final class CadenceAppModel: ObservableObject {
     private func record(_ kind: DiaryEventKind, detail: String, incidentID: String? = nil) {
         guard !settings.restartRequired else { return }
         let id = incidentID.map { "\(kind.rawValue)-\($0)" } ?? UUID().uuidString
-        try? diary.append(DiaryEvent(id: id, kind: kind, at: Date(), detail: detail, incidentID: incidentID))
+        appendToDiary(DiaryEvent(id: id, kind: kind, at: Date(), detail: detail, incidentID: incidentID))
         diaryVersion += 1
         if kind == .cue { refreshSimpleMode() }
     }
@@ -295,8 +361,17 @@ public final class CadenceAppModel: ObservableObject {
     /// Diary access for tools that log outside the automatic hooks.
     public func recordDiary(_ kind: DiaryEventKind, detail: String, at date: Date = Date()) {
         guard !settings.restartRequired else { return }
-        try? diary.append(DiaryEvent(kind: kind, at: date, detail: detail))
+        appendToDiary(DiaryEvent(kind: kind, at: date, detail: detail))
         diaryVersion += 1
+    }
+
+    private func appendToDiary(_ event: DiaryEvent) {
+        do {
+            try diary.append(event)
+            diaryWarning = nil
+        } catch {
+            diaryWarning = "Today's diary could not be saved on this phone. Check storage. Help and calls still work."
+        }
     }
 
     public func diaryChanged() {
@@ -304,14 +379,26 @@ public final class CadenceAppModel: ObservableObject {
     }
 
     /// Saves the care partner's pill photo for the medication card.
+    @Published public private(set) var photoSaveError: String?
+    private var pendingPillPhoto: (data: Data?, pending: Bool) = (nil, false)
+
     public func setPillPhoto(_ jpeg: Data?) {
         guard !settings.restartRequired else { return }
-        if let jpeg {
-            try? pillPhotos.save(jpeg)
-        } else {
-            try? pillPhotos.remove()
+        pendingPillPhoto = (jpeg, true)
+        retryPillPhotoSave()
+    }
+
+    public func retryPillPhotoSave() {
+        guard !settings.restartRequired, pendingPillPhoto.pending else { return }
+        do {
+            if let data = pendingPillPhoto.data { try pillPhotos.save(data) }
+            else { try pillPhotos.remove() }
+            pillPhoto = pendingPillPhoto.data
+            pendingPillPhoto = (nil, false)
+            photoSaveError = nil
+        } catch {
+            photoSaveError = "The medication photo could not be saved on this phone. Keep Cadence open and retry saving."
         }
-        pillPhoto = pillPhotos.load()
     }
 
     /// Attaches real glasses supplied by the host app (the toolkit adapter).
@@ -337,7 +424,7 @@ public final class CadenceAppModel: ObservableObject {
         settings.cloudListeningEnabled = false
         settings.protectionEnabled = false
         walking.setProtection(enabled: false)
-        glasses.attach(MockGlassesDevice(name: "Cadence Mock Kit — simulated sensors", loopSamples: samples))
+        glasses.attach(MockGlassesDevice(name: "Cadence Mock Kit — simulated sensors", loopSamples: samples, frame: MockGlassesDevice.sampleFrameJPEG))
         isUsingMockGlasses = true
         glasses.connect()
         // A mock launch must not start audible cues without a deliberate action.
@@ -384,13 +471,105 @@ public final class CadenceAppModel: ObservableObject {
         }
     }
 
+    public func enableVoiceCompanion() async {
+        guard !settings.restartRequired, !fallAlert.isAlertVisible, !isHandingOffToMeta else { return }
+        let activationID = UUID()
+        voiceActivationID = activationID
+        let speech = await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
+        }
+        let microphone = await AVCaptureDevice.requestAccess(for: .audio)
+        guard voiceActivationID == activationID, !isHandingOffToMeta else { return }
+        guard speech, microphone, !settings.restartRequired, !fallAlert.isAlertVisible else {
+            voicePermissionError = "Allow Microphone and Speech Recognition for Cadence in iPhone Settings to use the voice companion."
+            return
+        }
+        if isUsingMetaAssistant {
+            AudioCueEngine.shared.retryAudio()
+        }
+        guard AudioCueEngine.shared.prepareMicrophoneSession(owner: .companion) else {
+            voicePermissionError = AudioCueEngine.shared.audioProblem ?? "The microphone could not start. Check audio, then retry."
+            return
+        }
+        if isUsingMetaAssistant { glasses.connect() }
+        isUsingMetaAssistant = false; metaHandoffError = nil
+        voicePermissionError = nil
+        settings.voiceCompanionEnabled = true
+        companion.start()
+    }
+
+    public func useMetaAssistant() async {
+        guard !isHandingOffToMeta, !isUsingMetaAssistant else { return }
+        guard !fallAlert.isAlertVisible else {
+            metaHandoffError = "Finish the active safety check-in before switching to Hey Meta."
+            return
+        }
+        isHandingOffToMeta = true
+        voiceActivationID = UUID()
+        defer { isHandingOffToMeta = false }
+        companion.stop()
+        companion.destination = nil
+        if exam.isRunning { exam.cancelExam() }
+        glasses.stopCameraPreview()
+        glasses.disconnect()
+        await transcripts.waitUntilStopped()
+        guard !fallAlert.isAlertVisible, !companion.isEnabled else { return }
+        do {
+            try AudioCueEngine.shared.releaseForMetaAssistant()
+            isUsingMetaAssistant = true
+            metaHandoffError = nil
+        } catch {
+            metaHandoffError = "The glasses audio route could not be released. Close Cadence before using Hey Meta."
+        }
+    }
+
+    private func executeCompanionAction(_ intent: CompanionIntent) -> String {
+        guard !settings.restartRequired, !fallAlert.isAlertVisible else { return "Let's finish the current safety check-in first." }
+        switch intent {
+        case .medication:
+            if let error = doses.saveError { return error }
+            let schedule = settings.schedule
+            guard !schedule.isEmpty else { return "Your medication plan isn't set up yet. Ask your caregiver to add the prescribed name and times in setup." }
+            let formatter = DateFormatter(); formatter.timeStyle = .short; formatter.calendar = schedule.calendar
+            let next = schedule.dueDose(at: Date(), takenToday: doses.takenToday) ?? schedule.nextDose(after: Date())
+            let timing = next.map { "Your saved time for \(schedule.medicationName) is \(formatter.string(from: $0))." } ?? "There isn't another saved medication time."
+            let last = doses.lastDoseTaken.map { " The last dose you recorded was at \(formatter.string(from: $0))." } ?? ""
+            return timing + last + " If you've already taken it, tell me and I can record it. I won't change your prescribed dose."
+        case .logDose:
+            guard !settings.schedule.isEmpty else { return "Your medication plan isn't set up yet. Ask your caregiver to add the prescribed name and times first." }
+            guard doses.markTaken() else { return doses.saveError ?? "I couldn't save that dose. Nothing was logged. Please try again." }
+            return doses.saveError ?? "I've recorded that you've taken \(settings.schedule.medicationName)."
+        case .undoDose:
+            guard doses.canUndo else { return "There isn't a dose I can undo from this session." }
+            guard doses.undo() else { return doses.saveError ?? "I couldn't undo that record. Please try again." }
+            return "I've undone the last dose record on this phone."
+        case .caregiver:
+            guard settings.hasCaregiver else { return "There isn't a caregiver number saved yet. Ask your care partner to add one in settings." }
+            fallAlert.callCaregiver()
+            return "Opening your caregiver's number. Your phone may ask you to confirm the call."
+        case .emergency:
+            fallAlert.callEmergencyServices()
+            return "Opening emergency services. Your phone may ask you to confirm the call."
+        case .startProtection:
+            settings.protectionEnabled = true; walking.setProtection(enabled: true)
+            return walking.headline
+        case .stopProtection:
+            settings.protectionEnabled = false; walking.setProtection(enabled: false)
+            return "Walking protection and its cues are stopped."
+        case .diary:
+            return (try? diary.plainFacts(for: Date()).joined(separator: ". ")) ?? "I couldn't read today's diary. Please check your phone's storage."
+        default: return "What would you like help with?"
+        }
+    }
+
     /// Called once the first screen appears.
     public func start() {
         guard !settings.restartRequired, settings.profile.failure == nil else { return }
         LiveSpeechCheckInListener.shared.cloudEarFactory = cloudEarFactory(for: .fallCheckIn)
-        LiveTranscriptListener.shared.cloudEarFactory = cloudEarFactory(for: .dose)
+        LiveTranscriptListener.shared.cloudEarFactory = cloudEarFactory(for: .companion)
         AudioCueEngine.shared.configureLaunchAudioSession()
         LiveLocationProvider.shared.requestAuthorization()
+        if settings.voiceCompanionEnabled { Task { await enableVoiceCompanion() } }
         if settings.protectionEnabled {
             walking.setProtection(enabled: true)
         }
@@ -414,6 +593,7 @@ public final class CadenceAppModel: ObservableObject {
         }
         auth.cancelPendingSignIn()
         deliveryTask?.cancel()
+        companion.stop()
         voiceDose.cancel()
         exam.cancelExam()
         walking.stopWalkingAudio()

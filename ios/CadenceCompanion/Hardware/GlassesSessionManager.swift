@@ -16,10 +16,23 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
     @Published public private(set) var deviceName: String?
     @Published public private(set) var capabilities: GlassesCapabilities?
     @Published public private(set) var connectionError: String?
+    @Published public private(set) var connectionDetails: String?
     @Published public private(set) var isCapturingPhoto = false
+
+    @Published public private(set) var previewFrame: Data?
+    @Published public private(set) var cameraPhoto: Data?
+    @Published public private(set) var cameraPhotoID = UUID()
+    @Published public private(set) var cameraError: String?
+    @Published public private(set) var isPreviewOpen = false
+    private var previewID = UUID()
+    private var lastFrameAt: Date?
+    private var previewStarted = false
+    private var previewTimeout: Task<Void, Never>?
 
     public private(set) var device: GlassesDevice?
     private let phoneMotion: MotionSource
+    private let previewFirstFrameTimeoutSec: Double
+    private let previewStaleTimeoutSec: Double
     private let photoTimeoutSec: Double
     private let connectionTimeoutSec: Double
     private var connectionTimeout: Task<Void, Never>?
@@ -27,7 +40,9 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
     private var photoCompletion: ((Result<Data, GlassesError>) -> Void)?
     private var photoTimeout: Task<Void, Never>?
 
-    public init(phoneMotion: MotionSource, photoTimeoutSec: Double = 20, connectionTimeoutSec: Double = 30) {
+    public init(phoneMotion: MotionSource, photoTimeoutSec: Double = 20, connectionTimeoutSec: Double = 30, previewFirstFrameTimeoutSec: Double = 20, previewStaleTimeoutSec: Double = 8) {
+        self.previewFirstFrameTimeoutSec = previewFirstFrameTimeoutSec
+        self.previewStaleTimeoutSec = previewStaleTimeoutSec
         self.phoneMotion = phoneMotion
         self.photoTimeoutSec = photoTimeoutSec
         self.connectionTimeoutSec = connectionTimeoutSec
@@ -36,6 +51,7 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
     /// Attaches a device and mirrors its state. Replaces any previous device.
     public func attach(_ device: GlassesDevice) {
         connectionTimeout?.cancel()
+        stopCameraPreview()
         cancelPhotoCapture()
         self.device?.onStateChange = nil
         self.device?.disconnect()
@@ -57,6 +73,7 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
 
     public func detach() {
         connectionTimeout?.cancel()
+        stopCameraPreview()
         cancelPhotoCapture()
         device?.onStateChange = nil
         device?.disconnect()
@@ -66,6 +83,7 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
         deviceName = nil
         capabilities = nil
         connectionError = nil
+        connectionDetails = nil
     }
 
     public func connect() {
@@ -83,12 +101,13 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
             catch { return }
             guard let device, self.device === device, connectionState == .connecting else { return }
             device.disconnect()
-            connectionError = "Connection timed out. Open the Meta AI app, check that your glasses are connected, then try again."
+            connectionError = "Cadence could not start a glasses session in time. Bluetooth pairing alone does not grant app access. In the Meta AI app, check Cadence under app connections and Developer Mode; keep the glasses worn and unfolded, then retry."
         }
     }
 
     public func disconnect() {
         connectionTimeout?.cancel()
+        stopCameraPreview()
         cancelPhotoCapture()
         device?.disconnect()
     }
@@ -163,13 +182,89 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
         finishPhoto(id: id, result: .failure(.captureFailed))
     }
 
+    /// The camera belongs to the visible camera screen, never a background observer.
+    public func startCameraPreview() {
+        stopCameraPreview()
+        isPreviewOpen = true
+        cameraError = nil
+        cameraPhoto = nil
+        if connectionState == .connected { beginPreview() }
+        else { connect() }
+    }
+
+    private func beginPreview() {
+        guard isPreviewOpen, !previewStarted, let device else { return }
+        previewStarted = true
+        let id = previewID
+        device.onCameraFrame = { [weak self] data in
+            DispatchQueue.main.async {
+                guard let self, self.isPreviewOpen, self.previewID == id, !data.isEmpty else { return }
+                self.lastFrameAt = Date()
+                self.previewFrame = data
+            }
+        }
+        device.onCameraPhoto = { [weak self] data in
+            DispatchQueue.main.async {
+                guard let self, self.isPreviewOpen, self.previewID == id else { return }
+                self.publishPhoto(data)
+            }
+        }
+        device.onCameraError = { [weak self] error in
+            DispatchQueue.main.async {
+                guard let self, self.isPreviewOpen, self.previewID == id else { return }
+                self.cameraError = error
+                self.previewFrame = nil
+            }
+        }
+        let openedAt = Date()
+        let tick = UInt64(min(1, max(0.001, min(previewFirstFrameTimeoutSec, previewStaleTimeoutSec))) * 1_000_000_000)
+        previewTimeout = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: tick) } catch { return }
+                guard let self, self.previewID == id, self.isPreviewOpen else { return }
+                let stale = self.lastFrameAt.map { Date().timeIntervalSince($0) > self.previewStaleTimeoutSec }
+                    ?? (Date().timeIntervalSince(openedAt) > self.previewFirstFrameTimeoutSec)
+                if stale {
+                    self.stopCameraPreview()
+                    self.cameraError = "Video stopped arriving. Check Developer Mode and camera permission in Meta AI, then retry."
+                    return
+                }
+            }
+        }
+        device.startCameraPreview()
+    }
+
+    public func stopCameraPreview() {
+        previewID = UUID()
+        isPreviewOpen = false
+        previewStarted = false
+        lastFrameAt = nil
+        previewTimeout?.cancel(); previewTimeout = nil
+        cancelPhotoCapture()
+        device?.onCameraFrame = nil
+        device?.onCameraPhoto = nil
+        device?.onCameraError = nil
+        device?.stopCameraPreview()
+        previewFrame = nil
+        cameraPhoto = nil
+    }
+
+    private func publishPhoto(_ data: Data) {
+        guard !data.isEmpty else { return }
+        cameraPhoto = data
+        cameraPhotoID = UUID()
+    }
+
     private func finishPhoto(id: UUID, result: Result<Data, GlassesError>) {
         guard photoRequestID == id else { return }
         photoTimeout?.cancel(); photoTimeout = nil
         let completion = photoCompletion
         photoCompletion = nil; photoRequestID = nil; isCapturingPhoto = false
         if case .success(let data) = result, data.isEmpty { completion?(.failure(.captureFailed)) }
-        else { completion?(result) }
+        else {
+            if case .success(let data) = result, isPreviewOpen { publishPhoto(data) }
+            completion?(result)
+        }
     }
 
     private func mirror(_ device: GlassesDevice) {
@@ -178,7 +273,15 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
         deviceName = device.name
         capabilities = device.capabilities
         connectionError = device.connectionError
+        connectionDetails = device.connectionDetails
         if connectionState != .connecting { connectionTimeout?.cancel(); connectionTimeout = nil }
-        if connectionState != .connected { cancelPhotoCapture() }
+        if connectionState == .connected { beginPreview() }
+        else {
+            cancelPhotoCapture()
+            if previewStarted {
+                stopCameraPreview()
+                cameraError = "Glasses disconnected. Reopen the camera to reconnect."
+            }
+        }
     }
 }

@@ -6,6 +6,7 @@ import UIKit
 import MWDATCamera
 import MWDATCore
 import MWDATMotion
+import MWDATInputs
 
 /// Ray-Ban Meta glasses through the Meta Wearables Device Access Toolkit 1.0.
 ///
@@ -33,6 +34,11 @@ public final class DATGlassesDevice: GlassesDevice {
     /// Why the last connect attempt failed, for the Settings screen.
     public private(set) var lastError: String?
     public var connectionError: String? { lastError }
+    public private(set) var connectionDetails: String?
+    private var errorTask: Task<Void, Never>?
+    private var discoveryTask: Task<Void, Never>?
+    private var selector: (any DeviceSelector)?
+
     private var captureTask: Task<Void, Never>?
     private var captureCompletion: ((Result<Data, GlassesError>) -> Void)?
     private var captureID: UUID?
@@ -45,6 +51,16 @@ public final class DATGlassesDevice: GlassesDevice {
     private let motionSource: DATMotionSource
     private let activeCaptureTokens = ListenerTokenBag()
     private var activeCamera: Camera?
+    public var onCameraFrame: ((Data) -> Void)?
+    public var onCameraPhoto: ((Data) -> Void)?
+    public var onCameraError: ((String) -> Void)?
+    private var previewTask: Task<Void, Never>?
+    private var inputTask: Task<Void, Never>?
+    private var previewGeneration = UUID()
+    private var previewActive = false
+    private var lastPreviewAt = Date.distantPast
+    private let previewTokens = ListenerTokenBag()
+
 
     public init(name: String = "Ray-Ban Meta") {
         self.name = name
@@ -58,9 +74,13 @@ public final class DATGlassesDevice: GlassesDevice {
         if session != nil { disconnect() }
         setConnection(.connecting)
         sessionTask?.cancel()
+        discoveryTask?.cancel(); discoveryTask = nil
+        errorTask?.cancel(); errorTask = nil
         sessionGeneration = UUID()
         let generation = sessionGeneration
         lastError = nil
+        connectionDetails = "Waiting for Meta device discovery…"
+        notify()
         sessionTask = Task { @MainActor [weak self] in
             await self?.openSession(generation: generation)
         }
@@ -68,9 +88,13 @@ public final class DATGlassesDevice: GlassesDevice {
 
     public func disconnect() {
         sessionGeneration = UUID()
+        stopCameraPreview()
         cancelPhotoCapture()
         sessionTask?.cancel()
         sessionTask = nil
+        errorTask?.cancel(); errorTask = nil
+        discoveryTask?.cancel(); discoveryTask = nil
+        selector = nil
         motionSource.stop()
         if let token = deviceStateToken {
             Task { await token.cancel() }
@@ -88,19 +112,55 @@ public final class DATGlassesDevice: GlassesDevice {
         do {
             // Registration is a one-time hand-off to the Meta AI app.
             if !isRegistered() {
+                let registration = wearables.registrationStateStream()
                 try await wearables.startRegistration()
+                for await state in registration {
+                    guard !Task.isCancelled, sessionGeneration == generation else { return }
+                    if state == .registered { break }
+                }
             }
             guard !Task.isCancelled, sessionGeneration == generation else { return }
-            let selector = AutoDeviceSelector(wearables: wearables)
-            let session = try wearables.createSession(deviceSelector: selector)
+            updateConnectionDetails()
+            discoveryTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                for await _ in wearables.devicesStream() {
+                    guard !Task.isCancelled, sessionGeneration == generation else { return }
+                    updateConnectionDetails()
+                }
+            }
+            // AutoDeviceSelector populates asynchronously. Creating a session
+            // immediately can throw noEligibleDevice even for paired glasses.
+            let discovery = AutoDeviceSelector(wearables: wearables)
+            self.selector = discovery
+            let selectedID = try await GlassesDeviceReadiness.waitForDevice(
+                current: discovery.activeDevice, updates: discovery.activeDeviceStream()
+            )
+            guard !Task.isCancelled, sessionGeneration == generation else { return }
+            let selected = SpecificDeviceSelector(device: selectedID)
+            self.selector = selected
+            let session = try wearables.createSession(deviceSelector: selected)
             self.session = session
             let states = session.stateStream()
+            let errors = session.errorStream()
+            errorTask = Task { @MainActor [weak self] in
+                for await error in errors {
+                    guard let self, !Task.isCancelled, self.sessionGeneration == generation else { return }
+                    self.lastError = self.describeConnectionError(error)
+                    self.updateConnectionDetails()
+                    self.stopCameraPreview()
+                    self.motionSource.bind(session: nil)
+                    self.setConnection(.disconnected)
+                    session.stop()
+                    return
+                }
+            }
             try session.start()
 
             for await state in states {
                 if Task.isCancelled || sessionGeneration != generation { return }
                 switch state {
                 case .started:
+                    updateConnectionDetails()
                     motionSource.bind(session: session)
                     observeDeviceState(session.device)
                     await MainActor.run {
@@ -108,10 +168,12 @@ public final class DATGlassesDevice: GlassesDevice {
                         AudioRouteManager.shared.routeToGlassesIfAvailable()
                     }
                 case .paused:
+                    stopCameraPreview()
                     cancelPhotoCapture()
                     motionSource.bind(session: nil)
                     setConnection(.disconnected)
                 case .stopped:
+                    stopCameraPreview()
                     cancelPhotoCapture()
                     await MainActor.run {
                         self.motionSource.bind(session: nil)
@@ -126,10 +188,35 @@ public final class DATGlassesDevice: GlassesDevice {
         } catch {
             guard sessionGeneration == generation, !Task.isCancelled else { return }
             await MainActor.run {
-                self.lastError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                self.lastError = self.describeConnectionError(error)
+                self.updateConnectionDetails()
                 self.setConnection(.disconnected)
             }
         }
+    }
+
+    private func updateConnectionDetails() {
+        let devices = wearables.devices.compactMap { wearables.deviceForIdentifier($0) }
+        let status = devices.map { device in
+            "\(device.nameOrId()): \(device.linkState), \(device.compatibility().displayString)"
+        }.joined(separator: "; ")
+        connectionDetails = "Meta app registration: \(isRegistered() ? "ready" : "not ready"). Devices visible to Cadence: \(devices.count)." + (status.isEmpty ? "" : " " + status)
+        notify()
+    }
+
+    private func describeConnectionError(_ error: Error) -> String {
+        if let sdkError = error as? DeviceSessionError {
+            switch sdkError {
+            case .noEligibleDevice:
+                return "Meta has not made an eligible device available to Cadence. Bluetooth pairing alone is not enough. Check Cadence's app connection and Developer Mode in Meta AI, keep the glasses worn and unfolded, then retry."
+            case .datAppOnTheGlassesUpdateRequired:
+                return "The Meta developer app on your glasses needs an update. Update it in Meta AI, then retry Cadence."
+            case .insufficientSDKVersion:
+                return "The glasses require a newer Meta SDK. Install an updated Cadence build."
+            default: break
+            }
+        }
+        return (error as? LocalizedError)?.errorDescription ?? String(describing: error)
     }
 
     private func isRegistered() -> Bool {
@@ -150,6 +237,7 @@ public final class DATGlassesDevice: GlassesDevice {
             Task { @MainActor in
                 guard self?.sessionGeneration == generation else { return }
                 self?.setWear(worn)
+                self?.updateConnectionDetails()
             }
         }
     }
@@ -175,12 +263,118 @@ public final class DATGlassesDevice: GlassesDevice {
 
     // MARK: - Camera
 
+    public func startCameraPreview() {
+        stopCameraPreview()
+        guard connectionState == .connected, let session else {
+            onCameraError?("Connect your Meta glasses first."); return
+        }
+        previewActive = true
+        let id = previewGeneration
+        previewTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                var status = try await wearables.checkPermissionStatus(.camera)
+                if status != .granted { status = try await wearables.requestPermission(.camera) }
+                guard !Task.isCancelled, previewGeneration == id else { return }
+                guard status == .granted else { onCameraError?(GlassesError.cameraUnavailable.localizedDescription); return }
+                guard let camera = try session.addCamera(config: StreamConfiguration(videoCodec: .raw, resolution: .medium, frameRate: 15)) else {
+                    onCameraError?("Glasses camera could not start."); return
+                }
+                activeCamera = camera
+                camera.stream.videoFramePublisher.listen { [weak self] frame in
+                    Task { @MainActor in
+                        guard let self, self.previewGeneration == id, self.previewActive else { return }
+                        // Bound image conversions and SwiftUI updates to ten per second.
+                        let now = Date()
+                        guard now.timeIntervalSince(self.lastPreviewAt) >= 0.1 else { return }
+                        self.lastPreviewAt = now
+                        if let jpeg = frame.makeUIImage()?.jpegData(compressionQuality: 0.65) { self.onCameraFrame?(jpeg) }
+                    }
+                }.store(in: previewTokens)
+                camera.stream.photoDataPublisher.listen { [weak self] capture in
+                    Task { @MainActor in
+                        guard let self, self.previewGeneration == id, self.previewActive else { return }
+                        guard let jpeg = UIImage(data: capture.data)?.jpegData(compressionQuality: 0.85) else {
+                            self.finishCapture(.failure(.captureFailed)); return
+                        }
+                        if self.captureCompletion != nil { self.finishCapture(.success(jpeg)) }
+                        else { self.onCameraPhoto?(jpeg) }
+                    }
+                }.store(in: previewTokens)
+                camera.stream.errorPublisher.listen { [weak self] error in
+                    Task { @MainActor in
+                        guard let self, self.previewGeneration == id else { return }
+                        self.onCameraError?(error.localizedDescription)
+                        self.finishCapture(.failure(.captureFailed))
+                    }
+                }.store(in: previewTokens)
+                camera.stream.statePublisher.listen { [weak self] state in
+                    Task { @MainActor in
+                        guard let self, self.previewGeneration == id else { return }
+                        if state == .paused || state == .stopped {
+                            self.onCameraError?("Glasses video paused. Check that the glasses are worn and unfolded, then retry.")
+                        }
+                    }
+                }.store(in: previewTokens)
+                camera.stream.start()
+                // Inputs are optional on some glasses/release channels. The phone shutter remains available.
+                if let inputs = try? session.addInputs(configuration: InputsConfiguration(sources: [.captureButton])) {
+                    inputTask = Task { @MainActor [weak self] in
+                        for await event in inputs.events {
+                            guard let self, !Task.isCancelled, self.previewGeneration == id else { return }
+                            if case .capture(.shortPress, _, _) = event {
+                                self.captureFrame { [weak self] result in
+                                    switch result {
+                                    case .success(let jpeg): self?.onCameraPhoto?(jpeg)
+                                    case .failure(let error): self?.onCameraError?(error.localizedDescription)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled, previewGeneration == id else { return }
+                onCameraError?(error.localizedDescription)
+            }
+        }
+    }
+
+    public func stopCameraPreview() {
+        previewGeneration = UUID()
+        previewTask?.cancel(); previewTask = nil
+        inputTask?.cancel(); inputTask = nil
+        if previewActive {
+            cancelPhotoCapture()
+            activeCamera?.stream.stop()
+            activeCamera?.stop()
+            activeCamera = nil
+            try? session?.removeInputs()
+        }
+        previewActive = false
+        previewTokens.clear()
+    }
+
     /// One still from the glasses camera via the standalone Photo path.
     public func captureFrame(_ completion: @escaping (Result<Data, GlassesError>) -> Void) {
         guard connectionState == .connected, let session else {
             return completion(.failure(.notConnected))
         }
         guard captureCompletion == nil else { return completion(.failure(.captureInProgress)) }
+        if previewActive {
+            guard let stream = activeCamera?.stream, stream.state == .streaming else {
+                completion(.failure(.cameraUnavailable)); return
+            }
+            captureCompletion = completion
+            let id = UUID(); captureID = id
+            guard stream.capturePhoto(format: .jpeg) else { finishCapture(.failure(.captureFailed)); return }
+            captureTask = Task { @MainActor [weak self] in
+                do { try await Task.sleep(nanoseconds: 15_000_000_000) } catch { return }
+                guard self?.captureID == id else { return }
+                self?.finishCapture(.failure(.captureFailed))
+            }
+            return
+        }
         captureCompletion = completion
         let id = UUID(); captureID = id
         let generation = sessionGeneration
@@ -237,10 +431,12 @@ public final class DATGlassesDevice: GlassesDevice {
         captureCompletion = nil
         captureID = nil
         captureTask?.cancel(); captureTask = nil
-        activeCamera?.photo.stop()
-        activeCamera?.stop()
-        activeCaptureTokens.clear()
-        activeCamera = nil
+        if !previewActive {
+            activeCamera?.photo.stop()
+            activeCamera?.stop()
+            activeCaptureTokens.clear()
+            activeCamera = nil
+        }
         completion(result)
     }
 

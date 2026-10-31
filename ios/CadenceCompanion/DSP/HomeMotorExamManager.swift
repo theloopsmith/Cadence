@@ -91,7 +91,7 @@ public struct HomeMotorExamResult: Decodable {
 
 /// Submits a completed exam and returns the scored result.
 public protocol ExamSubmitting {
-    func submit(examJSON: Data, bearerToken: String) async -> HomeMotorExamResult?
+    func submit(examJSON: Data, bearerToken: String) async throws -> HomeMotorExamResult?
 }
 
 /// Posts to `POST /api/v1/exam/complete`.
@@ -110,7 +110,7 @@ public struct URLSessionExamSubmitter: ExamSubmitting {
         self.timeoutSec = timeoutSec
     }
 
-    public func submit(examJSON: Data, bearerToken: String) async -> HomeMotorExamResult? {
+    public func submit(examJSON: Data, bearerToken: String) async throws -> HomeMotorExamResult? {
         guard let url = URL(string: "\(baseURL)/api/v1/exam/complete") else { return nil }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -118,14 +118,10 @@ public struct URLSessionExamSubmitter: ExamSubmitting {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         req.httpBody = examJSON
-        do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse,
-                  (200...299).contains(http.statusCode) else { return nil }
-            return try JSONDecoder().decode(HomeMotorExamResult.self, from: data)
-        } catch {
-            return nil
-        }
+        let json = (try? JSONSerialization.jsonObject(with: examJSON)) as? [String: Any]
+        req.setValue(String(json?["data_generation"] as? Int ?? 0), forHTTPHeaderField: "X-Cadence-Data-Generation")
+        let data = try await URLSessionJSONTransport(timeoutSec: timeoutSec).send(req, bearerToken: bearerToken)
+        return try JSONDecoder().decode(HomeMotorExamResult.self, from: data)
     }
 }
 
@@ -259,11 +255,14 @@ public final class HomeMotorExamManager: ObservableObject {
     public func completeExam(examUUID: String = UUID().uuidString) async -> HomeMotorExamResult? {
         guard currentStep != .submitting else { return nil }
         let session = examSessionID
+        let token = deviceBearerToken; let base = backendBaseURL
+        let dataGeneration = sync.currentDataGeneration
         let snapshot = measurements.validated()
         measurements = snapshot
         currentStep = .submitting
 
         var payload: [String: Any] = [
+            "data_generation": dataGeneration,
             "exam_uuid": examUUID,
             "timestamp_utc": ISO8601DateFormatter().string(from: Date()),
             "voice_status": snapshot.voiceStatus.rawValue,
@@ -296,8 +295,17 @@ public final class HomeMotorExamManager: ObservableObject {
         do { try history.append(record) }
         catch { historyPersistenceWarning = "This phone's task history could not be saved. Keep the app open and try again." }
 
-        if let result = await submitter.submit(examJSON: body, bearerToken: deviceBearerToken) {
-            guard examSessionID == session else { return nil }
+        let submission: HomeMotorExamResult?
+        do { submission = try await submitter.submit(examJSON: body, bearerToken: token) }
+        catch CadenceAPIError.dataGenerationChanged(let current) {
+            guard examSessionID == session, deviceBearerToken == token, backendBaseURL == base else { return nil }
+            sync.observeDataGeneration(current, bearerToken: token, baseURL: base)
+            lastResultSummary = "Server data was erased. This check was not restored to the server; the local copy remains."
+            currentStep = .completed
+            return nil
+        } catch { submission = nil }
+        if let result = submission {
+            guard examSessionID == session, deviceBearerToken == token, backendBaseURL == base else { return nil }
             lastResult = result
             lastResultSummary = TaskMetricsSummary.diaryDetail(record)
             currentStep = .completed
@@ -307,20 +315,20 @@ public final class HomeMotorExamManager: ObservableObject {
             return result
         }
 
-        guard examSessionID == session else { return nil }
+        guard examSessionID == session, deviceBearerToken == token, backendBaseURL == base else { return nil }
         // Offline: queue it so the care team still receives it later.
         if case let .failure(error) = sync.saveLocalImmediate(
-            eventUUID: examUUID, endpoint: "/api/v1/exam/complete", payload: payload
+            eventUUID: examUUID, endpoint: "/api/v1/exam/complete", payload: payload, dataGeneration: dataGeneration
         ) {
             lastResultSummary = error.message
             currentStep = .completed
             audio.speakPrompt("Your check could not be saved safely. Keep Cadence open and try again.", priority: 2)
             return nil
         }
-        lastResultSummary = "Saved on the phone. It will be sent when you're back online."
+        lastResultSummary = "Saved on this phone. Sharing will retry when connected."
         currentStep = .completed
         audio.speakPrompt(
-            "Motor check done. It's saved on your phone and will be sent when you're back online.",
+            "Motor check done. It's saved on your phone. Sharing will retry when connected.",
             priority: 2
         )
         return nil

@@ -8,22 +8,40 @@ public protocol TranscriptListening: AnyObject {
     var isListening: Bool { get }
     func startListening(onTranscript: @escaping (String) -> Void)
     func stopListening()
+    func waitUntilStopped() async
+    var waitsForMicrophoneReleaseBeforeSpeech: Bool { get }
+}
+
+public extension TranscriptListening {
+    func waitUntilStopped() async {}
+    var waitsForMicrophoneReleaseBeforeSpeech: Bool { false }
 }
 
 /// Says something to the wearer. The app's speaker is `AudioCueEngine`.
 public protocol PromptSpeaking: AnyObject {
-    func speak(_ text: String)
+    /// Returns false when the text could not be spoken right now (for example
+    /// walking cues or the siren own the speaker), so the caller can say so.
+    @discardableResult
+    func speak(_ text: String) -> Bool
+    func cancel()
 }
 
+public extension PromptSpeaking { func cancel() {} }
+
 extension AudioCueEngine: PromptSpeaking {
-    public func speak(_ text: String) {
+    public func cancel() { cancelNonEmergencySpeech() }
+    @discardableResult
+    public func speak(_ text: String) -> Bool {
+        guard !isMetronomeActive, !isSirenActive else { return false }
         speakPrompt(text, priority: 2)
+        return true
     }
 }
 
 /// On-device `SFSpeechRecognizer` transcription for everyday voice input.
 public final class LiveTranscriptListener: NSObject, TranscriptListening, @unchecked Sendable {
     public static let shared = LiveTranscriptListener()
+    public var waitsForMicrophoneReleaseBeforeSpeech: Bool { true }
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var audioEngine = AVAudioEngine()
@@ -74,7 +92,10 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
             isListening = false
             return
         }
-        guard session == self.session else { return }
+        guard session == self.session else {
+            AudioCueEngine.shared.releaseMicrophoneSession(owner: .transcript)
+            return
+        }
         let generation = AudioCueEngine.shared.currentMediaServicesGeneration()
         if generation != audioGeneration {
             // Audio objects from before a media-services reset are invalid.
@@ -86,15 +107,14 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        if recognizer?.supportsOnDeviceRecognition == true {
-            request.requiresOnDeviceRecognition = true
-        }
+        // System on-device speech only; Muse is the only cloud ASR provider.
+        request.requiresOnDeviceRecognition = true
         self.request = request
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 && format.channelCount > 0 else {
             print("[TranscriptListener] Invalid input format: \(format)")
-            isListening = false
+            stopListening()
             return
         }
 
@@ -118,7 +138,7 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
         do {
             try audioEngine.start()
         } catch {
-            isListening = false
+            stopListening()
             return
         }
         task = recognizer?.recognitionTask(with: request) { [weak self] result, _ in
@@ -130,6 +150,12 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
                 guard let fresh = self.echoFilter.update(fullTranscript: text, echoActive: echo) else { return }
                 onTranscript(fresh)
             }
+        }
+    }
+
+    public func waitUntilStopped() async {
+        await withCheckedContinuation { continuation in
+            audioQueue.async { continuation.resume() }
         }
     }
 
@@ -157,6 +183,7 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
             self.request = nil
             self.task?.cancel()
             self.task = nil
+            AudioCueEngine.shared.releaseMicrophoneSession(owner: .transcript)
         }
     }
 }

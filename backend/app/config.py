@@ -75,14 +75,11 @@ class Settings(BaseSettings):
     baseten_api_base_url: str = "https://inference.baseten.co/v1"
     baseten_model: str = "meta-models/muse-spark-open-1026"
 
-    # Shared Request Deadline & Per-Stage Budgets
-    request_deadline_sec: float = 4.0
     # One interactive request (photo in, sentence out) may use this much wall clock.
     # Measured 2026-10-29: a single live SAM 3.1 call takes 2.5-3.6 s.
     interactive_request_budget_sec: float = 8.0
     sam_stage_budget_sec: float = 6.0
     baseten_stage_budget_sec: float = 1.2
-    tts_stage_budget_sec: float = 0.8
 
     # Twilio Escalation & Caregiver Contacts
     twilio_account_sid: str = ""
@@ -102,7 +99,10 @@ class Settings(BaseSettings):
 
     dispatch_lease_sec: float = 60.0
     dispatch_timeout_sec: float = 20.0
-    fall_check_in_sec: float = 30.0
+    # The phone's check-in window is 30 s (FallAlertCoordinator.checkInWindowSec).
+    # The server waits longer so a late "I'm okay" upload is not overtaken by a
+    # server-side timeout that calls a caregiver anyway.
+    fall_check_in_sec: float = 45.0
     recovery_poll_sec: float = 1.0
 
     # Safety Calibration Gate (Disabled by default until Day-2 supine-vs-table verification)

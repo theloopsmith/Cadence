@@ -7,8 +7,14 @@ public struct RealityCheckView: View {
     @ObservedObject var app: CadenceAppModel
     @Environment(\.dismiss) private var dismiss
 
+    @State private var voiceFlowID = UUID()
     @State private var question: String = "Is someone standing there, or is it just an object?"
     @State private var isListeningToVoice: Bool = false
+    @State private var showSignIn = false
+    @State private var retryPhoto: Data?
+    @State private var retryProfileID: String?
+    @State private var automaticVoiceCapture = false
+    @State private var showGlassesCamera = false
     @State private var showCamera: Bool = false
     @State private var isChecking: Bool = false
     @State private var checkResult: RealityCheckResult?
@@ -61,11 +67,38 @@ public struct RealityCheckView: View {
                     }
                 }
             }
+            .onAppear {
+                app.companion.enterFlow(id: voiceFlowID, destination: .surroundings, step: isChecking ? .analyzing : .surroundings)
+                if app.companion.isEnabled, !app.companion.lastHeard.isEmpty { question = app.companion.lastHeard }
+            }
+            .onChange(of: isChecking) { active in app.companion.updateFlow(id: voiceFlowID, step: active ? .analyzing : .surroundings) }
+            .onChange(of: app.companion.actionID) { _ in
+                guard app.companion.context == .surroundings else { return }
+                switch app.companion.action {
+                case .capture: automaticVoiceCapture = true; showGlassesCamera = true
+                case .start, .retry:
+                    if let retryPhoto { runRealityCheck(jpeg: retryPhoto) }
+                    else { automaticVoiceCapture = true; showGlassesCamera = true }
+                case .settings: showSignIn = true
+                case .cancel, .finish: dismiss()
+                default: break
+                }
+            }
             .onDisappear {
+                if showGlassesCamera || showCamera || showSignIn { return }
+                app.companion.leaveFlow(id: voiceFlowID)
                 requestID = UUID()
                 requestTask?.cancel()
                 app.glasses.cancelPhotoCapture()
                 stopVoiceInput()
+            }
+            .sheet(isPresented: $showSignIn) { SettingsView(app: app) }
+            .sheet(isPresented: $showGlassesCamera) {
+                GlassesCameraView(glasses: app.glasses, voice: app.companion, captureWhenReady: automaticVoiceCapture) { jpeg in
+                    fromGlasses = true
+                    photoSource = app.isUsingMockGlasses ? "Mock glasses (simulated)" : "Meta glasses"
+                    runRealityCheck(jpeg: jpeg)
+                }
             }
             .cameraPresentation(
                 isPresented: $showCamera,
@@ -174,16 +207,13 @@ public struct RealityCheckView: View {
 
     private var actionsCard: some View {
         VStack(spacing: 12) {
-            if app.glasses.canCapturePhoto {
-                GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: captureWithGlasses) {
-                    Label("Take Photo with Meta Glasses", systemImage: "eyeglasses")
-                }
-            } else {
-                Text(app.glasses.connectionState == .connecting ? "Connecting to Meta glasses…" : "Connect your Meta glasses to take a photo from what you are looking at.")
-                Button("Connect Meta glasses") { app.glasses.connect() }
-                    .disabled(app.glasses.connectionState == .connecting)
-                if let error = app.glasses.connectionError { Text(error).font(.footnote) }
+            GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: { showGlassesCamera = true }) {
+                Label("Open glasses camera", systemImage: "eyeglasses")
             }
+            Text("The camera screen connects Cadence to your glasses and shows live video before you capture.")
+                .font(.footnote).foregroundColor(.secondary)
+            if let error = app.glasses.connectionError { Text(error).font(.footnote) }
+            if let details = app.glasses.connectionDetails { Text(details).font(.caption).foregroundColor(.secondary) }
             Button("Use iPhone camera instead") {
                 stopVoiceInput()
                 fromGlasses = false
@@ -270,11 +300,17 @@ public struct RealityCheckView: View {
             Text(error)
                 .font(.body)
                 .foregroundColor(.secondary)
-            GuardedButton(size: .big, style: .tinted(.secondary), action: {
-                if fromGlasses { captureWithGlasses() } else { showCamera = true }
-            }) {
-                Text("Try Again")
+            if app.auth.needsSignIn {
+                Button("Sign in to check this photo") { showSignIn = true }
+                    .buttonStyle(.borderedProminent)
+            } else if let jpeg = retryPhoto, retryProfileID == app.settings.profile.id {
+                Button("Retry this photo") { runRealityCheck(jpeg: jpeg) }
+                    .buttonStyle(.borderedProminent)
             }
+            Button("Take another photo") {
+                if fromGlasses { captureWithGlasses() } else { showCamera = true }
+            }
+
         }
         .card()
     }
@@ -282,6 +318,7 @@ public struct RealityCheckView: View {
     // MARK: - Logic
 
     private func startVoiceInput() {
+        app.companion.setPaused("Question dictation", true)
         isListeningToVoice = true
         question = ""
         app.transcripts.startListening { text in
@@ -295,6 +332,7 @@ public struct RealityCheckView: View {
         if isListeningToVoice {
             isListeningToVoice = false
             app.transcripts.stopListening()
+            app.companion.setPaused("Question dictation", false)
             if question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 question = "Check the room and tell me what is there."
             }
@@ -304,25 +342,19 @@ public struct RealityCheckView: View {
     private func captureWithGlasses() {
         guard !isChecking else { return }
         stopVoiceInput()
-        isChecking = true
         errorMessage = nil
-        checkResult = nil
-        fromGlasses = true
-        photoSource = app.isUsingMockGlasses ? "Mock glasses (simulated)" : "Meta glasses"
-        let id = UUID(); requestID = id
-        app.glasses.capturePhoto { result in
-            guard requestID == id, !app.settings.restartRequired else { return }
-            switch result {
-            case let .success(jpeg): runRealityCheck(jpeg: jpeg)
-            case let .failure(error):
-                isChecking = false
-                errorMessage = error.localizedDescription
-            }
-        }
+        showGlassesCamera = true
     }
 
     private func runRealityCheck(jpeg: Data) {
         stopVoiceInput()
+        retryPhoto = jpeg
+        retryProfileID = app.settings.profile.id
+        guard !app.auth.needsSignIn else {
+            errorMessage = "Sign in to your Cadence server to check this photo. Say settings to open sign-in. The photo is kept only while this screen stays open."
+            app.companion.say(errorMessage ?? "Sign in to continue.")
+            return
+        }
         isChecking = true
         errorMessage = nil
         checkResult = nil
@@ -338,13 +370,17 @@ public struct RealityCheckView: View {
                       app.settings.api.baseURL == client.baseURL else { return }
                 isChecking = false
                 checkResult = result
+                retryPhoto = nil
                 app.recordDiary(.environmentCheck, detail: result.spokenResponse)
                 AudioCueEngine.shared.speakPrompt(result.spokenResponse, priority: 2)
                 Haptics.success()
             } catch {
-                guard !Task.isCancelled, requestID == id, !app.settings.restartRequired else { return }
+                guard !Task.isCancelled, requestID == id, !app.settings.restartRequired,
+                      app.settings.profile.id == profileID, app.settings.deviceToken == client.bearerToken,
+                      app.settings.api.baseURL == client.baseURL else { return }
                 isChecking = false
-                errorMessage = "Could not check this photo: \(error.localizedDescription). Check the server connection in Settings."
+                errorMessage = "Could not check this photo: \(error.localizedDescription). Say settings to open the server connection, or retry to try this photo again."
+                app.companion.say(errorMessage ?? "The check could not finish.")
             }
         }
     }

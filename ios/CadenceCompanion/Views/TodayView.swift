@@ -9,10 +9,6 @@ import UIKit
 struct TodayView: View {
     @ObservedObject var app: CadenceAppModel
 
-    @State private var showMotorCheck = false
-    @State private var showRealityCheck = false
-    @State private var showMealCheck = false
-    @State private var showSettings = false
     @ObservedObject private var audioRoute = AudioRouteManager.shared
     @ObservedObject private var audio = AudioCueEngine.shared
 
@@ -36,8 +32,9 @@ struct TodayView: View {
                             color: CadenceTheme.accent,
                             systemName: "info.circle.fill"
                         )
-                        Button("Set up connection") { showSettings = true }
-                            .buttonStyle(.bordered)
+                        GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { app.companion.destination = .settings }) {
+                            Label("Set up connection", systemImage: "antenna.radiowaves.left.and.right")
+                        }
                     }
                     if app.settings.sync.quarantinedCount() > 0 {
                         InlineNotice(text: "Older events with an unknown account are held on this phone and will not be sent under a new sign-in.", color: CadenceTheme.caution, systemName: "person.crop.circle.badge.exclamationmark")
@@ -45,10 +42,20 @@ struct TodayView: View {
                     if let warning = app.persistenceWarning {
                         InlineNotice(text: warning, color: CadenceTheme.danger, systemName: "exclamationmark.triangle.fill")
                     }
+                    if let warning = app.diaryWarning {
+                        InlineNotice(text: warning, color: CadenceTheme.caution, systemName: "book.closed.fill")
+                    }
+                    if let notice = app.syncNotice {
+                        InlineNotice(text: notice, color: CadenceTheme.caution, systemName: "arrow.triangle.2.circlepath")
+                    }
                     protectionCard
                     if !isGlassesConnected {
                         glassesCard
                     }
+                    GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { app.companion.destination = .camera }) {
+                        Label("Open live glasses camera", systemImage: "video")
+                    }
+                    if let error = doses.saveError { Text(error).foregroundColor(CadenceTheme.caution) }
                     medicationCard
                     if !simple {
                         checksCard
@@ -66,7 +73,7 @@ struct TodayView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        showSettings = true
+                        app.companion.destination = .settings
                     } label: {
                         Image(systemName: "gearshape.fill")
                             .font(.system(size: 17, weight: .semibold))
@@ -75,18 +82,7 @@ struct TodayView: View {
                     .accessibilityLabel("Settings")
                 }
             }
-            .sheet(isPresented: $showSettings) {
-                SettingsView(app: app)
-            }
-            .sheet(isPresented: $showMotorCheck) {
-                MotorExamView(app: app)
-            }
-            .sheet(isPresented: $showRealityCheck) {
-                RealityCheckView(app: app)
-            }
-            .sheet(isPresented: $showMealCheck) {
-                MealCheckView(app: app)
-            }
+
         }
     }
 
@@ -131,13 +127,14 @@ struct TodayView: View {
                         Text(walking.isProtectionRequested ? "Turn Off" : "Turn On")
                             .fontWeight(.semibold)
                     }
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundColor(walking.isProtectionOn ? CadenceTheme.calm : .secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: CadenceTheme.bigTapHeight)
                     .background(
                         Capsule().fill(walking.isProtectionOn ? CadenceTheme.calm.opacity(0.14) : Color.secondary.opacity(0.12))
                     )
+                    .contentShape(Capsule())
                 }
                 .disabled(walking.isDemoRunning)
                 .accessibilityLabel(walking.isProtectionRequested ? "Turn protection off" : "Turn protection on")
@@ -154,11 +151,15 @@ struct TodayView: View {
 
             if !audio.isAudioAvailable || (walking.isProtectionRequested && app.motion.health == .healthy && !walking.isProtectionOn) {
                 InlineNotice(text: audio.audioProblem ?? walking.protectionProblem ?? "Audio cues are unavailable.", color: CadenceTheme.caution, systemName: "speaker.slash.fill")
-                Button("Retry audio") { walking.retryAudio() }
-                    .disabled(audio.isInterrupted)
+                GuardedButton(size: .big, style: .tinted(CadenceTheme.caution), action: { walking.retryAudio() }) {
+                    Label("Retry audio", systemImage: "speaker.wave.2.fill")
+                }
+                .disabled(audio.isInterrupted)
             }
             if walking.isProtectionRequested, app.motion.health == .stale {
-                Button("Retry protection") { walking.setProtection(enabled: true) }
+                GuardedButton(size: .big, style: .tinted(CadenceTheme.caution), action: { walking.setProtection(enabled: true) }) {
+                    Label("Retry protection", systemImage: "arrow.clockwise")
+                }
             }
             if walking.isProtectionRequested || walking.isDemoRunning || walking.isCueing {
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
@@ -234,13 +235,14 @@ struct TodayView: View {
                     app.glasses.connect()
                 } label: {
                     Text("Connect")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.title3.weight(.semibold))
                         .foregroundColor(CadenceTheme.accent)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 18)
+                        .frame(minHeight: CadenceTheme.bigTapHeight)
                         .background(
                             Capsule().fill(CadenceTheme.accent.opacity(0.14))
                         )
+                        .contentShape(Capsule())
                 }
             }
         }
@@ -310,13 +312,15 @@ struct TodayView: View {
                 }
             } else if doses.isDoseDue {
                 GuardedButton(size: .giant, style: .filled(CadenceTheme.calm), action: {
-                    doses.markTaken()
-                    Haptics.success()
+                    if doses.markTaken() { Haptics.success() }
                 }) {
                     Label("Taken", systemImage: "checkmark")
                 }
                 .accessibilityHint("Logs this dose as taken. You can undo afterwards.")
-                GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { voice.begin() }) {
+                GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: {
+                    if app.companion.isEnabled { app.companion.submit("I took my medication") }
+                    else { voice.begin() }
+                }) {
                     Label("Say it instead", systemImage: "mic.fill")
                 }
                 .accessibilityHint("Cadence asks whether you have taken it and reads your answer back")
@@ -344,7 +348,7 @@ struct TodayView: View {
                     icon: "figure.walk.motion",
                     tint: CadenceTheme.accent
                 ) {
-                    showMotorCheck = true
+                    app.companion.destination = .motor
                 }
 
                 Divider().padding(.vertical, 2)
@@ -355,7 +359,7 @@ struct TodayView: View {
                     icon: "eye.fill",
                     tint: CadenceTheme.calm
                 ) {
-                    showRealityCheck = true
+                    app.companion.destination = .surroundings
                 }
 
                 Divider().padding(.vertical, 2)
@@ -366,7 +370,7 @@ struct TodayView: View {
                     icon: "fork.knife",
                     tint: CadenceTheme.caution
                 ) {
-                    showMealCheck = true
+                    app.companion.destination = .meal
                 }
             }
         }
@@ -385,7 +389,7 @@ struct TodayView: View {
                 icon: "figure.walk.motion",
                 tint: CadenceTheme.accent
             ) {
-                showMotorCheck = true
+                app.companion.destination = .motor
             }
 
             Divider().padding(.vertical, 2)
@@ -396,7 +400,7 @@ struct TodayView: View {
                 icon: "eye.fill",
                 tint: CadenceTheme.calm
             ) {
-                showRealityCheck = true
+                app.companion.destination = .surroundings
             }
         }
         .card()

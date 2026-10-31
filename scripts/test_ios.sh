@@ -27,4 +27,9 @@ if [ -z "${DEVELOPER_DIR:-}" ] && ! xcrun --find xctest >/dev/null 2>&1; then
   done
 fi
 
+# Unit tests never need to make a sound. Without this, `swift test` on a Mac
+# plays the real siren through the speakers and the shared engine's state
+# leaks between test classes.
+export CADENCE_TEST_SILENT_AUDIO="${CADENCE_TEST_SILENT_AUDIO:-1}"
+
 swift test --scratch-path "$SCRATCH" "$@"

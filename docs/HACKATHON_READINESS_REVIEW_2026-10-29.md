@@ -1,22 +1,39 @@
 # Cadence: what to work on next — October 29, 2026
 
+## October 30 principal review pass
+
+Full-repository review (backend, iOS package, app target, CI, docs) with fixes. **195 backend tests, 350 Swift tests, 8 dashboard renderer checks and the isolated browser security check pass; the real app target builds for both iOS Simulator and device architectures with the Meta DAT SDK and launches in the iOS 26 simulator with the mock kit.** CI now installs the lockfile, generates the dashboard fixture, installs Playwright and compiles the app target on an Xcode 16 runner.
+
+Fixed this pass (safety first): a server-owned fall check-in timeout could never dispatch after a wearer had ever reset their data, and the failing row stopped the recovery sweep for every wearer (backend P0); the siren screen claimed "Trying to contact caregiver" on a signed-out phone with no path to send (iOS P0); the siren now resumes by itself after a phone-call interruption or media-services reset; the check-in prompt is spoken after the microphone session is configured; walking cues cannot start during a check-in and the echo guard covers PCM playback; an exam voice step is stopped when a fall begins; the route-change handler no longer pulls the siren to the glasses; production startup refuses to run without caregiver dispatch settings, an https webhook URL, and with demo/static tokens on; a key misconfiguration no longer deletes an existing database; NaN/Infinity, unparseable and future timestamps, out-of-range coordinates and oversized text/image fields are refused with 422; retention runs daily; dispatch failures are logged; care partners can enter caregiver and emergency numbers; Today controls meet the 72 pt rule; "that's not right" is no longer heard as yes; a reply dropped by walking cues is reported instead of shown as spoken; diary write failures are visible; an older server without the erase ledger no longer blocks the outbox.
+
+Still open from the two reviews (none block the demo): one shared `httpx` client instead of per-request clients; login lockout keyed per username in memory; `CloudEar.feed` doing work on the audio render thread; mic-open failure not surfaced on the SOS screen; background location mode mismatch; detectors driving the audio singleton directly; three near-identical microphone engines (`SpeechCheckInListener`, `TranscriptListener`, `VoiceMonitor`); incident-row retention at 365 d not implemented; caregiver delivery still unverified against a real Twilio account; physical glasses acceptance.
+
+Latest voice follow-up: opt-in spoken routing and guided motor/photo/medication flows are implemented, with clarification, independent confirmation, timeout, echo/stale-response fences and safety microphone ownership. Meta Muse Spark Open was verified live; speech output stays with the best installed OS voice per the organizer's Meta-only clarification. API 401 recovery and durable phone-server signing keys are also implemented. **332 Swift tests, 183 backend tests and the physical-iPhone build pass.** See [voice companion verification and remaining limits](VERIFICATION_LOG.md#voice-companion-and-hey-meta-handoff-oct-2930). Foreground-only operation and physical voice acceptance remain explicit limits.
+
+
+Latest glasses connection follow-up: Cadence now waits for asynchronous Meta device discovery before session creation, declares the required Bluetooth peripheral transport, and shows SDK device/link/compatibility diagnostics. Check Surroundings always opens the camera flow. **314 Swift tests and the physical-iPhone app build pass**; verification on the user’s glasses remains pending.
+
+Earlier camera/setup follow-up: a shared live glasses video screen now serves Today, medication reference photos, surroundings and handwriting. Optional glasses shutter events feed the same capture/review flow; general Meta gallery import is not implemented. Bonjour finds the Mac server without typing its address, and failed pill-photo writes are visible/retryable. **309 Swift tests and the actual DAT app builds pass**; physical video/shutter/iPhone connectivity still require verification. See [phone and glasses journey](VERIFICATION_LOG.md#iphone-server-connection-and-glasses-camera-oct-29). Diary persistence error handling and reproducible CI remain open.
+
 ## Follow-up status — item 1 reviewed, item 3 implemented
 
-The phone/glasses entry journey was the next product blocker and is now implemented: a running LAN development backend, authenticated localhost repair that preserves phone queues, consistent glasses-first photo actions, capture lifecycle/timeouts and nullable SAM confidence decoding. See [phone/glasses setup and remaining physical checks](PHONE_AND_GLASSES_JOURNEY_2026-10-29.md).
+Latest architecture follow-up: the existing timestamp-based erase coordination and Dose Undo are now hardened with an atomic per-patient data-generation write boundary. Old queued/in-flight records cannot be silently restamped after a tracked erase, discarded records are separate from delivery, demo seeding preserves the wipe ledger, and Undo handles in-flight/order/replay races. **175 backend tests, 304 Swift tests, eight JavaScript checks, isolated Chrome and the actual iOS app build pass.** See [architecture and rollout evidence](VERIFICATION_LOG.md#server-erase-and-offline-sync-oct-29). The next local-data coding gap is suppressed diary/photo write failures. The newly added CI also needs browser dependency/fixture setup and an actual app build before it is a reproducible acceptance gate.
+
+The phone/glasses entry journey was the next product blocker and is now implemented: a running LAN development backend, authenticated localhost repair that preserves phone queues, consistent glasses-first photo actions, capture lifecycle/timeouts and nullable SAM confidence decoding. See [phone/glasses setup and remaining physical checks](VERIFICATION_LOG.md#iphone-server-connection-and-glasses-camera-oct-29).
 
 Items 8 and 9 are implemented: server wipe and offline pending uploads are coordinated via durable `patient_wipes` ledgers; events predating a wipe are cleanly dropped without resurrecting deleted data or hanging the outbox. Dose Undo appends an idempotent retraction (`/api/v1/medication/dose/retract`) referring to the original dose UUID; effective dose history derives from both events across reports, timeline buckets and dose clock, with full support for out-of-order network arrival. **167 backend tests and 292 Swift tests pass.**
 
-Item 8's local-history portion is implemented using a single-wearer installation, durable account/server binding, profile-specific files/preferences and an explicit restart-based local erase/reprovisioning flow. Different account/server changes are rejected; legacy unassigned files are not silently adopted. **279 Swift tests and the actual app build pass.** See [local-profile verification](LOCAL_PROFILE_VERIFICATION_2026-10-29.md). Coordination between the dashboard's server wipe and offline pending uploads remains open; local reset explicitly leaves server data unchanged.
+Item 8's local-history portion is implemented using a single-wearer installation, durable account/server binding, profile-specific files/preferences and an explicit restart-based local erase/reprovisioning flow. Different account/server changes are guarded; legacy unassigned files are not silently adopted. See [local-profile verification](VERIFICATION_LOG.md#single-wearer-local-profile-and-address-repair-oct-29) for its earlier test snapshot and [data-generation coordination](VERIFICATION_LOG.md#server-erase-and-offline-sync-oct-29) for the server-wipe follow-up. Local reset explicitly leaves server data unchanged.
 
-Item 6 is implemented: one consistent trailing UTC interval, complete aggregates with disclosed detail limits, unknown monitoring coverage, factual narratives and distinct queued/provider-accepted/caregiver-acknowledged states. The phone consumes incident-bound delivery evidence, and shared PDFs label requests accurately. See [report verification and limits](REPORT_TRUTH_VERIFICATION_2026-10-29.md) for its verification snapshot. The unchanged backend/dashboard checks remain 161 backend tests, five JavaScript checks and isolated headless Chrome. Physical-device and live caregiver proof remain unverified. Server-wipe/upload coordination is the next data-integrity priority while provider setup is pending.
+Item 6 is implemented: one consistent trailing UTC interval, complete aggregates with disclosed detail limits, unknown monitoring coverage, factual narratives and distinct queued/provider-accepted/caregiver-acknowledged states. The phone consumes incident-bound delivery evidence, and shared PDFs label requests accurately. See [report verification and limits](VERIFICATION_LOG.md#report-accuracy-oct-29) for its verification snapshot. The unchanged backend/dashboard checks remain 161 backend tests, five JavaScript checks and isolated headless Chrome. Physical-device and live caregiver proof remain unverified. Suppressed local-store errors are the next data-integrity priority while provider setup is pending.
 
-Item 5 is implemented and browser-verified: dynamic dashboard text uses DOM text nodes, GPS links validate coordinates, and nonce-based CSP blocks injected scripts/handlers. See [dashboard security verification](DASHBOARD_SECURITY_VERIFICATION_2026-10-29.md) for its earlier verification snapshot.
+Item 5 is implemented and browser-verified: dynamic dashboard text uses DOM text nodes, GPS links validate coordinates, and nonce-based CSP blocks injected scripts/handlers. See [dashboard security verification](VERIFICATION_LOG.md#dashboard-stored-text-security-oct-29) for its earlier verification snapshot.
 
-Item 4 is implemented: nullable measurements and task validity propagate through phone, API, storage, dashboard and shared summaries; existing database upgrades preserve raw history without treating unknown defaults as observations. See [partial-check verification](EXAM_VALIDITY_VERIFICATION_2026-10-29.md) for that change's verification snapshot.
+Item 4 is implemented: nullable measurements and task validity propagate through phone, API, storage, dashboard and shared summaries; existing database upgrades preserve raw history without treating unknown defaults as observations. See [partial-check verification](VERIFICATION_LOG.md#partial-motor-checks-oct-29) for that change's verification snapshot.
 
 The user's SAM adapter now uses the documented Responses path and includes live synthetic-image and synthesized-speech evidence. The original endpoint mismatch below is superseded; real-photo scene and Baseten-selection evidence remain open. The parser currently uses box area and does not surface malformed-output diagnostics.
 
-Item 3 now has speech preemption/cancellation/cooldown, audio interruption/reset recovery, explicit Stop/Retry controls, actual route display and sensor freshness health. See [audio/protection verification](AUDIO_PROTECTION_VERIFICATION_2026-10-29.md) for the implementation, 253 passing Swift tests, 137 passing backend tests, successful actual app build and remaining physical-device limits. Other findings below remain the backlog. Original review/test counts below are a snapshot from before these follow-ups.
+Item 3 now has speech preemption/cancellation/cooldown, audio interruption/reset recovery, explicit Stop/Retry controls, actual route display and sensor freshness health. See [audio/protection verification](VERIFICATION_LOG.md#audio-control-and-protection-health-oct-29) for the implementation, 253 passing Swift tests, 137 passing backend tests, successful actual app build and remaining physical-device limits. Other findings below remain the backlog. Original review/test counts below are a snapshot from before these follow-ups.
 
 ## Recommendation
 
@@ -24,7 +41,7 @@ Make one authentic, useful Meta-powered accessibility journey work end to end, t
 
 The architecture is a reasonable foundation: Swift owns motion, immediate audio, check-ins and an offline outbox; FastAPI owns authenticated inference, persistent caregiver jobs, and reports. Keep that split and SQLite for this deadline. A database/platform rewrite, microservices, or adding an LLM to emergency decisions would distract from the gaps below. Winning cannot be predicted from source code; useful behavior and the submitted evidence are still decisive.
 
-This review supersedes the **current priority order** in the [October 28 review](PROJECT_REVIEW_2026-10-28.md). That document remains historical evidence, and several of its critical findings have now been addressed.
+This review superseded the October 28 project review, which has since been removed from the repository along with the original clinical specification and diagrams; its still-relevant findings are carried in the items below.
 
 ## Scope and verification
 
@@ -34,7 +51,7 @@ Repository-wide review of the app/package structure, DAT adapter, edge detectors
 - Swift package suite: **237 passed**, with the explicit XCTest-only silent audio flag.
 - Actual iOS Simulator app target: **BUILD SUCCEEDED**, including DAT compilation. Latest build did not launch the app or play audio.
 - Simulator mock-kit build/install/launch was previously verified; the screenshot has a permission overlay. It is not complete UI or physical-device validation.
-- Real caregiver drill: **not verified**. Public callback readiness succeeded, but the dispatch returned no provider IDs or acknowledgment. Read-only checks found Trial sender/recipient setup gaps. See [verification evidence](RECOVERY_VERIFICATION.md).
+- Real caregiver drill: **not verified**. Public callback readiness succeeded, but the dispatch returned no provider IDs or acknowledgment. Read-only checks found Trial sender/recipient setup gaps. See [verification evidence](VERIFICATION_LOG.md#emergency-integrity-and-durable-dispatch-oct-29).
 - No physical glasses, acoustic routing, locked-screen continuity, or live Meta segmentation success has been established by these tests.
 
 During the ongoing recovery work, a concurrent-worker test exposed duplicate initial dispatch from a stale snapshot. This review run fixed it by removing the stale state reset, preventing initial-dispatch reuse after an attempt exists, and fencing scheduled retries by expected attempt and due time. Two regression tests were added. Unknown provider outcomes remain explicitly at least once; this fix does not promise exactly-once delivery.
@@ -59,7 +76,7 @@ Meta's [SAM overview](https://dev.meta.ai/docs/sam/overview) documents the Respo
 
 **Assessment:** this is an unresolved organizer-scope question, not a finding that all accessibility projects are prohibited. Renaming the app or adding disclaimers does not determine eligibility. Also, a basic photo-label demonstration alone may be too close to the guide's simple-image-analyzer example.
 
-**Next work:** obtain organizer clarification using the existing draft in [PHASE_0_1.md](PHASE_0_1.md). Prepare a submission build with an explicit, tested accessibility scope and a concrete daily task. Avoid executing interpreted clinical/nutrition logic in that build unless cleared. Explain why voice access, constrained observations and useful follow-through solve a specific need beyond image labeling. Preserve real contribution history and clarify the guide's start-boundary ambiguity.
+**Next work:** obtain organizer clarification using the existing draft in the [verification log](VERIFICATION_LOG.md#scope-and-positioning-oct-29). Prepare a submission build with an explicit, tested accessibility scope and a concrete daily task. Avoid executing interpreted clinical/nutrition logic in that build unless cleared. Explain why voice access, constrained observations and useful follow-through solve a specific need beyond image labeling. Preserve real contribution history and clarify the guide's start-boundary ambiguity.
 
 **Done when:** the scope decision is recorded, visible behaviors match it, disabled features cannot leak through the submitted path, and the pitch demonstrates a useful workflow. No organizer contact has been sent by this review.
 
@@ -93,7 +110,7 @@ Meta's [SAM overview](https://dev.meta.ai/docs/sam/overview) documents the Respo
 
 ### 6. P1 — Factual reports still misrepresent time, coverage and contact status
 
-**Follow-up: implemented.** See [report verification](REPORT_TRUTH_VERIFICATION_2026-10-29.md). The evidence below describes the original finding; unknown physical monitoring and historical phone reconciliation remain explicit limits.
+**Follow-up: implemented.** See [report verification](VERIFICATION_LOG.md#report-accuracy-oct-29). The evidence below describes the original finding; unknown physical monitoring and historical phone reconciliation remain explicit limits.
 
 **Evidence:** `get_neurologist_report` fetches row-capped histories without a common time predicate; freeze/fall totals count those histories while doses use a separate last-day filter. `diary_engine.py` anchors on the newest event, so an inactive account can show an old period. `_within_last_day` accepts future timestamps. Timeline colors imply healthy/quiet periods even with no observation coverage. Default mode hides clinical labels but does not fix missing observations or mixed ranges.
 
@@ -113,7 +130,7 @@ Meta's [SAM overview](https://dev.meta.ai/docs/sam/overview) documents the Respo
 
 ### 8. P1 — Account-bound transport does not isolate the rest of the phone's data
 
-**Follow-up: local-history isolation implemented; server-wipe coordination open.** The app now rejects switching wearer/server without a confirmed local reset and uses profile-specific storage/setup. See [verification and upgrade limits](LOCAL_PROFILE_VERIFICATION_2026-10-29.md). The evidence below describes the original finding. Local erasure is coordinated with that phone's queue; an independent dashboard server wipe still cannot invalidate offline queued data.
+**Follow-up: implemented with explicit boundaries.** Local profile isolation and the confirmed local reset remain in place. [Server data generations](VERIFICATION_LOG.md#server-erase-and-offline-sync-oct-29) now coordinate tracked server erases with compatible queued and in-flight writers. A server erase does not remove phone-local history, and local reset does not erase server data. The evidence below describes the original finding. Suppressed local-store errors remain a separate follow-up.
 
 **Evidence:** the outbox now binds rows to account and destination. `DiaryStore.default`, `TaskMetricsHistory.default`, pill-photo storage, schedule and summary settings remain shared device locations. `AuthSession.signOut` changes credentials without switching these stores; `CadenceAppModel` retains them.
 
@@ -125,11 +142,15 @@ Meta's [SAM overview](https://dev.meta.ai/docs/sam/overview) documents the Respo
 
 ### 9. P1 — Dose Undo is only a local withdrawal
 
+**Follow-up: implemented and race-hardened.** The latest commits added durable retractions; this pass made retraction insertion/deletion atomic, guarded dose insertion against a racing tombstone, prevented retargeted retries, and fixed withdrawal while the original upload is in flight. See [verification](VERIFICATION_LOG.md#server-erase-and-offline-sync-oct-29). The evidence below is the original finding; local diary write-error handling still needs work.
+
 **Evidence:** `DoseLogModel.undo` removes a diary item and withdraws an unsynced queue row. It cannot undo a dose already accepted by the backend, nor reliably cancel an in-flight request. UI and backend history can disagree immediately.
 
 **Next work:** append an idempotent retraction referring to the original event and derive effective dose history from both events. Handle out-of-order arrival. If deferred, do not promise that Undo corrects the shared record.
 
 ### 10. P2 — Latency budgets are not hard deadlines; image work is unbounded
+
+**Follow-up: partially addressed by the latest commits.** There are now encoded/binary image byte limits, an outer timeout around the scene model pipeline, and handwriting CPU offloading. Pixel/dimension bounds, concurrency limits, full request/capture-to-speech timing and managed-client lifecycle remain to verify or implement. The evidence below predates those changes.
 
 **Evidence:** `RequestDeadlineContext` computes a timeout scalar, but no outer cancellation scope encloses the scene pipeline. HTTP transport phase timeouts do not enforce its documented total wall-clock claim. Clients are created for each request. Image fields have no comparable encoded-length limit to audio; handwriting decode/threshold/components run synchronously in an async route.
 
@@ -142,6 +163,8 @@ Meta's [SAM overview](https://dev.meta.ai/docs/sam/overview) documents the Respo
 **Next work:** define lifecycle rules for completed jobs and audits, delete in dependency order after the stated retention, run bounded scheduled maintenance, and add versioned upgrade migrations. Test an existing database upgrade and a long-running server. This is lower priority than the live Meta journey for a small isolated hackathon demo.
 
 ### 12. P1 submission execution — No reproducible, rubric-focused acceptance gate
+
+**Follow-up: CI and a backend lock file now exist.** The workflow still installs the unlocked requirements, invokes the Playwright browser script without installing its runtime/browser or producing its required HTML fixture, and does not compile the actual DAT app target. Correct those steps and obtain clean-clone CI evidence; existence of the workflow is not a passing run. The original finding below is historical.
 
 **Evidence:** no tracked CI workflow or backend dependency lock was found; requirements use lower bounds. The manual iOS app build is now proven, but package tests alone would not catch DAT compile failures. Historical diagrams/plan still describe work differently from runtime. Existing test fixtures validate several assumed provider contracts rather than recorded live ones.
 

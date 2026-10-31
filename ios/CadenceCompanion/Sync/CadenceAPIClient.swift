@@ -9,12 +9,15 @@ public enum CadenceAPIError: Error, LocalizedError {
     case badURL
     case httpStatus(Int)
     case emptyBody
+    case dataGenerationChanged(Int)
 
     public var errorDescription: String? {
         switch self {
         case .badURL: return "The backend address is not a valid URL."
+        case .httpStatus(401): return "Sign in to this Cadence server again. Your previous login is missing or no longer accepted."
         case let .httpStatus(code): return "The backend returned HTTP \(code)."
         case .emptyBody: return "The backend returned an empty response."
+        case .dataGenerationChanged: return "Server data was erased. This attempt was not saved. Record a new action after syncing."
         }
     }
 }
@@ -38,6 +41,11 @@ public struct URLSessionJSONTransport: JSONTransporting {
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw CadenceAPIError.emptyBody }
         guard (200...299).contains(http.statusCode) else {
+            if http.statusCode == 409,
+               let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+               body["error"] as? String == "data_generation_changed", let generation = body["data_generation"] as? Int, generation >= 0 {
+                throw CadenceAPIError.dataGenerationChanged(generation)
+            }
             throw CadenceAPIError.httpStatus(http.statusCode)
         }
         return data
@@ -79,7 +87,11 @@ public struct ServerConnectionInfo: Decodable {
     public let service: String
     public let serverID: String
     public let patientID: String
-    enum CodingKeys: String, CodingKey { case service, serverID = "server_id", patientID = "patient_id" }
+    public let dataGeneration: Int?
+    public init(service: String, serverID: String, patientID: String, dataGeneration: Int? = nil) {
+        self.service = service; self.serverID = serverID; self.patientID = patientID; self.dataGeneration = dataGeneration
+    }
+    enum CodingKeys: String, CodingKey { case service, serverID = "server_id", patientID = "patient_id", dataGeneration = "data_generation" }
 }
 
 public struct HandwritingResult: Decodable {
@@ -247,15 +259,32 @@ public struct CadenceAPIClient {
     public let bearerToken: String
     private let transport: JSONTransporting
     private let decoder = JSONDecoder()
+    public let dataGeneration: Int
+    private let onDataGenerationChanged: ((Int) -> Void)?
+    private let onUnauthorized: (() async -> Void)?
 
     public init(
         baseURL: String,
         bearerToken: String,
-        transport: JSONTransporting = URLSessionJSONTransport()
+        transport: JSONTransporting = URLSessionJSONTransport(),
+        dataGeneration: Int = 0,
+        onDataGenerationChanged: ((Int) -> Void)? = nil,
+        onUnauthorized: (() async -> Void)? = nil
     ) {
         self.baseURL = baseURL
         self.bearerToken = bearerToken
         self.transport = transport
+        self.dataGeneration = dataGeneration
+        self.onDataGenerationChanged = onDataGenerationChanged
+        self.onUnauthorized = onUnauthorized
+    }
+
+    public func companionIntent(text: String, history: [String]) async throws -> CompanionIntent? {
+        struct Interpretation: Decodable { let intent: String }
+        let result: Interpretation = try await post("/api/v1/companion/interpret", body: [
+            "text": String(text.prefix(1200)), "history": history.suffix(6).map { String($0.prefix(1200)) }
+        ])
+        return CompanionIntent(rawValue: result.intent)
     }
 
     public func realityCheck(question: String, jpeg: Data) async throws -> RealityCheckResult {
@@ -308,6 +337,7 @@ public struct CadenceAPIClient {
     }
 
     public enum TranscribePurpose: String {
+        case companion
         case fallCheckIn = "fall_check_in"
         case dose
     }
@@ -373,14 +403,14 @@ public struct CadenceAPIClient {
               let url = URL(string: "\(baseURL)/api/v1/events/fall/\(encoded)/delivery") else { throw CadenceAPIError.badURL }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        let data = try await transport.send(request, bearerToken: bearerToken)
+        let data = try await sendAuthenticated(request)
         return try decoder.decode(FallDeliveryStatus.self, from: data)
     }
 
     public func connectionInfo() async throws -> ServerConnectionInfo {
         guard let url = URL(string: "\(baseURL)/api/v1/device/connection") else { throw CadenceAPIError.badURL }
         var request = URLRequest(url: url); request.httpMethod = "GET"
-        return try decoder.decode(ServerConnectionInfo.self, from: await transport.send(request, bearerToken: bearerToken))
+        return try decoder.decode(ServerConnectionInfo.self, from: await sendAuthenticated(request))
     }
 
     public func fetchReport() async throws -> NeurologistReport {
@@ -389,18 +419,32 @@ public struct CadenceAPIClient {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        let data = try await transport.send(request, bearerToken: bearerToken)
+        let data = try await sendAuthenticated(request)
         return try decoder.decode(NeurologistReport.self, from: data)
     }
 
     // MARK: - Internals
 
+    private func sendAuthenticated(_ request: URLRequest) async throws -> Data {
+        do { return try await transport.send(request, bearerToken: bearerToken) }
+        catch CadenceAPIError.httpStatus(401) {
+            await onUnauthorized?()
+            throw CadenceAPIError.httpStatus(401)
+        }
+    }
+
     private func post<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
         guard let url = URL(string: "\(baseURL)\(path)") else { throw CadenceAPIError.badURL }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.setValue(String(dataGeneration), forHTTPHeaderField: "X-Cadence-Data-Generation")
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
-        let data = try await transport.send(request, bearerToken: bearerToken)
+        let data: Data
+        do { data = try await sendAuthenticated(request) }
+        catch CadenceAPIError.dataGenerationChanged(let current) {
+            onDataGenerationChanged?(current)
+            throw CadenceAPIError.dataGenerationChanged(current)
+        }
         guard !data.isEmpty else { throw CadenceAPIError.emptyBody }
         return try decoder.decode(T.self, from: data)
     }

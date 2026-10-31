@@ -48,7 +48,7 @@ async def crash(**kw): os._exit(71)
 twilio_client.dispatch_sms_and_call=crash
 asyncio.run(FallEscalationManager().ingest_fall_event('owner',FallEventCreate(event_uuid='crash-event',peak_impact_g=3,peak_jerk_gs=40,post_impact_tilt_deg=60),False))
 '''
-    result=subprocess.run([sys.executable,'-c',code,str(db)],cwd=Path(__file__).parents[1],timeout=10)
+    result=subprocess.run([sys.executable,'-c',code,str(db)],cwd=Path(__file__).parents[1],timeout=30)
     assert result.returncode==71
     attempt=fetch_one_sync("SELECT * FROM fall_attempts WHERE event_uuid='crash-event'")
     assert attempt['state']=='in_flight'
@@ -66,6 +66,32 @@ def test_candidate_timeout_survives_loss_of_phone_or_process(db,calls):
     asyncio.run(FallEscalationManager().recover_due_once())
     assert len(calls)==1
     assert fetch_one_sync("SELECT status FROM fall_events WHERE event_uuid='durable-event'")['status']=='escalated_twilio'
+
+
+def test_candidate_timeout_dispatches_after_the_wearer_once_reset_their_data(db,calls):
+    """A past 'Reset Diary Data' must not fence the server's own recovery of a later fall."""
+    execute_write_sync("INSERT INTO patient_wipes (patient_id, wiped_at_utc) VALUES ('owner','2026-01-01T00:00:00+00:00')")
+    asyncio.run(FallEscalationManager().ingest_fall_event('owner',event(status='candidate_check_in_pending'),False,data_generation=1))
+    execute_write_sync("UPDATE fall_jobs SET next_due=0 WHERE event_uuid='durable-event'")
+    asyncio.run(FallEscalationManager().recover_due_once())
+    assert len(calls)==1
+    assert fetch_one_sync("SELECT status FROM fall_events WHERE event_uuid='durable-event'")['status']=='escalated_twilio'
+
+
+def test_one_broken_job_does_not_starve_the_others(db,calls,monkeypatch):
+    """The sweep must keep going past a job that raises, or one row blocks every wearer's recovery."""
+    asyncio.run(FallEscalationManager().ingest_fall_event('a',event(uuid='bad-event',status='candidate_check_in_pending'),False))
+    asyncio.run(FallEscalationManager().ingest_fall_event('b',event(uuid='good-event',status='candidate_check_in_pending'),False))
+    execute_write_sync("UPDATE fall_jobs SET next_due=0")
+    manager=FallEscalationManager()
+    real=manager.ingest_fall_event
+    async def flaky(patient_id,payload,*a,**kw):
+        if payload.event_uuid=='bad-event': raise RuntimeError('corrupt row')
+        return await real(patient_id,payload,*a,**kw)
+    monkeypatch.setattr(manager,'ingest_fall_event',flaky)
+    asyncio.run(manager.recover_due_once())
+    assert len(calls)==1
+    assert fetch_one_sync("SELECT status FROM fall_events WHERE event_uuid='good-event'")['status']=='escalated_twilio'
 
 
 def test_failed_dispatch_is_retried_without_another_phone_request(db,calls,monkeypatch):

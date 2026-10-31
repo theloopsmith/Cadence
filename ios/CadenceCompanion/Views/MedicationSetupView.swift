@@ -7,12 +7,13 @@ import UIKit
 /// care partner can change a time without wading through contacts and
 /// glasses. Steppers and preset chips; no sliders.
 struct MedicationSetupView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var voiceFlowID = UUID()
     @ObservedObject var app: CadenceAppModel
     @ObservedObject private var settings: AppSettings
+    @State private var automaticVoiceCapture = false
+    @State private var showGlassesCamera = false
     @State private var showPillCamera = false
-    @State private var isCapturing = false
-    @State private var photoError: String?
-    @State private var photoRequestID = UUID()
 
     private static let presets = [
         DoseTime(hour: 8, minute: 0), DoseTime(hour: 12, minute: 0),
@@ -32,7 +33,18 @@ struct MedicationSetupView: View {
                 timesSection
             }
             .navigationTitle("Medication setup")
-            .onDisappear { photoRequestID = UUID(); app.glasses.cancelPhotoCapture() }
+            .onDisappear { app.companion.leaveFlow(id: voiceFlowID) }
+            .onAppear { app.companion.enterFlow(id: voiceFlowID, destination: .medication, step: .medication) }
+            .onChange(of: app.companion.actionID) { _ in
+                guard app.companion.context == .medication else { return }
+                if app.companion.action == .capture { automaticVoiceCapture = true; showGlassesCamera = true }
+                if app.companion.action == .finish || app.companion.action == .cancel { dismiss() }
+            }
+            .sheet(isPresented: $showGlassesCamera) {
+                GlassesCameraView(glasses: app.glasses, voice: app.companion, captureWhenReady: automaticVoiceCapture, title: "Medication photo") { jpeg in
+                    app.setPillPhoto(jpeg)
+                }
+            }
             .cameraPresentation(
                 isPresented: $showPillCamera,
                 onCapture: { jpeg in
@@ -77,31 +89,14 @@ struct MedicationSetupView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                Button(isCapturing ? "Taking photo…" : "Take with glasses") {
-                    photoError = nil
-                    if app.glasses.canCapturePhoto {
-                        isCapturing = true
-                        let id = UUID(); photoRequestID = id
-                        app.glasses.capturePhoto { result in
-                            guard photoRequestID == id, !settings.restartRequired else { return }
-                            isCapturing = false
-                            switch result {
-                            case let .success(jpeg):
-                                app.setPillPhoto(jpeg)
-                            case .failure(let error):
-                                photoError = error.localizedDescription
-                            }
-                        }
-                    } else {
-                        app.glasses.connect()
-                        photoError = "Connect Meta glasses, then try taking the photo again."
-                    }
-                }
-                .disabled(isCapturing)
+                Button("Open glasses camera") { showGlassesCamera = true }
                 .frame(minHeight: CadenceTheme.minimumTapHeight)
             }
-            if let photoError { Text(photoError).foregroundColor(CadenceTheme.caution) }
-            Button("Use iPhone camera instead") { showPillCamera = true }.disabled(isCapturing)
+            if let saveError = app.photoSaveError {
+                Text(saveError).foregroundColor(CadenceTheme.caution)
+                Button("Retry saving photo") { app.retryPillPhotoSave() }
+            }
+            Button("Use iPhone camera instead") { showPillCamera = true }
             if app.pillPhoto != nil {
                 Button("Remove pill photo", role: .destructive) { app.setPillPhoto(nil) }
                     .frame(minHeight: CadenceTheme.minimumTapHeight)

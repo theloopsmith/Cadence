@@ -134,6 +134,9 @@ public struct EmergencySOSView: View {
         if let warning = coordinator.persistenceWarning { return warning }
         if isDispatched {
             let sound = audio.isAudioAvailable ? "Emergency audio is active." : "Emergency audio is unavailable. Use the call buttons for help."
+            if coordinator.contactState == "no_connection" {
+                return "\(sound) This phone is not connected to a caregiver service, so no one is being contacted automatically. Use the call buttons now."
+            }
             return "\(sound) \(coordinator.contactHeadline). Provider acceptance does not confirm receipt. Use the call buttons if you need help now."
         }
         return "You can say “I'm okay” or “help”, or tap below. Take your time — \(secondsRemaining) seconds left before anyone is contacted."

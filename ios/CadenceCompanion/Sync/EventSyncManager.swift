@@ -9,24 +9,44 @@ public struct PendingEvent {
     public let endpoint: String
     public let payloadJSON: String
     public let retryCount: Int
+    public let dataGeneration: Int
+    public init(eventUUID: String, endpoint: String, payloadJSON: String, retryCount: Int, dataGeneration: Int = 0) {
+        self.eventUUID = eventUUID; self.endpoint = endpoint; self.payloadJSON = payloadJSON
+        self.retryCount = retryCount; self.dataGeneration = dataGeneration
+    }
 }
 
-public enum DeliveryOutcome: Equatable { case delivered, retryLater, unauthorized }
+public enum DeliveryOutcome: Equatable { case delivered, discarded, retryLater, unauthorized }
 
 public protocol EventTransport {
     func send(endpoint: String, jsonData: Data, bearerToken: String) async -> DeliveryOutcome
 }
 
-public struct URLSessionEventTransport: EventTransport {
+public protocol DataGenerationTransport: EventTransport {
+    func fetchDataGeneration(bearerToken: String) async throws -> Int
+    func send(endpoint: String, jsonData: Data, bearerToken: String, dataGeneration: Int) async -> DeliveryOutcome
+}
+
+public struct URLSessionEventTransport: DataGenerationTransport {
     public let baseURL: String
     public let timeoutSec: TimeInterval
     public init(baseURL: String, timeoutSec: TimeInterval = 10) { self.baseURL = baseURL; self.timeoutSec = timeoutSec }
     public func send(endpoint: String, jsonData: Data, bearerToken: String) async -> DeliveryOutcome {
+        await send(endpoint: endpoint, jsonData: jsonData, bearerToken: bearerToken, dataGeneration: 0)
+    }
+    public func fetchDataGeneration(bearerToken: String) async throws -> Int {
+        let client = CadenceAPIClient(baseURL: baseURL, bearerToken: bearerToken, transport: URLSessionJSONTransport(timeoutSec: timeoutSec))
+        // A server that predates the erase ledger reports no generation. That is
+        // generation 0, not a reason to hold every fall event on the phone.
+        return max(0, try await client.connectionInfo().dataGeneration ?? 0)
+    }
+    public func send(endpoint: String, jsonData: Data, bearerToken: String, dataGeneration: Int) async -> DeliveryOutcome {
         guard let url = URL(string: baseURL + endpoint) else { return .retryLater }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"; req.timeoutInterval = timeoutSec; req.httpBody = jsonData
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(String(dataGeneration), forHTTPHeaderField: "X-Cadence-Data-Generation")
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             guard let http = response as? HTTPURLResponse else { return .retryLater }
@@ -37,6 +57,9 @@ public struct URLSessionEventTransport: EventTransport {
         switch status { case 200...299: return .delivered; case 401,403: return .unauthorized; default: return .retryLater }
     }
     public static func outcome(forStatus status: Int, endpoint: String, responseData: Data) -> DeliveryOutcome {
+        let json = (try? JSONSerialization.jsonObject(with: responseData)) as? [String: Any]
+        if status == 409, json?["error"] as? String == "data_generation_changed", let generation = json?["data_generation"] as? Int, generation >= 0 { return .discarded }
+        if (200...299).contains(status), json?["status"] as? String == "dropped_wiped" { return .discarded }
         let basic = outcome(forStatus: status)
         guard basic == .delivered, endpoint == "/api/v1/events/fall" else { return basic }
         guard let body = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any], let state = body["status"] as? String else { return .retryLater }
@@ -84,10 +107,14 @@ public final class EventSyncManager {
     public var onUnauthorized: (() -> Void)?
     public var onPersistenceFailure: ((QueueStorageError) -> Void)?
     public var onPersistenceRecovered: (() -> Void)?
+    public var onServerDataErased: (() -> Void)?
     public static let backoffScheduleSec: [Double] = [0, 5, 15, 60, 120, 300]
 
     public var persistenceError: QueueStorageError? { dbQueue.sync { storageError } }
     public var volatileEventCount: Int { dbQueue.sync { volatile.count } }
+    public var currentDataGeneration: Int {
+        dbQueue.sync { generation(owner: currentOwner ?? lastOwnerByDestination[currentURL] ?? "unassigned", destination: currentURL) }
+    }
     var isUploading: Bool { dbQueue.sync { isDraining } }
     public var backendBaseURL: String {
         get { dbQueue.sync { currentURL } }
@@ -149,6 +176,62 @@ public final class EventSyncManager {
         return SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
     }
     private func bind(_ stmt: OpaquePointer?, _ index: Int32, _ value: String) { sqlite3_bind_text(stmt, index, value, -1, SQLITE_TRANSIENT) }
+    private func generation(owner: String, destination: String) -> Int {
+        var stmt: OpaquePointer?; defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db,"SELECT data_generation FROM server_generations WHERE owner_id=? AND destination=?",-1,&stmt,nil) == SQLITE_OK else { return 0 }
+        bind(stmt,1,owner); bind(stmt,2,destination)
+        return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int64(stmt,0)) : 0
+    }
+
+    private func recordedGeneration(uuid: String, owner: String, destination: String) -> Int? {
+        var stmt: OpaquePointer?; defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db,"SELECT data_generation FROM pending_events WHERE event_uuid=? AND owner_id=? AND destination=?",-1,&stmt,nil) == SQLITE_OK else { return nil }
+        bind(stmt,1,uuid); bind(stmt,2,owner); bind(stmt,3,destination)
+        return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int64(stmt,0)) : nil
+    }
+
+    /// Learning a wipe generation retires old rows without calling them delivered.
+    /// It never assigns a new generation to an old action.
+    @discardableResult
+    public func observeDataGeneration(_ value: Int, bearerToken: String, baseURL: String) -> Bool {
+        var changed = false
+        let result: Result<Bool, QueueStorageError> = dbQueue.sync {
+            guard value >= 0, !suspended, currentToken == bearerToken, !bearerToken.isEmpty,
+                  currentURL == baseURL, let owner = currentOwner else { return .success(false) }
+            let old = generation(owner: owner, destination: baseURL)
+            guard value >= old else { return .success(false) }
+            guard sqlite3_exec(db,"BEGIN IMMEDIATE",nil,nil,nil) == SQLITE_OK else { return .failure(.unavailable) }
+            var stmt: OpaquePointer?
+            let prepared = sqlite3_prepare_v2(db,"INSERT INTO server_generations(owner_id,destination,data_generation) VALUES(?,?,?) ON CONFLICT(owner_id,destination) DO UPDATE SET data_generation=excluded.data_generation",-1,&stmt,nil)
+            var code = prepared
+            if prepared == SQLITE_OK {
+                bind(stmt,1,owner); bind(stmt,2,baseURL); sqlite3_bind_int64(stmt,3,sqlite3_int64(value))
+                code = sqlite3_step(stmt)
+            }
+            sqlite3_finalize(stmt); stmt = nil
+            if code == SQLITE_DONE {
+                code = sqlite3_prepare_v2(db,"UPDATE pending_events SET synced=2 WHERE synced=0 AND owner_id=? AND destination=? AND data_generation<?",-1,&stmt,nil)
+                if code == SQLITE_OK {
+                    bind(stmt,1,owner); bind(stmt,2,baseURL); sqlite3_bind_int64(stmt,3,sqlite3_int64(value)); code = sqlite3_step(stmt)
+                }
+            }
+            sqlite3_finalize(stmt)
+            guard code == SQLITE_DONE, sqlite3_exec(db,"COMMIT",nil,nil,nil) == SQLITE_OK else {
+                sqlite3_exec(db,"ROLLBACK",nil,nil,nil); return .failure(.writeFailed(code))
+            }
+            for (key,item) in volatile where item.owner == owner && item.destination == baseURL && item.event.dataGeneration < value {
+                volatile.removeValue(forKey: key)
+            }
+            changed = value > old
+            return .success(true)
+        }
+        switch result {
+        case .success(let accepted):
+            if changed { onServerDataErased?() }
+            return accepted
+        case .failure(let error): report(error); return false
+        }
+    }
     private func openDatabase() {
         if let db { sqlite3_close(db); self.db = nil }
         guard sqlite3_open(path, &db) == SQLITE_OK else { storageError = .unavailable; return }
@@ -162,11 +245,13 @@ public final class EventSyncManager {
           owner_id TEXT, destination TEXT
         );
         CREATE TABLE IF NOT EXISTS queue_identity(destination TEXT PRIMARY KEY,owner_id TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS server_generations(owner_id TEXT NOT NULL,destination TEXT NOT NULL,data_generation INTEGER NOT NULL,
+          PRIMARY KEY(owner_id,destination));
         """
         guard sqlite3_exec(db, schema, nil, nil, nil) == SQLITE_OK else { storageError = .unavailable; return }
         // Columns are migrated BEFORE any index/query refers to them. Old rows
         // intentionally retain NULL ownership and are never adopted by a login.
-        for column in ["next_attempt_at REAL NOT NULL DEFAULT 0", "owner_id TEXT", "destination TEXT"] {
+        for column in ["next_attempt_at REAL NOT NULL DEFAULT 0", "owner_id TEXT", "destination TEXT", "data_generation INTEGER NOT NULL DEFAULT 0"] {
             sqlite3_exec(db, "ALTER TABLE pending_events ADD COLUMN \(column)", nil, nil, nil)
         }
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_account_pending ON pending_events(owner_id,destination,synced,next_attempt_at)", nil, nil, nil)
@@ -184,14 +269,15 @@ public final class EventSyncManager {
     }
 
     @discardableResult
-    public func saveLocalImmediate(eventUUID: String, endpoint: String, payload: [String: Any]) -> Result<Void, QueueStorageError> {
+    public func saveLocalImmediate(eventUUID: String, endpoint: String, payload: [String: Any], dataGeneration: Int? = nil) -> Result<Void, QueueStorageError> {
         guard JSONSerialization.isValidJSONObject(payload), let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data:data,encoding:.utf8) else {
             report(.invalidPayload); return .failure(.invalidPayload)
         }
         let result: Result<Void, QueueStorageError> = dbQueue.sync {
             guard !suspended else { return .failure(.unavailable) }
             let owner = currentOwner ?? lastOwnerByDestination[currentURL] ?? "unassigned"
-            let item = Buffered(event: PendingEvent(eventUUID:eventUUID,endpoint:endpoint,payloadJSON:json,retryCount:0),owner:owner,destination:currentURL)
+            let version = dataGeneration ?? recordedGeneration(uuid: eventUUID, owner: owner, destination: currentURL) ?? generation(owner: owner, destination: currentURL)
+            let item = Buffered(event: PendingEvent(eventUUID:eventUUID,endpoint:endpoint,payloadJSON:json,retryCount:0,dataGeneration:version),owner:owner,destination:currentURL)
             let code = insert(item)
             guard code == SQLITE_DONE else {
                 // Preserve original owner/destination even if another user signs in
@@ -211,14 +297,16 @@ public final class EventSyncManager {
     private func insert(_ item: Buffered) -> Int32 {
         var stmt: OpaquePointer?; defer { sqlite3_finalize(stmt) }
         let sql = """
-        INSERT INTO pending_events(event_uuid,endpoint,payload_json,created_at_utc,owner_id,destination)
-        VALUES(?,?,?,?,?,?) ON CONFLICT(event_uuid) DO UPDATE SET endpoint=excluded.endpoint,
+        INSERT INTO pending_events(event_uuid,endpoint,payload_json,created_at_utc,owner_id,destination,data_generation)
+        VALUES(?,?,?,?,?,?,?) ON CONFLICT(event_uuid) DO UPDATE SET endpoint=excluded.endpoint,
           payload_json=excluded.payload_json,retry_count=0,synced=0,next_attempt_at=0
-        WHERE pending_events.owner_id=excluded.owner_id AND pending_events.destination=excluded.destination;
+        WHERE pending_events.owner_id=excluded.owner_id AND pending_events.destination=excluded.destination
+          AND pending_events.data_generation=excluded.data_generation;
         """
         let prepared = sqlite3_prepare_v2(db,sql,-1,&stmt,nil)
         guard prepared == SQLITE_OK else { return prepared }
         for (i,v) in [item.event.eventUUID,item.event.endpoint,item.event.payloadJSON,ISO8601DateFormatter().string(from:Date()),item.owner,item.destination].enumerated() { bind(stmt,Int32(i+1),v) }
+        sqlite3_bind_int64(stmt,7,sqlite3_int64(item.event.dataGeneration))
         let code = sqlite3_step(stmt)
         return code == SQLITE_DONE && sqlite3_changes(db) == 0 ? SQLITE_CONSTRAINT : code
     }
@@ -240,12 +328,12 @@ public final class EventSyncManager {
     private func due(now: Date) -> [PendingEvent] {
         guard let owner = currentOwner, !currentToken.isEmpty else { return [] }
         var stmt: OpaquePointer?; defer { sqlite3_finalize(stmt) }; var rows:[PendingEvent] = []
-        let sql = "SELECT event_uuid,endpoint,payload_json,retry_count FROM pending_events WHERE synced=0 AND next_attempt_at<=? AND owner_id=? AND destination=? ORDER BY CASE WHEN endpoint LIKE '/api/v1/events/fall%' THEN 0 ELSE 1 END,created_at_utc LIMIT 50"
+        let sql = "SELECT event_uuid,endpoint,payload_json,retry_count,data_generation FROM pending_events WHERE synced=0 AND next_attempt_at<=? AND owner_id=? AND destination=? ORDER BY CASE WHEN endpoint LIKE '/api/v1/events/fall%' THEN 0 ELSE 1 END,created_at_utc LIMIT 50"
         guard sqlite3_prepare_v2(db,sql,-1,&stmt,nil) == SQLITE_OK else { return [] }
         sqlite3_bind_double(stmt,1,now.timeIntervalSince1970); bind(stmt,2,owner); bind(stmt,3,currentURL)
         while sqlite3_step(stmt) == SQLITE_ROW {
             guard let u=sqlite3_column_text(stmt,0),let e=sqlite3_column_text(stmt,1),let p=sqlite3_column_text(stmt,2) else { continue }
-            rows.append(PendingEvent(eventUUID:String(cString:u),endpoint:String(cString:e),payloadJSON:String(cString:p),retryCount:Int(sqlite3_column_int(stmt,3))))
+            rows.append(PendingEvent(eventUUID:String(cString:u),endpoint:String(cString:e),payloadJSON:String(cString:p),retryCount:Int(sqlite3_column_int(stmt,3)),dataGeneration:Int(sqlite3_column_int64(stmt,4))))
         }
         return rows
     }
@@ -276,23 +364,42 @@ public final class EventSyncManager {
         guard let (owner,destination,token,transport)=session else { return (0,0) }
         defer { dbQueue.sync { isDraining=false } }
         var delivered=0;var failed=0
+        if let versioned = transport as? DataGenerationTransport {
+            do {
+                let value = try await versioned.fetchDataGeneration(bearerToken: token)
+                guard observeDataGeneration(value, bearerToken: token, baseURL: destination) else { return (0,dueEvents(now: now).count) }
+            } catch {
+                if let apiError = error as? CadenceAPIError, case .httpStatus(let status) = apiError,
+                   [401,403].contains(status), dbQueue.sync(execute: { currentToken == token && currentURL == destination }) { onUnauthorized?() }
+                return (0,dueEvents(now: now).count)
+            }
+        }
         for event in dueEvents(now:now) {
             guard dbQueue.sync(execute:{ currentOwner==owner && currentURL==destination && !currentToken.isEmpty }) else { break }
-            let result=await transport.send(endpoint:event.endpoint,jsonData:Data(event.payloadJSON.utf8),bearerToken:token)
+            let result: DeliveryOutcome
+            if let versioned = transport as? DataGenerationTransport {
+                result = await versioned.send(endpoint:event.endpoint,jsonData:Data(event.payloadJSON.utf8),bearerToken:token,dataGeneration:event.dataGeneration)
+            } else { result = await transport.send(endpoint:event.endpoint,jsonData:Data(event.payloadJSON.utf8),bearerToken:token) }
             let code = dbQueue.sync { () -> Int32 in
                 var stmt: OpaquePointer?; defer { sqlite3_finalize(stmt) }
-                let sql = result == .delivered ? "UPDATE pending_events SET synced=1 WHERE event_uuid=? AND owner_id=? AND destination=? AND payload_json=?" : "UPDATE pending_events SET retry_count=retry_count+1,next_attempt_at=? WHERE event_uuid=? AND owner_id=? AND destination=? AND payload_json=?"
+                let terminal = result == .delivered || result == .discarded
+                let sql = terminal ? "UPDATE pending_events SET synced=\(result == .delivered ? 1 : 2) WHERE event_uuid=? AND owner_id=? AND destination=? AND payload_json=? AND data_generation=?" : "UPDATE pending_events SET retry_count=retry_count+1,next_attempt_at=? WHERE event_uuid=? AND owner_id=? AND destination=? AND payload_json=? AND data_generation=?"
                 let prepared=sqlite3_prepare_v2(db,sql,-1,&stmt,nil);guard prepared==SQLITE_OK else { return prepared }
                 var i:Int32=1
-                if result != .delivered {
+                if !terminal {
                     let delay=Self.backoffScheduleSec[min(event.retryCount+1,Self.backoffScheduleSec.count-1)]
                     sqlite3_bind_double(stmt,i,now.timeIntervalSince1970+delay);i+=1
                 }
                 for v in [event.eventUUID,owner,destination,event.payloadJSON] { bind(stmt,i,v);i+=1 }
+                sqlite3_bind_int64(stmt,i,sqlite3_int64(event.dataGeneration))
                 return sqlite3_step(stmt)
             }
             if code != SQLITE_DONE { report(.acknowledgmentFailed(code)); failed+=1 }
-            else if result == .delivered { delivered+=1 } else { failed+=1 }
+            else if result == .delivered { delivered+=1 } else if result != .discarded { failed+=1 }
+            if result == .discarded {
+                if dbQueue.sync(execute: { currentToken == token && currentURL == destination }) { onServerDataErased?() }
+                break
+            }
             if result == .unauthorized {
                 if dbQueue.sync(execute: { currentOwner == owner && currentURL == destination && currentToken == token }) { onUnauthorized?() }
                 break
@@ -303,6 +410,7 @@ public final class EventSyncManager {
     @discardableResult
     public func withdrawPending(_ uuid:String) -> Bool {
         dbQueue.sync {
+            guard !isDraining else { return false }
             var stmt:OpaquePointer?;defer{sqlite3_finalize(stmt)}
             guard sqlite3_prepare_v2(db,"DELETE FROM pending_events WHERE event_uuid=? AND synced=0 AND owner_id=? AND destination=?",-1,&stmt,nil)==SQLITE_OK else { return false }
             bind(stmt,1,uuid);bind(stmt,2,currentOwner ?? "");bind(stmt,3,currentURL)
@@ -343,7 +451,13 @@ public final class EventSyncManager {
                 defer { sqlite3_finalize(stmt) }
                 bind(stmt, 1, to); bind(stmt, 2, from); bind(stmt, 3, owner)
                 let code = sqlite3_step(stmt)
-                guard code == SQLITE_DONE, sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { throw QueueStorageError.writeFailed(code) }
+                guard code == SQLITE_DONE else { throw QueueStorageError.writeFailed(code) }
+                var version: OpaquePointer?; defer { sqlite3_finalize(version) }
+                let preparedVersion = sqlite3_prepare_v2(db,"INSERT INTO server_generations(owner_id,destination,data_generation) SELECT owner_id,?,data_generation FROM server_generations WHERE owner_id=? AND destination=? ON CONFLICT(owner_id,destination) DO UPDATE SET data_generation=MAX(server_generations.data_generation,excluded.data_generation)",-1,&version,nil)
+                guard preparedVersion == SQLITE_OK else { throw QueueStorageError.writeFailed(preparedVersion) }
+                bind(version,1,to); bind(version,2,owner); bind(version,3,from)
+                let versionCode = sqlite3_step(version)
+                guard versionCode == SQLITE_DONE, sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else { throw QueueStorageError.writeFailed(versionCode) }
             } catch { sqlite3_exec(db, "ROLLBACK", nil, nil, nil); throw error }
             for (key, item) in volatile where item.owner == owner && item.destination == from {
                 volatile.removeValue(forKey: key)

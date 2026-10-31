@@ -8,6 +8,10 @@ struct SettingsView: View {
     @ObservedObject var app: CadenceAppModel
     @ObservedObject private var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var discovery = BackendDiscovery()
+    @ObservedObject private var glasses: GlassesSessionManager
+    @State private var showGlassesCamera = false
+    @State private var voiceFlowID = UUID()
     @State private var username = ""
     @State private var password = ""
     @State private var server = ""
@@ -17,18 +21,31 @@ struct SettingsView: View {
     init(app: CadenceAppModel) {
         self.app = app
         self.settings = app.settings
+        self.glasses = app.glasses
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section { VoiceCompanionBar(app: app) }
+                contactsSection
                 accountSection
                 glassesSection
                 voiceSection
                 aboutSection
             }
-            .onAppear { server = settings.backendBaseURL }
-            .onDisappear { password = "" }
+            .onAppear {
+                server = settings.backendBaseURL
+                app.companion.enterFlow(id: voiceFlowID, destination: .settings, step: .settings)
+            }
+            .onChange(of: app.companion.actionID) { _ in
+                if app.companion.context == .settings, app.companion.action == .finish { dismiss() }
+            }
+            .onDisappear {
+                password = ""; discovery.stop()
+                app.companion.leaveFlow(id: voiceFlowID)
+            }
+            .sheet(isPresented: $showGlassesCamera) { GlassesCameraView(glasses: glasses, voice: app.companion) }
             .confirmationDialog("Use this Mac development server?", isPresented: $confirmServerRepair, titleVisibility: .visible) {
                 Button("Connect and preserve this phone's records") {
                     Task { await settings.connectServer(to: server, repairLocalhost: true) }
@@ -55,11 +72,55 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Voice
+    // MARK: - Contacts
+
+    /// The people Cadence offers to call. These feed the Help tab, the SOS
+    /// screen and the voice companion; nothing here changes server routing.
+    private var contactsSection: some View {
+        Section {
+            TextField("Care partner's name", text: $settings.caregiverName)
+                .frame(minHeight: CadenceTheme.bigTapHeight)
+            TextField("Care partner's phone number", text: $settings.caregiverPhone)
+                .frame(minHeight: CadenceTheme.bigTapHeight)
+                #if os(iOS)
+                .keyboardType(.phonePad)
+                .textContentType(.telephoneNumber)
+                #endif
+            TextField("Emergency number (default 911)", text: $settings.emergencyNumber)
+                .frame(minHeight: CadenceTheme.bigTapHeight)
+                #if os(iOS)
+                .keyboardType(.phonePad)
+                #endif
+            TextField("Name on shared summaries (optional)", text: $settings.summaryName)
+                .frame(minHeight: CadenceTheme.bigTapHeight)
+        } header: {
+            Text("People to call")
+        } footer: {
+            Text("The Help tab and the fall screen offer one-tap calls to these numbers. Automatic caregiver alerts are set up on the server, not here.")
+        }
+    }
+
+    // MARK: - Account
 
     private var accountSection: some View {
         Section {
-            Text("One wearer per installation")
+            Text("1. Start the Cadence server on the Mac and keep it running.")
+            Text("2. Keep both devices on the same Wi-Fi, then find the Mac below.")
+            Button("Find my Mac server") { discovery.start() }
+            ForEach(discovery.servers) { found in
+                Button {
+                    server = found.address
+                    discovery.stop()
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text("Use \(found.name)")
+                        Text(found.address).font(.caption)
+                    }
+                }
+            }
+            if !discovery.message.isEmpty { Text(discovery.message).font(.footnote) }
+            Text("3. Enter the phone account's username and password, then tap Sign in. The person who set up the server has them.")
+
             TextField("Mac server address", text: $server)
                 .autocorrectionDisabled()
                 #if os(iOS)
@@ -76,7 +137,7 @@ struct SettingsView: View {
                 }.disabled(settings.isConnecting || app.fallAlert.isAlertVisible)
             }
             if DeviceProfile.isLoopback(settings.api.baseURL) {
-                Text("On an iPhone, localhost points to the phone. Run scripts/run_phone_backend.py on your Mac and enter the .local address it prints. For an existing localhost profile, Connect repairs the address for the same Mac server without erasing your history.")
+                Text("This phone is still pointed at itself. Choose the Mac above, then tap Connect. Your history on this phone is kept.")
                     .font(.footnote)
             }
             if let message = settings.connectionMessage { Text(message).font(.footnote) }
@@ -104,10 +165,12 @@ struct SettingsView: View {
     private var glassesSection: some View {
         Section {
             Text(app.glasses.deviceName ?? "Meta glasses")
-            Text(app.glasses.canCapturePhoto ? "Connected — glasses camera ready" : "Glasses camera not connected")
+            Text(glasses.canCapturePhoto ? "Connected — glasses camera ready" : "Glasses camera not connected")
+            Button("Open live glasses camera") { showGlassesCamera = true }
             Button("Connect Meta glasses") { app.glasses.connect() }
-                .disabled(app.glasses.connectionState == .connecting)
-            if let error = app.glasses.connectionError { Text(error).foregroundColor(CadenceTheme.caution) }
+                .disabled(glasses.connectionState == .connecting)
+            if let details = glasses.connectionDetails { Text(details).font(.caption).foregroundColor(.secondary) }
+            if let error = glasses.connectionError { Text(error).foregroundColor(CadenceTheme.caution) }
             if app.isUsingMockGlasses { Text("Mock glasses: photos and sensors are simulated.") }
         } header: { Text("Photo source") }
         footer: { Text("Pair in the Meta AI app and allow camera access. Photo actions use the glasses; the iPhone camera is an explicit alternative.") }
@@ -118,6 +181,12 @@ struct SettingsView: View {
         let choices = Array(VoiceSelection.choices(from: installed).prefix(8))
         let current = VoiceSelection.best(from: installed, preferred: settings.preferredVoiceIdentifier)
         return Section {
+            Button("Automatically use the best installed voice") {
+                settings.preferredVoiceIdentifier = nil
+                AudioCueEngine.shared.refreshVoiceSelection()
+            }
+            if let current { Text("Current voice: \(current.name) · \(current.quality.word)").font(.footnote) }
+            Text("Speech uses the iPhone's built-in voice. No third-party speech-generation model is called.").font(.footnote)
             ForEach(choices) { voice in
                 Button {
                     settings.preferredVoiceIdentifier = voice.identifier

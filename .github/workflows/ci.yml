@@ -6,51 +6,95 @@ on:
   pull_request:
     branches: [ main ]
 
-jobs:
-  backend-test:
-    name: Backend Tests (Python 3.13)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+env:
+  # Tests never contact providers; these keep production guards from tripping.
+  CADENCE_ENV: test
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+jobs:
+  backend:
+    name: Backend (pytest + dashboard checks)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
           cache: 'pip'
+          cache-dependency-path: backend/requirements-lock.txt
 
-      - name: Install dependencies
+      - name: Install locked dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
+          pip install -r requirements-lock.txt
 
-      - name: Run Pytest test suite
-        run: |
-          PYTHONPATH=backend pytest backend/tests/ -v
+      - name: Pytest
+        run: python -m pytest -q
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Run JavaScript Dashboard security tests
-        run: |
-          node backend/tests/dashboard_browser_security.cjs
-          node backend/tests/dashboard_exam_validity.test.cjs
+      - name: Dashboard renderer checks (DOM doubles)
+        run: node --test tests/dashboard_exam_validity.test.cjs
 
-  ios-test:
-    name: iOS & DSP Tests (macOS 14)
-    runs-on: macos-14
+      - name: Dashboard fixture from the real app
+        run: python tests/make_dashboard_fixture.py /tmp/dashboard-shell.json
+
+      - name: Install Playwright Chromium
+        run: |
+          npm init -y >/dev/null
+          npm install --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+
+      - name: Dashboard browser security check (isolated, no network)
+        run: node tests/dashboard_browser_security.cjs /tmp/dashboard-shell.json
+
+  swift-package:
+    name: Swift package tests (silent audio)
+    runs-on: macos-15
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Show Swift & Xcode Version
+      - name: Toolchain
         run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app || true
           swift --version
           xcodebuild -version
 
-      - name: Run Swift Package test suite
+      - name: Package tests
+        env:
+          CADENCE_TEST_SILENT_AUDIO: '1'
+          CADENCE_SWIFT_SCRATCH: ${{ runner.temp }}/swift-scratch
+        run: ./scripts/test_ios.sh
+
+  ios-app:
+    name: iOS app target compiles (with Meta DAT SDK)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
         run: |
-          CADENCE_TEST_SILENT_AUDIO=1 ./scripts/test_ios.sh
+          sudo xcode-select -s /Applications/Xcode_16.2.app || true
+          xcodebuild -version
+
+      - name: Resolve packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project ios/App/CadenceCompanionApp.xcodeproj \
+            -scheme CadenceCompanionApp
+
+      - name: Build for iOS Simulator (no signing)
+        run: |
+          set -o pipefail
+          xcodebuild build -quiet \
+            -project ios/App/CadenceCompanionApp.xcodeproj \
+            -scheme CadenceCompanionApp \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ${{ runner.temp }}/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""

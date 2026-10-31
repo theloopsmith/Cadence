@@ -186,6 +186,39 @@ final class CadenceAPIClientTests: XCTestCase {
         XCTAssertEqual(report.clinicalNarrative, "Objective 24h Motor Summary.")
     }
 
+    func testAnalysis401NotifiesSessionWithoutReplayingPhoto() async {
+        let transport = RecordingJSONTransport(); transport.error = CadenceAPIError.httpStatus(401)
+        var rejected = 0
+        let client = CadenceAPIClient(baseURL: "http://example.test", bearerToken: "expired", transport: transport,
+                                      onUnauthorized: { rejected += 1 })
+        do { _ = try await client.realityCheck(question: "Check", jpeg: Data([1])); XCTFail("Expected 401") }
+        catch CadenceAPIError.httpStatus(401) {}
+        catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertEqual(rejected, 1)
+        XCTAssertEqual(transport.requests.count, 1, "A rejected photo is not automatically replayed")
+    }
+
+    func testWrongPasswordOrForbiddenRoleDoesNotExpireAnExistingSession() async {
+        let transport = RecordingJSONTransport(); transport.error = CadenceAPIError.httpStatus(401)
+        var rejected = 0
+        let client = CadenceAPIClient(baseURL: "http://example.test", bearerToken: "current", transport: transport,
+                                      onUnauthorized: { rejected += 1 })
+        _ = try? await client.login(username: "phone", password: "wrong")
+        XCTAssertEqual(rejected, 0)
+        transport.error = CadenceAPIError.httpStatus(403)
+        _ = try? await client.realityCheck(question: "Check", jpeg: Data([1]))
+        XCTAssertEqual(rejected, 0)
+    }
+
+    func testReport401UsesTheSameSignInRecoveryAsAnalysis() async {
+        let transport = RecordingJSONTransport(); transport.error = CadenceAPIError.httpStatus(401)
+        var rejected = 0
+        let client = CadenceAPIClient(baseURL: "http://example.test", bearerToken: "expired", transport: transport,
+                                      onUnauthorized: { rejected += 1 })
+        _ = try? await client.fetchReport()
+        XCTAssertEqual(rejected, 1)
+    }
+
     func testTransportFailuresSurfaceAsErrors() async {
         let transport = RecordingJSONTransport()
         transport.error = URLError(.notConnectedToInternet)

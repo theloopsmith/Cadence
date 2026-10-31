@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from app.clients.twilio_client import mask_phone, twilio_client
 from app.config import settings
-from app.db import claim_caregiver_alert, execute_write, fetch_all, fetch_one
+from app.db import claim_caregiver_alert, execute_write, execute_patient_write, fetch_all, fetch_one, DataGenerationChanged, data_generation_sync
 from app.models import FallEventCreate
 from app.services import fall_durability as durable
 from app.services.delivery_evidence import delivery_evidence
@@ -28,6 +28,8 @@ class FallEscalationManager:
         self._recovery_task = None
 
     def _primary_phone(self) -> str:
+        # Development with no contact uses a placeholder so the simulated path is
+        # exercised; production returns "" and the dispatch reports "unconfigured".
         return settings.caregiver_primary_phone or ("" if settings.is_production else "+15550001111")
 
     async def _require_owned_event(self, patient_id: str, event_uuid: str) -> None:
@@ -62,6 +64,7 @@ class FallEscalationManager:
         patient_id: str,
         payload: FallEventCreate,
         start_background_retry: bool = True,
+        data_generation: int = 0,
     ) -> Dict[str, Any]:
         """
         1. Evaluates fail-safe wear/groan gate.
@@ -106,12 +109,12 @@ class FallEscalationManager:
                 payload.cancel_transcript,
                 1 if payload.local_siren_activated else 0,
             ),
-            patient_id, payload.event_uuid, effective_status,
+            patient_id, payload.event_uuid, effective_status, data_generation=data_generation,
         )
 
         await self._require_owned_event(patient_id, payload.event_uuid)
         if effective_status == 'canceled_false_alarm':
-            return await self.cancel_dispatched_fall(patient_id, payload.event_uuid)
+            return await self.cancel_dispatched_fall(patient_id, payload.event_uuid, data_generation=data_generation)
 
         if stored_status in {
             "canceled_false_alarm",
@@ -132,6 +135,8 @@ class FallEscalationManager:
             "SELECT * FROM fall_events WHERE event_uuid = ? AND patient_id = ?", (payload.event_uuid, patient_id)
         )
         if not claimed:
+            if not fall_row:
+                raise DataGenerationChanged(await asyncio.to_thread(data_generation_sync, patient_id))
             return {
                 "event_uuid": payload.event_uuid,
                 "status": fall_row["status"],
@@ -309,6 +314,7 @@ class FallEscalationManager:
                 timeout=settings.dispatch_timeout_sec,
             )
         except Exception:
+            logging.getLogger('cadence').exception('Caregiver dispatch failed for attempt %s', attempt_id)
             return {"sms_sid": "", "call_sid": "", "delivery_status": "transport_unavailable"}
 
     async def _callback_attempt(self, event_uuid, call_sid, attempt_id):
@@ -366,6 +372,7 @@ class FallEscalationManager:
         self,
         patient_id: str,
         event_uuid: str,
+        data_generation: int = 0,
     ) -> Dict[str, Any]:
         """
         Post-dispatch user cancellation (POST /api/v1/events/fall/{event_uuid}/cancel):
@@ -381,7 +388,8 @@ class FallEscalationManager:
         if existing is None:
             # The phone can upload the cancel before the fall when the queue
             # drains out of order. The tombstone makes the later fall a no-op.
-            inserted = await execute_write(
+            from app.security import AuthContext
+            inserted = await execute_patient_write(AuthContext('device_writer', patient_id, data_generation),
                 """
                 INSERT OR IGNORE INTO fall_events (
                     patient_id, event_uuid, timestamp_utc, peak_impact_g, peak_jerk_gs,
@@ -393,7 +401,7 @@ class FallEscalationManager:
             )
             if inserted:
                 await self._ensure_legacy_jobs()
-                await durable.cancel(patient_id, event_uuid)
+                await durable.cancel(patient_id, event_uuid, data_generation=data_generation)
                 return {
                     "event_uuid": event_uuid,
                     "delivery_status": "canceled_by_user",
@@ -402,7 +410,7 @@ class FallEscalationManager:
                 }
 
         await self._require_owned_event(patient_id, event_uuid)
-        await durable.cancel(patient_id, event_uuid)
+        await durable.cancel(patient_id, event_uuid, data_generation=data_generation)
         task = self._active_tasks.pop(event_uuid, None)
         if task: task.cancel()
         all_clear_sent = await durable.send_pending_clears(twilio_client)
@@ -446,25 +454,37 @@ class FallEscalationManager:
         await durable.transact(migrate)
 
     async def recover_due_once(self):
-        await self._ensure_legacy_jobs()
         rows=await durable.due_jobs()
         for job in rows:
-            event=await fetch_one("SELECT * FROM fall_events WHERE event_uuid=? AND patient_id=?", (job['event_uuid'],job['patient_id']))
-            if not event or await self._is_resolved(job['event_uuid']): continue
-            if job['attempt_no'] >= settings.max_retry_attempts:
-                await execute_write("UPDATE fall_jobs SET state='exhausted' WHERE event_uuid=?", (job['event_uuid'],))
-                continue
-            # No attempt was made yet: dispatch the persisted original candidate.
-            if job['attempt_no'] < 0 and not event.get('caregiver_call_sid') and not event.get('caregiver_sms_sid'):
-                # due_jobs already promotes timed-out candidates transactionally.
-                # Never reset event state from a potentially stale worker snapshot.
-                fields={k:v for k,v in event.items() if k in FallEventCreate.model_fields and v is not None}
-                fields['status']='confirmed_waiting_dispatch'
-                await self.ingest_fall_event(job['patient_id'],FallEventCreate(**fields),False)
-            else:
-                await self.escalate_to_secondary_or_retry_primary(job['patient_id'],job['event_uuid'],int(job['attempt_no'])+1, expected_attempt_no=int(job['attempt_no']))
+            # One bad row must not stop the sweep for every other wearer.
+            try:
+                await self._recover_job(job)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logging.getLogger('cadence').exception('Fall recovery failed for %s; job retained', job['event_uuid'])
         await durable.send_pending_clears(twilio_client)
         return [r['event_uuid'] for r in rows]
+
+    async def _recover_job(self, job):
+        event=await fetch_one("SELECT * FROM fall_events WHERE event_uuid=? AND patient_id=?", (job['event_uuid'],job['patient_id']))
+        if not event or await self._is_resolved(job['event_uuid']): return
+        if job['attempt_no'] >= settings.max_retry_attempts:
+            await execute_write("UPDATE fall_jobs SET state='exhausted' WHERE event_uuid=?", (job['event_uuid'],))
+            return
+        # No attempt was made yet: dispatch the persisted original candidate.
+        if job['attempt_no'] < 0 and not event.get('caregiver_call_sid') and not event.get('caregiver_sms_sid'):
+            # due_jobs already promotes timed-out candidates transactionally.
+            # Never reset event state from a potentially stale worker snapshot.
+            fields={k:v for k,v in event.items() if k in FallEventCreate.model_fields and v is not None}
+            fields['status']='confirmed_waiting_dispatch'
+            # The server owns this recovery: it writes at the wearer's current
+            # data generation, not the phone's. A past "Reset Diary Data" must
+            # never fence the dispatch of a later fall.
+            generation=await asyncio.to_thread(data_generation_sync, job['patient_id'])
+            await self.ingest_fall_event(job['patient_id'],FallEventCreate(**fields),False,data_generation=generation)
+        else:
+            await self.escalate_to_secondary_or_retry_primary(job['patient_id'],job['event_uuid'],int(job['attempt_no'])+1, expected_attempt_no=int(job['attempt_no']))
 
     async def resume_open_escalations(self):
         await self._ensure_legacy_jobs()
@@ -482,9 +502,16 @@ class FallEscalationManager:
         return resumed
 
     async def _watch_recovery(self):
+        # Retention used to run only at startup; a server that stays up for
+        # weeks never purged. It now runs once a day from this loop.
+        next_purge = time.time() + 24 * 3600
         while True:
             try:
                 await self.recover_due_once()
+                if time.time() >= next_purge:
+                    next_purge = time.time() + 24 * 3600
+                    from app.db import purge_expired_telemetry
+                    await purge_expired_telemetry()
             except asyncio.CancelledError:
                 raise
             except Exception:

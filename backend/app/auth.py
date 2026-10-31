@@ -196,3 +196,18 @@ def validate_security_settings() -> None:
         raise RuntimeError(
             f"JWT_SECRET must be set to at least {_MIN_SECRET_LENGTH} characters in production."
         )
+    # A production server exists to reach a caregiver. Missing delivery
+    # configuration must fail here, not fifteen retries after a real fall.
+    missing = [
+        name.upper()
+        for name in ("twilio_account_sid", "twilio_auth_token", "twilio_from_phone", "caregiver_primary_phone")
+        if not getattr(settings, name)
+    ]
+    if missing:
+        raise RuntimeError(f"Production requires caregiver dispatch settings: {', '.join(missing)}.")
+    if not settings.public_webhook_base_url.lower().startswith("https://"):
+        raise RuntimeError("PUBLIC_WEBHOOK_BASE_URL must be https in production so Twilio callbacks can be verified.")
+    if settings.demo_mode_enabled:
+        raise RuntimeError("DEMO_MODE must be off in production.")
+    if settings.static_tokens_enabled:
+        raise RuntimeError("ALLOW_STATIC_TOKENS must be off in production.")

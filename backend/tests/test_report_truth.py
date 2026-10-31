@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.config import settings
 from app.db import init_db_sync, execute_write_sync
-from app.main import app, _within_last_day
+from app.main import app
 from app.services.report_snapshot import snapshot_sync
 from app.services.diary_engine import build_24h_diary_timeline
 from app.services.delivery_evidence import delivery_evidence
@@ -50,7 +50,10 @@ def test_full_interval_totals_are_not_capped_with_detail_rows(db,monkeypatch):
     fog('future',(now+timedelta(days=1)).isoformat())
     # Reports must not depend on a model rephrasing delivery or event counts.
     async def forbidden(*args,**kw): raise AssertionError('report should be factual without inference')
-    monkeypatch.setattr('app.main.fireworks_client.summarize_clinical_diary',forbidden)
+    from app.clients.fireworks_client import fireworks_client as fw_client
+    from app.clients.baseten_llm import baseten_client as bt_client
+    monkeypatch.setattr(fw_client,'summarize_clinical_diary',forbidden)
+    monkeypatch.setattr(bt_client,'summarize_clinical_diary',forbidden)
     report=TestClient(app).get('/api/v1/report/neurologist',headers=HEADERS).json()
     assert report['summary_stats']['fog_count']==130
     assert len(report['fog_events'])==100
@@ -70,8 +73,13 @@ def test_acceptance_simulation_and_acknowledgment_are_independent_facts():
     assert delivery_evidence(fall,[real])['contact_state']=='acknowledged'
     assert delivery_evidence({**fall,'caregiver_call_sid':'CAlegacy'},[])['caregiver_acknowledged'] is False
 
-def test_future_timestamp_is_not_within_the_last_day():
-    assert not _within_last_day((datetime.now(timezone.utc)+timedelta(days=1)).isoformat())
+def test_future_timestamp_is_refused_at_the_door():
+    # Replaces the old report-side filter: a future event is now a 422, so it can never reach the report.
+    from app.models import FoGEventCreate
+    import pytest
+    with pytest.raises(ValueError):
+        FoGEventCreate(event_uuid='future-0001', timestamp_utc=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat(),
+                       duration_sec=1, peak_freeze_index=1, locomotor_band_power=1, freeze_band_power=1)
 
 def test_report_and_delivery_endpoint_share_incident_bound_evidence(db):
     now=datetime.now(timezone.utc)-timedelta(minutes=2)

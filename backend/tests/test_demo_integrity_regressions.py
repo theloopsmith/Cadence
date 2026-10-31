@@ -129,8 +129,9 @@ def test_object_resting_on_a_seat_still_uses_the_seat_template():
 # --------------------------------------------------------------------------
 def test_demo_seed_covers_the_full_day_and_every_pipeline():
     with TestClient(app) as client:
-        client.delete("/api/v1/patient/data", headers=DEVICE_HEADERS)
-        assert client.post("/api/v1/demo/seed", headers=DEVICE_HEADERS).status_code == 200
+        wiped = client.delete("/api/v1/patient/data", headers=DEVICE_HEADERS)
+        headers = {**DEVICE_HEADERS, "X-Cadence-Data-Generation": str(wiped.json()["data_generation"])}
+        assert client.post("/api/v1/demo/seed", headers=headers).status_code == 200
         rep = client.get("/api/v1/report/neurologist", headers=DEVICE_HEADERS).json()
 
     labels = [b["label_hhmm"] for b in rep["buckets_24h"]]

@@ -192,7 +192,7 @@ def test_server_wipe_offline_upload_coordination():
         fresh_event_time = datetime.now(timezone.utc).isoformat()
         fresh_res = client.post(
             "/api/v1/events/fog",
-            headers=DEVICE_HEADERS,
+            headers={**DEVICE_HEADERS, "X-Cadence-Data-Generation": str(wipe_data["data_generation"])},
             json={
                 "event_uuid": "fresh-fog-001",
                 "timestamp_utc": fresh_event_time,

@@ -9,7 +9,7 @@ import UIKit
 public enum FallAlertPhase: Equatable {
     /// No active alert.
     case idle
-    /// Stage 3 confirmed; the 12-second spoken check-in window is open and the
+    /// Stage 3 confirmed; the 30-second spoken check-in window is open and the
     /// wearer can still cancel without any caregiver being contacted.
     case checkIn(eventUUID: String, deadline: Date)
     /// Check-in resolved as a real fall. Siren, beacon and caregiver dispatch
@@ -122,6 +122,7 @@ public final class FallAlertCoordinator: ObservableObject {
     /// Caregiver number offered as a one-tap call on the SOS screen. Falls back
     /// to the local emergency number when unset.
     @Published public private(set) var contactState = "queued"
+    private var activeDataGeneration = 0
     public var contactHeadline: String {
         switch contactState {
         case "acknowledged": return "Caregiver acknowledged"
@@ -130,11 +131,22 @@ public final class FallAlertCoordinator: ObservableObject {
         case "exhausted": return "Automatic attempts ended"
         case "canceled": return "Alert canceled"
         case "suppressed": return "Alert suppressed as glasses drop"
+        case "discarded_after_erase": return "Alert retries stopped after server erase"
+        case "no_connection": return "No caregiver connection. Use the call buttons"
         default: return "Trying to contact caregiver"
         }
     }
     public func updateDelivery(_ reply: FallDeliveryStatus) {
         guard isDispatched, activeEventUUID == reply.eventUUID else { return }
+        guard sync.currentDataGeneration == activeDataGeneration else { serverDataWasErased(); return }
+        // Signed out mid-alert: nothing further can be sent, and verified
+        // acknowledgment is the only state that may outrank that fact.
+        if sync.deviceBearerToken.isEmpty {
+            if contactState != "acknowledged" { contactState = "no_connection" }
+            return
+        }
+        // Signed in again mid-alert: the queue can drain now, so server evidence counts.
+        if contactState == "no_connection" { contactState = "queued" }
         if reply.caregiverAcknowledged && reply.providerAccepted { contactState = "acknowledged" }
         else if contactState != "acknowledged" {
             if reply.providerAccepted { contactState = "provider_accepted" }
@@ -142,6 +154,12 @@ public final class FallAlertCoordinator: ObservableObject {
             else if ["exhausted", "canceled", "suppressed"].contains(reply.contactState) { contactState = reply.contactState }
             else { contactState = "queued" }
         }
+    }
+
+    public func serverDataWasErased() {
+        guard isDispatched, sync.currentDataGeneration > activeDataGeneration,
+              !["acknowledged", "provider_accepted"].contains(contactState) else { return }
+        contactState = "discarded_after_erase"
     }
 
     public var caregiverPhoneNumber: String?
@@ -235,6 +253,7 @@ public final class FallAlertCoordinator: ObservableObject {
     /// Called when `FallDetector` completes Stage 3. Opens the check-in window
     /// and starts the countdown that escalates on silence.
     public func beginCheckIn(eventUUID: String, now: Date = Date()) {
+        activeDataGeneration = sync.currentDataGeneration
         persistenceWarning = sync.persistenceError?.message
         checkInTask?.cancel()
         phase = .checkIn(
@@ -248,6 +267,13 @@ public final class FallAlertCoordinator: ObservableObject {
         // floor can find the cancel button without hunting for the phone.
         screen.engageEmergencyBrightness()
         screen.setIdleTimerDisabled(true)
+
+        // Walking cues must not start while the check-in microphone is open.
+        audio.checkInActive = true
+        // Configure the two-way session first, then ask: a prompt spoken across
+        // the playback-to-record switch is the one sentence that must be heard.
+        _ = audio.prepareMicrophoneSession(owner: .checkIn)
+        audio.speakPrompt(FallDetector.checkInPrompt, priority: 0)
 
         let window = checkInWindow
         checkInTask = Task { [weak self] in
@@ -264,8 +290,8 @@ public final class FallAlertCoordinator: ObservableObject {
         let listener = speechListener
         listener.startListening(
             onTranscriptUpdate: { _, _ in },
-            onEarlyResolution: { [weak self] earlyOutcome in
-                guard let self = self else { return }
+            onEarlyResolution: { [weak self, weak listener] earlyOutcome in
+                guard let self = self, let listener else { return }
                 if earlyOutcome == "canceled_false_alarm" {
                     let (transcript, _) = listener.stopListening()
                     self.cancelByUser(reason: "canceled_false_alarm", transcript: transcript)
@@ -306,6 +332,7 @@ public final class FallAlertCoordinator: ObservableObject {
     ) {
         guard case let .checkIn(uuid, _) = phase else { return }
         checkInTask?.cancel()
+        audio.checkInActive = false
         contactState = "queued"
         phase = .dispatched(eventUUID: uuid)
         lastOutcome = status
@@ -339,6 +366,12 @@ public final class FallAlertCoordinator: ObservableObject {
         ) {
             persistenceWarning = error.message
             lastOutcome = "local_persistence_failed"
+        }
+        serverDataWasErased()
+        // "Trying to contact" is only true when a send is possible: a signed-in
+        // phone and a row safely on disk. Otherwise say so and point at the buttons.
+        if contactState == "queued", sync.deviceBearerToken.isEmpty || persistenceWarning != nil {
+            contactState = "no_connection"
         }
     }
 
@@ -417,7 +450,7 @@ public final class FallAlertCoordinator: ObservableObject {
 
     @discardableResult
     private func persist(eventUUID: String, endpoint: String, payload: [String: Any]) -> Result<Void, QueueStorageError> {
-        let result = sync.saveLocalImmediate(eventUUID: eventUUID, endpoint: endpoint, payload: payload)
+        let result = sync.saveLocalImmediate(eventUUID: eventUUID, endpoint: endpoint, payload: payload, dataGeneration: activeDataGeneration)
         if case let .failure(error) = result { persistenceWarning = error.message }
         return result
     }
@@ -426,6 +459,7 @@ public final class FallAlertCoordinator: ObservableObject {
     private func standDown(outcome: String) {
         checkInTask?.cancel()
         checkInTask = nil
+        audio.checkInActive = false
         _ = speechListener.stopListening()
         detector.resetAfterResolution()
         phase = .idle

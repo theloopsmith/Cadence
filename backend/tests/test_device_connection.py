@@ -21,7 +21,8 @@ def test_connection_identity_requires_phone_authorization(http):
     body = response.json()
     UUID(body['server_id'])
     assert body['patient_id'] == settings.cadence_default_patient_id
-    assert set(body) == {'service', 'server_id', 'patient_id'}
+    assert set(body) == {'service', 'server_id', 'patient_id', 'data_generation'}
+    assert body['data_generation'] == 0
 
 
 def test_identity_is_stable_across_database_upgrade_and_distinct_per_database(http, monkeypatch, tmp_path):

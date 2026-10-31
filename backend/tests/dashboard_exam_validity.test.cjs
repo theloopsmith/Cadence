@@ -21,7 +21,7 @@ function harness(data) {
   const storage = new Map([['cadence_bearer_token','test']]);
   const context = vm.createContext({document:doc, URL, window:{addEventListener(){}},
     sessionStorage:{getItem:k=>storage.get(k),removeItem:k=>storage.delete(k)},
-    fetch:async()=>({status:200,json:async()=>data})});
+    fetch:async()=>({ok:true,status:200,json:async()=>data})});
   vm.runInContext(source,context);
   return {nodes,context,render:()=>vm.runInContext('loadReport()',context)};
 }
@@ -80,6 +80,36 @@ test('controls bind listeners without inline handlers and sign-in remains wired'
   const {nodes,context} = harness(baseData());
   await vm.runInContext('initializeDashboard()',context);
   for (const id of ['seedDemoButton','wipeButton','printButton','fogButton','mealButton','realityButton','writingButton','examButton','fallButton','signInButton']) assert.equal(typeof nodes.get(id).listeners.click,'function');
+});
+
+test('writes carry the loaded generation and erase conflicts never retry or render stale reports', async () => {
+  const data = baseData(); data.report_metadata = {data_generation:3};
+  const {nodes,context,render} = harness(data); await render();
+  let count = 0, sent;
+  context.fetch = async (url, options) => {
+    count++; sent = options.headers;
+    return {ok:false,status:409,json:async()=>({error:'data_generation_changed',data_generation:4,message:'Old action was not saved'})};
+  };
+  await assert.rejects(vm.runInContext('apiPost("/fixture", {})',context),/Old action was not saved/);
+  assert.equal(count,1);
+  assert.equal(sent['X-Cadence-Data-Generation'],'3');
+  data.clinical_narrative = 'stale pre-wipe report';
+  context.fetch = async()=>({ok:true,status:200,json:async()=>data});
+  await render();
+  assert.equal(nodes.get('narrativeText').textContent,'Summary');
+});
+
+test('failed wipe does not announce that data was erased', async () => {
+  const {nodes,context} = harness(baseData());
+  context.fetch = async()=>({ok:false,status:500,json:async()=>({message:'Erase failed'})});
+  await assert.rejects(vm.runInContext('wipePatientData()',context),/Erase failed/);
+  assert.equal(nodes.get('glassesAudioBanner'),undefined);
+});
+
+test('signed-out actions cannot continue into a success announcement', async () => {
+  const {context} = harness(baseData());
+  vm.runInContext('sessionStorage.removeItem("cadence_bearer_token")',context);
+  await assert.rejects(vm.runInContext('apiPost("/fixture", {})',context),/Sign in/);
 });
 
 test('report exposes freshness, unknown coverage, truncation and separate contact evidence', async () => {

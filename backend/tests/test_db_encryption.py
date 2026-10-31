@@ -30,6 +30,7 @@ def test_a_key_without_sqlcipher_does_not_open_a_plaintext_database(monkeypatch,
     with pytest.raises(DatabaseEncryptionError):
         init_db_sync(str(path))
 
+
     if path.exists():
         assert not path.read_bytes().startswith(PLAINTEXT_HEADER)
 
@@ -46,3 +47,28 @@ def test_a_plaintext_file_is_rejected_when_a_key_is_configured(monkeypatch, tmp_
 
     with pytest.raises(DatabaseEncryptionError):
         init_db_sync(str(path))
+
+
+def test_refusing_a_plaintext_database_never_deletes_it(monkeypatch, tmp_path):
+    """Setting a key on an existing plaintext file is a misconfiguration, not consent to erase the fall ledger."""
+    from app.db import _refuse_plaintext_database
+    path = tmp_path / "existing.db"
+    sqlite3.connect(str(path)).execute("CREATE TABLE t (x)").connection.commit()
+    (tmp_path / "existing.db-wal").write_bytes(b"wal")
+    with pytest.raises(DatabaseEncryptionError):
+        _refuse_plaintext_database(str(path))
+    assert path.exists()
+    assert (tmp_path / "existing.db-wal").exists()
+
+
+def test_a_plaintext_file_cadence_itself_just_created_is_cleaned_up(monkeypatch, tmp_path):
+    """The fake-cipher case: Cadence wrote the file a moment ago, so removing it loses nothing."""
+    monkeypatch.setattr(settings, "sqlite_encryption_key", "clinic-key")
+    fake = types.ModuleType("sqlcipher3")
+    fake.connect = sqlite3.connect
+    fake.Row = sqlite3.Row
+    monkeypatch.setitem(sys.modules, "sqlcipher3", fake)
+    path = tmp_path / "fresh.db"
+    with pytest.raises(DatabaseEncryptionError):
+        init_db_sync(str(path))
+    assert not path.exists()

@@ -11,6 +11,17 @@ from app.clients.sam_output import output_text_from_response, parse_sam_output_t
 from app.config import settings
 
 
+def _image_mime(data: bytes) -> str:
+    """The glasses pipeline normalizes to JPEG, but a PNG or HEIC must not be mislabeled."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if len(data) > 12 and data[4:8] == b"ftyp" and data[8:12] in (b"heic", b"heix", b"mif1", b"msf1"):
+        return "image/heic"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/jpeg"
+
+
 class MetaModelClient:
     """
     Meta Model API client ($150 Credits) with per-model 3-strike circuit breakers:
@@ -56,7 +67,7 @@ class MetaModelClient:
         except TimeoutError as exc:
             return {"sam_verified": False, "masks": [], "failed_labels": labels, "reason": str(exc)}
 
-        image_url = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("ascii")
+        image_url = f"data:{_image_mime(image_bytes)};base64," + base64.b64encode(image_bytes).decode("ascii")
         started = time.monotonic()
         # httpx timeouts are per phase; this is the stage's real wall-clock bound.
         # Concepts that answered in time are kept even when another one hangs.

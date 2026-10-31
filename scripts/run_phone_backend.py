@@ -8,11 +8,30 @@ import argparse
 import os
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def phone_signing_secret(local: Path) -> str:
+    """Keep this isolated phone server's login tokens valid across restarts."""
+    path = local / 'phone-jwt-secret'
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        value = path.read_text().strip()
+        if len(value) < 32:
+            raise ValueError('Phone signing key is incomplete. Preserve it and investigate before restarting; do not silently rotate it.')
+        return value
+    value = secrets.token_urlsafe(48)
+    with os.fdopen(fd, 'w') as handle:
+        handle.write(value + '\n')
+        handle.flush()
+        os.fsync(handle.fileno())
+    return value
 
 
 def main():
@@ -39,6 +58,10 @@ def main():
         parser.error(f'Port {args.port} is already in use. Stop that server or use --port.')
     finally:
         probe.close()
+    try:
+        env['JWT_SECRET'] = phone_signing_secret(local)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
     login = local / 'phone-login.txt'
     if not login.exists():
         password = secrets.token_urlsafe(20)
@@ -61,8 +84,21 @@ def main():
     print(f'Phone account credentials: {login}', flush=True)
     print('Keep iPhone and Mac on the same Wi-Fi. Allow Local Network access for Cadence.', flush=True)
     print('Development server: caregiver delivery is SIMULATED. No public tunnel. Ctrl-C to stop.\n', flush=True)
-    os.chdir(ROOT / 'backend')
-    os.execve(str(python), [str(python), '-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', str(args.port)], env)
+    advertiser = None
+    dns_sd = shutil.which('dns-sd')
+    if dns_sd:
+        advertiser = subprocess.Popen([dns_sd, '-R', f'Cadence on {name}', '_cadence._tcp', 'local', str(args.port)],
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print('In Cadence Settings, tap Find my Mac server. Select this Mac, then sign in.', flush=True)
+    try:
+        return subprocess.call([str(python), '-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', str(args.port)],
+                               cwd=ROOT / 'backend', env=env)
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        if advertiser is not None:
+            advertiser.terminate()
+            advertiser.wait(timeout=5)
 
 
 if __name__ == '__main__':

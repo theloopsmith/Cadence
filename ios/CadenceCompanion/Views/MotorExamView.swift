@@ -10,6 +10,7 @@ public struct MotorExamView: View {
     @ObservedObject private var exam: HomeMotorExamManager
     @Environment(\.dismiss) private var dismiss
 
+    @State private var voiceFlowID = UUID()
     @State private var voiceSecondsRemaining: Int = 5
     @State private var isVoiceCountingDown = false
     @State private var voiceTimer: Timer?
@@ -21,6 +22,8 @@ public struct MotorExamView: View {
     @State private var walkSinkToken: UUID?
     @State private var startedMotionForWalk = false
 
+    @State private var automaticVoiceCapture = false
+    @State private var showGlassesCamera = false
     @State private var showCamera = false
     @State private var handwritingStatus: String?
     @State private var isAnalyzingHandwriting = false
@@ -56,7 +59,29 @@ public struct MotorExamView: View {
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle("Motor Check")
-            .onDisappear { app.glasses.cancelPhotoCapture(); cleanUpTimers() }
+            .onAppear {
+                app.companion.enterFlow(id: voiceFlowID, destination: .motor, step: voiceStep)
+                if app.companion.isEnabled { app.companion.say(voiceStep.guidance) }
+            }
+            .onChange(of: isVoiceCountingDown) { _ in app.companion.updateFlow(id: voiceFlowID, step: voiceStep) }
+            .onChange(of: isWalkCountingDown) { _ in app.companion.updateFlow(id: voiceFlowID, step: voiceStep) }
+            .onChange(of: isAnalyzingHandwriting) { _ in app.companion.updateFlow(id: voiceFlowID, step: voiceStep) }
+            .onChange(of: app.companion.actionID) { _ in handleVoiceAction() }
+            .onChange(of: exam.currentStep) { step in
+                app.companion.updateFlow(id: voiceFlowID, step: voiceStep)
+                app.companion.setPaused("Voice measurement", false)
+                if step == .task2PromptedHandwriting { app.companion.say("Now write a line on paper. Look at it through your glasses and say take a photo. You can also say skip.") }
+                if step == .task3PromptedTimedWalk { app.companion.say("If you can walk comfortably and have a clear path, say ready for a ten second walk. Or say skip.") }
+                if step == .completed { app.companion.say(exam.lastResultSummary ?? "Your check is finished. Say done to close.") }
+            }
+            .onDisappear {
+                // Presenting a handwriting camera must not cancel its parent exam.
+                guard !showGlassesCamera, !showCamera else { return }
+                app.glasses.cancelPhotoCapture(); cleanUpTimers()
+                if exam.isRunning { exam.cancelExam() }
+                app.companion.leaveFlow(id: voiceFlowID)
+                app.companion.setPaused("Voice measurement", false)
+            }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -67,6 +92,11 @@ public struct MotorExamView: View {
                         if exam.isRunning { exam.cancelExam() }
                         dismiss()
                     }
+                }
+            }
+            .sheet(isPresented: $showGlassesCamera) {
+                GlassesCameraView(glasses: app.glasses, voice: app.companion, captureWhenReady: automaticVoiceCapture, title: "Handwriting photo") { jpeg in
+                    analyzeHandwriting(jpeg: jpeg)
                 }
             }
             .cameraPresentation(
@@ -81,6 +111,17 @@ public struct MotorExamView: View {
     }
 
     // MARK: - Progress bar
+
+    private var voiceStep: CompanionStep {
+        switch exam.currentStep {
+        case .idle: return .motorIntro
+        case .task1PromptedVoice: return isVoiceCountingDown ? .motorRecording : .motorVoiceReady
+        case .task2PromptedHandwriting: return isAnalyzingHandwriting ? .analyzing : .handwriting
+        case .task3PromptedTimedWalk: return isWalkCountingDown ? .walking : .walkReady
+        case .submitting: return .analyzing
+        case .completed: return .completed
+        }
+    }
 
     private var currentStepIndex: Int {
         switch exam.currentStep {
@@ -185,6 +226,26 @@ public struct MotorExamView: View {
         .card()
     }
 
+    private func handleVoiceAction() {
+        guard app.companion.context == .motor else { return }
+        let action = app.companion.action
+        if action == .cancel { cleanUpTimers(); exam.cancelExam(); dismiss(); return }
+        switch (exam.currentStep, action) {
+        case (.idle, .start):
+            startVoiceStep()
+            app.companion.say("First, we'll record a steady ah for five seconds. Say ready, then hold the sound until I speak again.")
+        case (.task1PromptedVoice, .start): if !isVoiceCountingDown { beginVoiceCountdown() }
+        case (.task1PromptedVoice, .skip): cleanUpTimers(); exam.skipVoice()
+        case (.task2PromptedHandwriting, .capture), (.task2PromptedHandwriting, .start): automaticVoiceCapture = true; showGlassesCamera = true
+        case (.task2PromptedHandwriting, .skip): exam.measurements.handwritingStatus = .skipped; exam.advanceToTimedWalk()
+        case (.task3PromptedTimedWalk, .start): if !isWalkCountingDown { beginWalkCountdown() }
+        case (.task3PromptedTimedWalk, .skip): exam.measurements.walkStatus = .skipped; saveExam()
+        case (.task3PromptedTimedWalk, .finish): if isWalkCountingDown { finishWalkTest() }
+        case (.completed, .finish): dismiss()
+        default: app.companion.say("You can say ready, skip this step, or cancel.")
+        }
+    }
+
     private func startVoiceStep() {
         voiceSecondsRemaining = 5
         isVoiceCountingDown = false
@@ -196,21 +257,28 @@ public struct MotorExamView: View {
     private func beginVoiceCountdown() {
         isVoiceCountingDown = true
         voiceSecondsRemaining = 5
-        exam.voiceMonitor.startLiveMonitoring()
-        exam.voiceMonitor.startVowelPhonationRecording()
-        let session = exam.examSessionID
+        let startingSession = exam.examSessionID
+        Task { @MainActor in
+            await app.companion.releaseMicrophone(for: "Voice measurement")
+            guard exam.examSessionID == startingSession, exam.currentStep == .task1PromptedVoice else {
+                app.companion.setPaused("Voice measurement", false); return
+            }
+            exam.voiceMonitor.startLiveMonitoring()
+            exam.voiceMonitor.startVowelPhonationRecording()
+            let session = exam.examSessionID
 
-        voiceTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-            Task { @MainActor in
-                guard exam.examSessionID == session, exam.currentStep == .task1PromptedVoice else { timer.invalidate(); return }
-                if voiceSecondsRemaining > 1 {
-                    voiceSecondsRemaining -= 1
-                } else {
-                    timer.invalidate()
-                    voiceTimer = nil
-                    isVoiceCountingDown = false
-                    exam.advanceToHandwriting()
-                    Haptics.success()
+            voiceTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+                Task { @MainActor in
+                    guard exam.examSessionID == session, exam.currentStep == .task1PromptedVoice else { timer.invalidate(); return }
+                    if voiceSecondsRemaining > 1 {
+                        voiceSecondsRemaining -= 1
+                    } else {
+                        timer.invalidate()
+                        voiceTimer = nil
+                        isVoiceCountingDown = false
+                        exam.advanceToHandwriting()
+                        Haptics.success()
+                    }
                 }
             }
         }
@@ -249,9 +317,9 @@ public struct MotorExamView: View {
             } else {
                 if app.glasses.canCapturePhoto {
                     GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: {
-                        captureHandwritingWithGlasses()
+                        showGlassesCamera = true
                     }) {
-                        Label("Take Photo with Glasses", systemImage: "eyeglasses")
+                        Label("Open glasses camera", systemImage: "eyeglasses")
                     }
 
                     Button("Or use phone camera") {
@@ -280,22 +348,6 @@ public struct MotorExamView: View {
             }
         }
         .card()
-    }
-
-    private func captureHandwritingWithGlasses() {
-        isAnalyzingHandwriting = true
-        handwritingStatus = nil
-        let session = exam.examSessionID
-        app.glasses.capturePhoto { result in
-            guard exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
-            switch result {
-            case let .success(jpeg):
-                self.analyzeHandwriting(jpeg: jpeg)
-            case let .failure(error):
-                self.isAnalyzingHandwriting = false
-                self.handwritingStatus = "Glasses camera: \(error.localizedDescription)"
-            }
-        }
     }
 
     private func analyzeHandwriting(jpeg: Data) {

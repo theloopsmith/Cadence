@@ -1,6 +1,5 @@
+from datetime import datetime, timezone
 import asyncio
-import os
-import sys
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlencode
 from xml.sax.saxutils import escape
@@ -13,6 +12,17 @@ def mask_phone(phone: str) -> str:
     if len(cleaned) <= 4:
         return "***"
     return f"***-***-{cleaned[-4:]}"
+
+
+def _readable_time(timestamp_utc: str) -> str:
+    """A caregiver reads this on a phone; an ISO string with microseconds is not for them."""
+    try:
+        when = datetime.fromisoformat(str(timestamp_utc).replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return when.astimezone(timezone.utc).strftime("%H:%M UTC on %b %d")
+    except ValueError:
+        return "an unknown time"
 
 
 class TwilioEscalationClient:
@@ -30,7 +40,7 @@ class TwilioEscalationClient:
     ) -> str:
         body = (
             f"CADENCE EMERGENCY FALL ALERT: Hard impact ({peak_impact_g:.1f}g) detected "
-            f"at {timestamp_utc}. The wearer did not answer the check-in."
+            f"at {_readable_time(timestamp_utc)}. The wearer did not answer the check-in."
         )
         if latitude is not None and longitude is not None:
             body += f" GPS Location: https://maps.google.com/?q={latitude:.6f},{longitude:.6f}"

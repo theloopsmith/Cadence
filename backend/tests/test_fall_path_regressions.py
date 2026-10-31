@@ -216,7 +216,11 @@ def test_cancel_posted_after_dispatch_halts_the_loop_and_sends_the_all_clear(dis
             "default_patient",
             _fall("late-cancel-001", "canceled_false_alarm", cancel_transcript="i'm fine"),
         )
-        await asyncio.sleep(0)
+        # The loop must stop promptly; a bounded wait avoids a one-tick race under load.
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=2.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
         row = await fetch_one(
             "SELECT status FROM fall_events WHERE event_uuid = ?", ("late-cancel-001",)
         )

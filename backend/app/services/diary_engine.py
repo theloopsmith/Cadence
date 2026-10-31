@@ -114,7 +114,6 @@ def build_24h_diary_timeline(
         return [r for r in rows if (dt := _parse_utc(r.get('timestamp_utc',''))) and start_time <= dt < end_time]
     fog_rows,fall_rows,med_rows,writing_rows,voice_rows,exam_rows = map(in_window,(fog_rows,fall_rows,med_rows,writing_rows,voice_rows,exam_rows))
     other_rows = in_window(other_rows or [])
-    bucket_end_anchor = end_time
     # Extract doses & protein-conflict meals
     doses: List[datetime] = []
     conflict_meals: List[datetime] = []

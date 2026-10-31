@@ -95,6 +95,10 @@ public final class AppSettings: ObservableObject {
     @Published public var preferredVoiceIdentifier: String? {
         didSet { defaults.set(preferredVoiceIdentifier, forKey: scoped(Key.preferredVoice)); apply() }
     }
+    @Published public var voiceCompanionEnabled: Bool {
+        didSet { defaults.set(voiceCompanionEnabled, forKey: scoped("voiceCompanionEnabled")) }
+    }
+
     /// Muse Voice Transcribe listens alongside the on-device recognizer when online.
     @Published public var cloudListeningEnabled: Bool {
         didSet { defaults.set(cloudListeningEnabled, forKey: scoped(Key.cloudListening)) }
@@ -158,6 +162,7 @@ public final class AppSettings: ObservableObject {
         signedInUsername = defaults.string(forKey: localKey(Key.signedInUsername))
         summaryName = defaults.string(forKey: localKey(Key.summaryName)) ?? ""
         preferredVoiceIdentifier = defaults.string(forKey: localKey(Key.preferredVoice))
+        voiceCompanionEnabled = defaults.bool(forKey: localKey("voiceCompanionEnabled"))
         cloudListeningEnabled = defaults.object(forKey: localKey(Key.cloudListening)) as? Bool ?? true
         caregiverName = defaults.string(forKey: localKey(Key.caregiverName)) ?? ""
         caregiverPhone = defaults.string(forKey: localKey(Key.caregiverPhone)) ?? ""
@@ -191,10 +196,23 @@ public final class AppSettings: ObservableObject {
     }
 
     /// Swapped by tests so no request leaves the process.
+    public var onUnauthorized: (() -> Void)?
     public var apiTransport: JSONTransporting = URLSessionJSONTransport()
 
     public var api: CadenceAPIClient {
-        CadenceAPIClient(baseURL: trimmedBaseURL, bearerToken: deviceToken, transport: apiTransport)
+        let token = deviceToken; let base = trimmedBaseURL
+        return CadenceAPIClient(baseURL: base, bearerToken: token, transport: apiTransport,
+            dataGeneration: sync.currentDataGeneration,
+            onDataGenerationChanged: { [weak sync] generation in
+                sync?.observeDataGeneration(generation, bearerToken: token, baseURL: base)
+            }, onUnauthorized: { [weak self] in
+                self?.handleUnauthorized(token: token, baseURL: base)
+            })
+    }
+
+    private func handleUnauthorized(token: String, baseURL: String) {
+        guard !restartRequired, deviceToken == token, trimmedBaseURL == baseURL else { return }
+        onUnauthorized?()
     }
 
     public var hasCaregiver: Bool {
@@ -224,6 +242,10 @@ public final class AppSettings: ObservableObject {
             guard isCurrent(), !Task.isCancelled, deviceToken == oldToken, api.baseURL == oldURL,
                   !restartRequired, fallAlert?.isAlertVisible != true else { return false }
             guard !sync.isUploading else { connectionMessage = "An event upload is in progress. Wait for it to finish, then connect again."; return false }
+            if let generation = info.dataGeneration, generation < sync.currentDataGeneration {
+                connectionMessage = "This server has an older erase history. Use the original server or restore its current database before syncing."
+                return false
+            }
             guard try profile.stageServerMove(to: target, info: info, token: token, repairLocalhost: repairLocalhost) else {
                 connectionMessage = "This is a different server or account. Use the original Cadence server; changing wearer still requires a local reset."
                 return false
@@ -237,6 +259,12 @@ public final class AppSettings: ObservableObject {
             changingCredentials = false
             defaults.set(target, forKey: Key.backendBaseURL); tokenStore.write(token)
             apply()
+            if let generation = info.dataGeneration {
+                guard sync.observeDataGeneration(generation, bearerToken: token, baseURL: target) else {
+                    connectionMessage = "Server connected, but its data version could not be saved. Check phone storage before syncing."
+                    return false
+                }
+            }
             profileNotice = nil
             connectionMessage = "Connected to Cadence. This phone's queued records are preserved."
             return true

@@ -31,9 +31,8 @@ public final class AudioRouteManager: ObservableObject {
         #endif
     }
 
-    /// Prepares AVAudioSession with .playAndRecord and two-way Bluetooth support,
-    /// explicitly using .voiceChat mode so iOS does not disable Bluetooth microphones.
-    public func configureAudioSession(preferVoiceChat: Bool = true) {
+    /// Idle audio uses playback; microphone owners opt into two-way Bluetooth.
+    public func configureAudioSession(preferVoiceChat: Bool = false) {
         AudioCueEngine.shared.configureLaunchAudioSession(preferVoiceChat: preferVoiceChat)
     }
 
@@ -41,6 +40,10 @@ public final class AudioRouteManager: ObservableObject {
     public func routeToGlassesIfAvailable() {
         #if os(iOS) && !targetEnvironment(simulator)
         let session = AVAudioSession.sharedInstance()
+        // During the siren the bottom speaker override must stand; preferring an
+        // HFP input would pull output to the glasses' small speakers.
+        guard !AudioCueEngine.shared.isSirenActive else { updateCurrentInput(); return }
+        guard session.category == .playAndRecord || session.category == .record else { updateCurrentInput(); return }
         let available = session.availableInputs ?? []
 
         // Ordinary Bluetooth earphones must not be classified or selected as glasses.

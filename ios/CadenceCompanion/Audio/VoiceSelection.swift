@@ -49,7 +49,7 @@ public struct VoiceCandidate: Equatable, Identifiable {
 /// Picks the most natural English voice on the phone.
 public enum VoiceSelection {
     /// Novelty, robotic screen reader, or sound effect voices that must never
-    /// be used in a patient-facing clinical companion.
+    /// be used for a wearer who relies on hearing every word.
     private static let excludedSubstrings: [String] = [
         "albert", "bad news", "badnews", "bahh", "bells", "boing", "bubbles",
         "cellos", "deranged", "good news", "goodnews", "hysterical", "junior",

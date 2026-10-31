@@ -44,7 +44,7 @@ public final class VoiceMonitor {
         guard !isMonitoring else { return }
         isMonitoring = true
 
-        guard AudioCueEngine.shared.prepareMicrophoneSession() else {
+        guard AudioCueEngine.shared.prepareMicrophoneSession(owner: .motorVoice) else {
             isMonitoring = false
             return
         }
@@ -62,7 +62,7 @@ public final class VoiceMonitor {
             let recordingFormat = inputNode.outputFormat(forBus: 0)
 
             guard recordingFormat.sampleRate > 0 && recordingFormat.channelCount > 0 else {
-                isMonitoring = false
+                stopLiveMonitoring()
                 return
             }
 
@@ -91,7 +91,7 @@ public final class VoiceMonitor {
             try audioEngine.start()
         } catch {
             print("VoiceMonitor live monitoring error: \(error)")
-            isMonitoring = false
+            stopLiveMonitoring()
         }
     }
 
@@ -110,6 +110,10 @@ public final class VoiceMonitor {
             hasInstalledTap = false
         }
         isMonitoring = false
+        // The last loud sample must not latch "speaking" for the rest of the
+        // session; that would quietly raise the freeze threshold.
+        currentLevelDbfs = -50.0
+        AudioCueEngine.shared.releaseMicrophoneSession(owner: .motorVoice)
     }
 
     /// Begins recording 100ms RMS samples for the 5-second sustained vowel ("Ahhh") task.

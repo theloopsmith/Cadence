@@ -58,6 +58,14 @@ def _problems(exc: RequestValidationError) -> List[Dict[str, str]]:
 
 
 def install_error_handlers(app: FastAPI) -> None:
+    from app.db import DataGenerationChanged
+
+    @app.exception_handler(DataGenerationChanged)
+    async def on_data_generation_changed(request: Request, exc: DataGenerationChanged) -> JSONResponse:
+        return JSONResponse(status_code=409, content={
+            'error': 'data_generation_changed', 'data_generation': exc.generation,
+            'message': 'Server data was erased. These old changes were not saved. Sync before recording a new action.'})
+
     @app.exception_handler(RequestValidationError)
     async def on_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         return JSONResponse(

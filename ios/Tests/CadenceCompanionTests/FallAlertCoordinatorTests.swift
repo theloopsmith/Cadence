@@ -60,6 +60,46 @@ final class FallAlertCoordinatorTests: XCTestCase {
         XCTAssertFalse(c.isDispatched)
     }
 
+    /// A signed-out phone has no path to any caregiver. The siren screen must say
+    /// so and point at the call buttons, not claim an attempt is under way.
+    func testASignedOutPhoneNeverClaimsToBeContactingACaregiver() {
+        sync.deviceBearerToken = ""
+        let c = makeCoordinator()
+        c.beginCheckIn(eventUUID: "offline-alert")
+        c.escalate()
+        XCTAssertEqual(c.contactState, "no_connection")
+        XCTAssertFalse(c.contactHeadline.lowercased().contains("trying to contact"))
+        XCTAssertTrue(c.contactHeadline.lowercased().contains("call"))
+        // A later server reply cannot exist for an alert that was never sent.
+        c.updateDelivery(FallDeliveryStatus(eventUUID: "offline-alert", contactState: "queued", providerAccepted: false, caregiverAcknowledged: false, simulated: false))
+        XCTAssertEqual(c.contactState, "no_connection")
+        c.cancelByUser()
+    }
+
+    func testSigningOutMidAlertDowngradesTheContactClaim() {
+        sync.deviceBearerToken = "device-token"
+        let c = makeCoordinator()
+        c.beginCheckIn(eventUUID: "mid-alert")
+        c.escalate()
+        XCTAssertEqual(c.contactState, "queued")
+        sync.deviceBearerToken = ""
+        c.updateDelivery(FallDeliveryStatus(eventUUID: "mid-alert", contactState: "queued", providerAccepted: false, caregiverAcknowledged: false, simulated: false))
+        XCTAssertEqual(c.contactState, "no_connection")
+        c.cancelByUser()
+    }
+
+    func testServerEraseDoesNotLeaveAnUnsentOldAlertClaimingAutomaticDelivery() {
+        let c = makeCoordinator()
+        c.beginCheckIn(eventUUID: "erased-alert")
+        XCTAssertTrue(sync.observeDataGeneration(1, bearerToken: sync.deviceBearerToken, baseURL: sync.backendBaseURL))
+        c.escalate()
+        XCTAssertEqual(c.contactState, "discarded_after_erase")
+        c.updateDelivery(FallDeliveryStatus(eventUUID: "erased-alert", contactState: "provider_accepted", providerAccepted: true, caregiverAcknowledged: false, simulated: false))
+        XCTAssertEqual(c.contactState, "discarded_after_erase")
+        XCTAssertTrue(c.isDispatched, "the local help overlay remains available for manual calls")
+        c.cancelByUser()
+    }
+
     /// The check-in screen appears immediately and brings the display up, so a
     /// wearer on the floor can find the cancel button.
     func testCheckInRaisesBrightnessAndKeepsScreenAwake() {
@@ -200,7 +240,7 @@ final class FallAlertCoordinatorTests: XCTestCase {
         XCTAssertFalse(screen.isEmergencyBrightnessEngaged)
     }
 
-    // MARK: - The 12-second window runs on its own
+    // MARK: - The check-in window runs on its own
 
     private func makeCoordinator(checkInWindow: TimeInterval) -> FallAlertCoordinator {
         FallAlertCoordinator(
@@ -240,13 +280,13 @@ final class FallAlertCoordinatorTests: XCTestCase {
     }
 
     func testANewCheckInReplacesTheTimerOfThePreviousOne() async throws {
-        let c = makeCoordinator(checkInWindow: 0.15)
+        let c = makeCoordinator(checkInWindow: 0.5)
         c.beginCheckIn(eventUUID: "fall-timeout-3a")
         c.cancelByUser()
         c.beginCheckIn(eventUUID: "fall-timeout-3b")
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertFalse(c.isDispatched, "the first alert's timer must not escalate the second")
-        try await Task.sleep(nanoseconds: 400_000_000)
+        try await Task.sleep(nanoseconds: 800_000_000)
         XCTAssertEqual(c.activeEventUUID, "fall-timeout-3b")
         XCTAssertTrue(c.isDispatched)
     }

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA0000000000000000000028 /* MWDATInputs in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000027 /* MWDATInputs */; };
 		AA0000000000000000000012 /* CadenceCompanion in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000011 /* CadenceCompanion */; };
 		AA0000000000000000000022 /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000021 /* MWDATCore */; };
 		AA0000000000000000000024 /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000023 /* MWDATCamera */; };
@@ -35,6 +36,7 @@
 				AA0000000000000000000022 /* MWDATCore in Frameworks */,
 				AA0000000000000000000024 /* MWDATCamera in Frameworks */,
 				AA0000000000000000000026 /* MWDATMotion in Frameworks */,
+				AA0000000000000000000028 /* MWDATInputs in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,6 +84,7 @@
 				AA0000000000000000000021 /* MWDATCore */,
 				AA0000000000000000000023 /* MWDATCamera */,
 				AA0000000000000000000025 /* MWDATMotion */,
+				AA0000000000000000000027 /* MWDATInputs */,
 			);
 			productName = CadenceCompanionApp;
 			productReference = AA0000000000000000000004 /* CadenceCompanionApp.app */;
@@ -278,6 +281,12 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000000000000000000020 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
 			productName = MWDATMotion;
+		};
+
+		AA0000000000000000000027 /* MWDATInputs */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000020 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATInputs;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

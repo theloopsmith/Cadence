@@ -49,6 +49,31 @@ final class DoseRetractionTests: XCTestCase {
         return (model, diary, sync, transport)
     }
 
+    func testFailedDiaryWriteCannotProduceAConfirmedDoseOrQueueUpload() throws {
+        let now = dateAt(hour: 8, minute: 0)
+        let (model, diary, sync, _) = make(now: now)
+        try Data("blocked directory".utf8).write(to: diary.directory)
+        XCTAssertFalse(model.markTaken())
+        XCTAssertTrue(model.takenToday.isEmpty)
+        XCTAssertFalse(model.canUndo)
+        XCTAssertEqual(sync.pendingCount(), 0)
+        XCTAssertNotNil(model.saveError)
+        try FileManager.default.removeItem(at: diary.directory)
+        XCTAssertTrue(model.markTaken())
+        XCTAssertEqual(try diary.events(on: now).filter { $0.kind == .doseTaken }.count, 1)
+    }
+
+    func testUnreadableHistoryIsNotReportedAsAConfirmedEmptyRoutine() throws {
+        let now = dateAt(hour: 8, minute: 0)
+        let (_, diary, sync, _) = make(now: now)
+        try Data("blocked directory".utf8).write(to: diary.directory)
+        let model = DoseLogModel(schedule: MedicationSchedule(medicationName: "Fixture", doseTimes: [DoseTime(hour: 8, minute: 0)]),
+                                 diary: diary, sync: sync, clock: { now })
+        XCTAssertFalse(model.isDoseDue)
+        XCTAssertNotNil(model.saveError)
+        XCTAssertEqual(model.headline, "Medication history unavailable")
+    }
+
     private func dateAt(hour: Int, minute: Int) -> Date {
         var c = DateComponents()
         c.year = 2026; c.month = 10; c.day = 29; c.hour = hour; c.minute = minute

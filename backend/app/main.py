@@ -1,3 +1,4 @@
+import logging
 import asyncio
 import base64
 import io
@@ -12,13 +13,13 @@ from typing import Any, Dict, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, Response
 
-from app.clients.baseten_llm import baseten_client
 from app.clients.circuit_breaker import RequestDeadlineContext
-from app.clients.fireworks_client import fireworks_client
 from app.clients.meta_models import check_in_keywords, dose_keywords, meta_client
 from app.config import settings
 from app.db import (
-    execute_write,
+    execute_patient_write,
+    data_generation_sync,
+    record_dose_retraction,
     fetch_all,
     fetch_one,
     init_db,
@@ -26,6 +27,8 @@ from app.db import (
     wipe_patient_data,
 )
 from app.models import (
+    MAX_IMAGE_BASE64_LENGTH,
+    CompanionInterpretRequest,
     DoseLogCreate,
     DoseRetractionCreate,
     FallEventCreate,
@@ -73,6 +76,12 @@ from app.services.reality_check import run_reality_check_pipeline
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_security_settings()
+    if settings.static_tokens_enabled and not settings.public_webhook_base_url.startswith(("http://localhost", "http://127.0.0.1")):
+        logging.getLogger("cadence").warning(
+            "Shared development bearer tokens are enabled while PUBLIC_WEBHOOK_BASE_URL is %s. "
+            "Anyone with the public repository can write to this server. Set ALLOW_STATIC_TOKENS=false.",
+            settings.public_webhook_base_url,
+        )
     await init_db()
     await purge_expired_telemetry()
     await fall_escalation_manager.resume_open_escalations()
@@ -105,6 +114,7 @@ async def device_connection(
         'service': 'cadence-accessibility-companion',
         'server_id': identity['server_id'],
         'patient_id': auth.patient_id,
+        'data_generation': await asyncio.to_thread(data_generation_sync, auth.patient_id),
     }
     if include_wipe_status:
         wipe_row = await fetch_one(
@@ -145,7 +155,6 @@ async def get_dashboard_script():
 
 # ==================== SPEECH (Muse Voice Transcribe) ====================
 MAX_CLIP_SECONDS = 30
-MAX_IMAGE_BASE64_LENGTH = 10 * 1024 * 1024  # 10 MB base64 string
 MAX_IMAGE_DECODED_BYTES = 6 * 1024 * 1024   # 6 MB binary image
 
 
@@ -203,6 +212,8 @@ async def transcribe_speech(
     wav_bytes = _validated_wav(payload.audio_base64)
     extra = [k.strip()[:40] for k in payload.keywords if k.strip()]
     base = check_in_keywords() if payload.purpose == "fall_check_in" else dose_keywords()
+    if payload.purpose == "companion":
+        base = ["Cadence", "motor check", "surroundings", "medication", "caregiver", "capture", "cancel"]
     keywords = list(dict.fromkeys(base + extra))
     result = await meta_client.transcribe_muse_voice(wav_bytes, keywords=keywords)
     return {
@@ -210,6 +221,15 @@ async def transcribe_speech(
         "transcript": result["transcript"],
         "source": "muse_voice_transcribe",
     }
+
+
+@app.post("/api/v1/companion/interpret")
+async def interpret_companion(
+    payload: CompanionInterpretRequest,
+    auth: AuthContext = Depends(require_device_writer),
+) -> Dict[str, Any]:
+    from app.services.companion import interpret
+    return await interpret(payload.text, payload.history)
 
 
 # ==================== ACCOUNTS ====================
@@ -230,15 +250,16 @@ async def login(payload: LoginRequest) -> Dict[str, Any]:
     }
 
 
-async def check_event_wiped(patient_id: str, timestamp_utc: Optional[str]) -> bool:
-    if not timestamp_utc:
+async def check_event_wiped(patient_id: str, timestamp_utc: Optional[str], generation: int = 0) -> bool:
+    if generation > 0 or not timestamp_utc:
         return False
     row = await fetch_one(
         "SELECT MAX(wiped_at_utc) AS latest_wipe FROM patient_wipes WHERE patient_id = ?",
         (patient_id,),
     )
     if row and row["latest_wipe"]:
-        return str(timestamp_utc) <= str(row["latest_wipe"])
+        try: return parse_utc(timestamp_utc) <= parse_utc(row["latest_wipe"])
+        except (ValueError, TypeError): return True
     return False
 
 
@@ -248,9 +269,9 @@ async def log_fog_event(
     payload: FoGEventCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
-    await execute_write(
+    await execute_patient_write(auth,
         """
         INSERT INTO fog_events (
             patient_id, event_uuid, timestamp_utc, duration_sec, peak_freeze_index,
@@ -283,12 +304,13 @@ async def log_and_escalate_fall(
     payload: FallEventCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     result = await fall_escalation_manager.ingest_fall_event(
         patient_id=auth.patient_id,
         payload=payload,
         start_background_retry=True,
+        data_generation=auth.data_generation,
     )
     if result.get("status") == "confirmed_waiting_dispatch" or (
         result.get("status") == "escalated_twilio" and not result.get("provider_accepted")
@@ -310,6 +332,7 @@ async def cancel_dispatched_fall_alert(
     return await fall_escalation_manager.cancel_dispatched_fall(
         patient_id=auth.patient_id,
         event_uuid=event_uuid,
+        data_generation=auth.data_generation,
     )
 
 
@@ -358,7 +381,7 @@ async def log_medication_dose(
     payload: DoseLogCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     retracted = await fetch_one(
         "SELECT 1 FROM medication_retractions WHERE patient_id = ? AND retracted_event_uuid = ?",
@@ -370,12 +393,13 @@ async def log_medication_dose(
             "event_uuid": payload.event_uuid,
             "detail": "Dose was already retracted by user undo",
         }
-    await execute_write(
+    changed = await execute_patient_write(auth,
         """
         INSERT INTO medication_logs (
             patient_id, event_uuid, timestamp_utc, event_type,
             medication_name, scheduled_time_utc
-        ) VALUES (?, ?, ?, 'dose_taken', ?, ?)
+        ) SELECT ?, ?, ?, 'dose_taken', ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM medication_retractions WHERE patient_id=? AND retracted_event_uuid=?)
         ON CONFLICT(event_uuid) DO NOTHING
         """,
         (
@@ -384,8 +408,14 @@ async def log_medication_dose(
             payload.timestamp_utc,
             payload.medication_name,
             payload.scheduled_time_utc or payload.timestamp_utc,
+            auth.patient_id, payload.event_uuid,
         ),
     )
+    if not changed:
+        if await fetch_one('SELECT 1 FROM medication_retractions WHERE patient_id=? AND retracted_event_uuid=?', (auth.patient_id,payload.event_uuid)):
+            return {"status": "retracted_ignored", "event_uuid": payload.event_uuid}
+        existing = await fetch_one('SELECT patient_id FROM medication_logs WHERE event_uuid=?', (payload.event_uuid,))
+        if existing and existing['patient_id'] != auth.patient_id: raise HTTPException(404, 'Dose not found.')
     return {"status": "logged", "event_uuid": payload.event_uuid, "event_type": "dose_taken"}
 
 
@@ -394,34 +424,13 @@ async def retract_medication_dose(
     payload: DoseRetractionCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {
             "status": "dropped_wiped",
             "event_uuid": payload.event_uuid,
             "detail": "Retraction dropped because it predates a patient data reset",
         }
-    await execute_write(
-        """
-        INSERT INTO medication_retractions (
-            patient_id, event_uuid, retracted_event_uuid, timestamp_utc, reason
-        ) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(event_uuid) DO NOTHING
-        """,
-        (
-            auth.patient_id,
-            payload.event_uuid,
-            payload.retracted_event_uuid,
-            payload.timestamp_utc,
-            payload.reason or "user_undo",
-        ),
-    )
-    await execute_write(
-        """
-        DELETE FROM medication_logs
-        WHERE patient_id = ? AND event_uuid = ?
-        """,
-        (auth.patient_id, payload.retracted_event_uuid),
-    )
+    await record_dose_retraction(auth, payload)
     return {
         "status": "retracted",
         "event_uuid": payload.event_uuid,
@@ -431,9 +440,9 @@ async def retract_medication_dose(
 
 @app.post("/api/v1/meals/log")
 async def log_meal_time(payload: MealLogCreate, auth: AuthContext = Depends(require_device_writer)) -> Dict[str, Any]:
-    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
-    await execute_write(
+    await execute_patient_write(auth,
         """INSERT INTO medication_logs (patient_id, event_uuid, timestamp_utc, event_type)
            VALUES (?, ?, ?, 'meal_logged') ON CONFLICT(event_uuid) DO NOTHING""",
         (auth.patient_id, payload.event_uuid, payload.timestamp_utc),
@@ -470,7 +479,7 @@ async def analyze_meal_protein(
         dose_timestamp_iso=dose_ts,
     )
 
-    await execute_write(
+    await execute_patient_write(auth,
         """
         INSERT INTO medication_logs (
             patient_id, event_uuid, timestamp_utc, event_type,
@@ -514,7 +523,7 @@ async def reality_check_endpoint(
     payload: RealityCheckRequest,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     img_bytes = _validated_image(payload.image_base64)
     reject_simulated_inputs(simulated_sam_masks=payload.simulated_sam_masks)
@@ -533,7 +542,7 @@ async def reality_check_endpoint(
             detail="Reality check deadline exhausted across model pipeline.",
         )
 
-    await execute_write(
+    await execute_patient_write(auth,
         """
         INSERT INTO reality_checks (
             patient_id, event_uuid, timestamp_utc, user_query,
@@ -565,7 +574,7 @@ async def analyze_handwriting_endpoint(
     payload: HandwritingAnalyzeRequest,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
     img_bytes = _validated_image(payload.image_base64)
     reject_simulated_inputs(
@@ -589,7 +598,7 @@ async def analyze_handwriting_endpoint(
             ),
         }
 
-    await execute_write(
+    await execute_patient_write(auth,
         """
         INSERT INTO handwriting_logs (
             patient_id, event_uuid, timestamp_utc, letter_boxes_json,
@@ -614,7 +623,17 @@ async def analyze_handwriting_endpoint(
         ),
     )
 
-    if res["micrographia_detected"]:
+    if not settings.enable_research_metrics:
+        # Withheld, not "false": the default mode reports the measurement, not a finding.
+        res.pop("handwriting_score", None)
+        res.pop("micrographia_detected", None)
+        shrink = res["opencv_cc_decay_pct"]
+        spoken = (
+            f"Letters at the end of the line were about {abs(shrink):.0f}% "
+            f"{'smaller' if shrink > 0 else 'larger'} than at the start."
+            if abs(shrink) >= 5 else "Letter size stayed about the same across the line."
+        )
+    elif res["micrographia_detected"]:
         shrink_abs = abs(res["opencv_cc_decay_pct"])
         spoken = (
             f"Your letters shrank by {shrink_abs:.0f}% across the line—pause, "
@@ -622,10 +641,6 @@ async def analyze_handwriting_endpoint(
         )
     else:
         spoken = "Your handwriting stroke height looks steady."
-
-    if not settings.enable_research_metrics:
-        res.pop("handwriting_score", None)
-        res["micrographia_detected"] = False
     return {"event_uuid": payload.event_uuid, **res, "spoken_response": spoken}
 
 
@@ -634,9 +649,9 @@ async def log_voice_event(
     payload: VoiceLogCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
-    await execute_write(
+    await execute_patient_write(auth,
         """
         INSERT INTO voice_logs (
             patient_id, event_uuid, timestamp_utc, window_mean_dbfs,
@@ -662,7 +677,7 @@ async def complete_home_motor_exam(
     payload: HomeMotorExamCreate,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
-    if await check_event_wiped(auth.patient_id, payload.timestamp_utc):
+    if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "exam_uuid": payload.exam_uuid}
     if payload.measurement_source == 'simulated':
         reject_simulated_inputs(simulated_exam=True)
@@ -700,7 +715,7 @@ async def complete_home_motor_exam(
     existing = await fetch_one('SELECT patient_id FROM motor_exams WHERE exam_uuid=?',(payload.exam_uuid,))
     if existing and existing['patient_id'] != auth.patient_id:
         raise HTTPException(404, 'Motor check not found.')
-    await execute_write(f"INSERT INTO motor_exams ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)}) ON CONFLICT(exam_uuid) DO NOTHING",
+    await execute_patient_write(auth, f"INSERT INTO motor_exams ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)}) ON CONFLICT(exam_uuid) DO NOTHING",
         tuple(row[k] for k in columns))
     stored = await fetch_one('SELECT * FROM motor_exams WHERE exam_uuid=? AND patient_id=?',(payload.exam_uuid,auth.patient_id))
     if not stored: raise HTTPException(404, 'Motor check not found.')
@@ -731,14 +746,6 @@ async def get_exam_history(
             for key in ("medication_state_label", "voice_score", "handwriting_score", "gait_score", "composite_motor_score"):
                 exam.pop(key, None)
     return {"patient_id": auth.patient_id, "exams": exams}
-
-
-def _within_last_day(timestamp_iso: str) -> bool:
-    try:
-        when = parse_utc(timestamp_iso)
-    except ValueError:
-        return False
-    return 0 <= (datetime.now(timezone.utc) - when).total_seconds() <= 24 * 3600
 
 
 # ==================== PIPELINE 7: NEUROLOGIST REPORT & PATIENT WIPE ====================
@@ -834,6 +841,7 @@ async def get_neurologist_report(
     return {
         "patient_id": pid,
         "report_metadata": {
+            "data_generation": snapshot['data_generation'],
             "window_start_utc": snapshot['start'].isoformat(), "window_end_utc": snapshot['end'].isoformat(),
             "generated_at_utc": snapshot['end'].isoformat(), "monitoring_coverage": "unknown",
             "coverage_note": "Recorded events do not establish continuous monitoring. No observations does not mean no events occurred.",
@@ -859,10 +867,12 @@ async def delete_patient_data(
 ) -> Dict[str, Any]:
     deleted_counts = await wipe_patient_data(auth.patient_id)
     wiped_at_utc = deleted_counts.pop("wiped_at_utc", None)
+    generation = deleted_counts.pop("data_generation")
     return {
         "status": "wiped",
         "patient_id": auth.patient_id,
         "wiped_at_utc": wiped_at_utc,
+        "data_generation": generation,
         "deleted_rows": deleted_counts,
     }
 
@@ -886,7 +896,6 @@ async def seed_demo_patient_timeline(
     re-running the demo never places a live Twilio call.
     """
     pid = auth.patient_id
-    await execute_write("DELETE FROM patient_wipes WHERE patient_id = ?", (pid,))
     seed_base = datetime.now(timezone.utc) - timedelta(hours=21)
     def demo_time(hour,minute):
         return (seed_base+timedelta(hours=hour,minutes=minute)).isoformat()
@@ -904,7 +913,7 @@ async def seed_demo_patient_timeline(
         walk_fog_count=2,
     )
     await complete_home_motor_exam(
-        off_exam, AuthContext(role="device_writer", patient_id=pid)
+        off_exam, auth
     )
 
     # 2. 08:00 UTC Morning Levodopa Dose
@@ -913,7 +922,7 @@ async def seed_demo_patient_timeline(
             event_uuid="demo-med-dose-0800",
             timestamp_utc=demo_time(8,0),
         ),
-        AuthContext(role="device_writer", patient_id=pid),
+        auth,
     )
 
     # 3. 09:15 UTC Peak ON Home Motor Exam (75 min post-dose)
@@ -930,7 +939,7 @@ async def seed_demo_patient_timeline(
         walk_fog_count=0,
     )
     await complete_home_motor_exam(
-        on_exam, AuthContext(role="device_writer", patient_id=pid)
+        on_exam, auth
     )
 
     # 4. 11:30 UTC End-of-Dose WEARING-OFF FoG Episode
@@ -947,7 +956,7 @@ async def seed_demo_patient_timeline(
             cue_bpm=98,
             recovery_latency_sec=3.2,
         ),
-        AuthContext(role="device_writer", patient_id=pid),
+        auth,
     )
 
     # 5. 12:30 UTC Midday Levodopa Dose + 12:50 UTC High-Protein Steak Meal (Conflict)
@@ -956,7 +965,7 @@ async def seed_demo_patient_timeline(
             event_uuid="demo-med-dose-1230",
             timestamp_utc=demo_time(12,30),
         ),
-        AuthContext(role="device_writer", patient_id=pid),
+        auth,
     )
     await analyze_meal_protein(
         MealProteinAnalyzeRequest(
@@ -967,7 +976,7 @@ async def seed_demo_patient_timeline(
                 {"label": "plate", "area_px": 72000.0, "confidence": 0.98},
             ],
         ),
-        AuthContext(role="device_writer", patient_id=pid),
+        auth,
     )
 
     # 6. 14:00 UTC Delayed-Absorption OFF Episode (FoG + Micrographia)
@@ -984,7 +993,7 @@ async def seed_demo_patient_timeline(
             cue_bpm=100,
             recovery_latency_sec=4.1,
         ),
-        AuthContext(role="device_writer", patient_id=pid),
+        auth,
     )
     await analyze_handwriting_endpoint(
         HandwritingAnalyzeRequest(
@@ -994,7 +1003,7 @@ async def seed_demo_patient_timeline(
             simulated_sam_decay_pct=-27.8,
             source_context="ambient",
         ),
-        AuthContext(role="device_writer", patient_id=pid),
+        auth,
     )
 
     # 7. 16:15 UTC Hallucination Reality Check
@@ -1007,7 +1016,7 @@ async def seed_demo_patient_timeline(
                 {"label": "coat rack", "confidence": 0.93, "area_ratio": 0.24}
             ],
         ),
-        AuthContext(role="device_writer", patient_id=pid),
+        auth,
     )
 
     # 8. 16:20 UTC Evening Hypophonia Nudge (quiet speech below the -24 dBFS baseline)
@@ -1019,7 +1028,7 @@ async def seed_demo_patient_timeline(
             baseline_dbfs=-24.0,
             nudge_triggered=True,
         ),
-        AuthContext(role="device_writer", patient_id=pid),
+        auth,
     )
 
     # 9. 17:30 UTC Evening Levodopa Dose
@@ -1028,7 +1037,7 @@ async def seed_demo_patient_timeline(
             event_uuid="demo-med-dose-1730",
             timestamp_utc=demo_time(17,30),
         ),
-        AuthContext(role="device_writer", patient_id=pid),
+        auth,
     )
 
     # 10. 17:45 UTC Fall with a resolved voice check-in.
@@ -1054,6 +1063,7 @@ async def seed_demo_patient_timeline(
             local_siren_activated=False,
         ),
         start_background_retry=False,
+        data_generation=auth.data_generation,
     )
 
     # 11. 19:30 UTC End-of-Day OFF Home Motor Exam (120 min after the evening dose)
@@ -1070,7 +1080,7 @@ async def seed_demo_patient_timeline(
         walk_fog_count=1,
     )
     await complete_home_motor_exam(
-        evening_exam, AuthContext(role="device_writer", patient_id=pid)
+        evening_exam, auth
     )
 
     return {"status": "seeded", "patient_id": pid}

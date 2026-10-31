@@ -3,7 +3,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Optional
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth import decode_token
@@ -16,10 +16,12 @@ bearer_scheme = HTTPBearer(auto_error=False)
 class AuthContext:
     role: str          # "device_writer" | "clinician_reader"
     patient_id: str    # Bound patient_id for tenant isolation
+    data_generation: int = 0
 
 
 def get_auth_context(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    data_generation: int = Header(0, alias='X-Cadence-Data-Generation', ge=0),
 ) -> AuthContext:
     """Validates Bearer token and resolves role + bound patient_id."""
     if credentials is None or not credentials.credentials:
@@ -30,18 +32,18 @@ def get_auth_context(
     token = credentials.credentials
     claims = decode_token(token)
     if claims is not None:
-        return AuthContext(role=claims["role"], patient_id=claims["pid"])
+        return AuthContext(role=claims["role"], patient_id=claims["pid"], data_generation=data_generation)
 
     if settings.static_tokens_enabled:
         if secrets.compare_digest(token, settings.cadence_device_token):
             return AuthContext(
                 role="device_writer",
-                patient_id=settings.cadence_default_patient_id,
+                patient_id=settings.cadence_default_patient_id, data_generation=data_generation,
             )
         if secrets.compare_digest(token, settings.cadence_clinician_token):
             return AuthContext(
                 role="clinician_reader",
-                patient_id=settings.cadence_default_patient_id,
+                patient_id=settings.cadence_default_patient_id, data_generation=data_generation,
             )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

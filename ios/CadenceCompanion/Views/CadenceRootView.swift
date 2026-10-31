@@ -19,6 +19,7 @@ enum CadenceLaunchScreen: Equatable {
 /// Help tab for a care partner; the wearer's day is Today and Diary.
 public struct CadenceRootView: View {
     @StateObject private var app = CadenceAppModel.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var tab: Tab = .today
     @State private var didReady = false
     private let onReady: ((CadenceAppModel) -> Void)?
@@ -71,6 +72,48 @@ public struct CadenceRootView: View {
             }
         }
         .tint(CadenceTheme.accent)
+        .safeAreaInset(edge: .top) { VoiceCompanionBar(app: app) }
+        .sheet(item: Binding(get: { app.companion.destination }, set: { app.companion.destination = $0 }), onDismiss: {
+            if app.companion.destination == nil {
+                if app.exam.isRunning { app.exam.cancelExam() }
+                app.glasses.stopCameraPreview()
+                app.companion.setPaused("Voice measurement", false)
+                app.companion.setContext(nil)
+            }
+        }) { destination in
+            Group {
+                switch destination {
+                case .motor: MotorExamView(app: app)
+                case .surroundings: RealityCheckView(app: app)
+                case .medication: MedicationSetupView(app: app)
+                case .camera: GlassesCameraView(glasses: app.glasses, voice: app.companion)
+                case .diary: DiaryView(app: app).modifier(CompanionReadOnlyFlow(voice: app.companion, destination: .diary))
+                case .meal: MealCheckView(app: app)
+                case .settings: SettingsView(app: app)
+                case .help: HelpView(app: app).modifier(CompanionReadOnlyFlow(voice: app.companion, destination: .help))
+                }
+            }
+
+            .safeAreaInset(edge: .top) { VoiceCompanionBar(app: app) }
+        }
+        .onChange(of: app.companion.destination) { destination in
+            if destination != .motor, app.exam.isRunning {
+                app.exam.cancelExam()
+                app.companion.setPaused("Voice measurement", false)
+            }
+        }
+        .onChange(of: app.companion.actionID) { _ in
+            if app.companion.action == .cancel { app.companion.destination = nil }
+            if app.companion.action == .finish,
+               app.companion.context == app.companion.destination,
+               let context = app.companion.context, [.diary, .settings, .help].contains(context) {
+                app.companion.destination = nil
+            }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { AudioCueEngine.shared.refreshVoiceSelection() }
+            app.companion.setPaused("App in background", phase != .active)
+        }
         .onAppear {
             guard !didReady else { return }
             didReady = true
@@ -116,5 +159,15 @@ private struct FallOverlay: ViewModifier {
             }
         }
         #endif
+    }
+}
+
+private struct CompanionReadOnlyFlow: ViewModifier {
+    @ObservedObject var voice: VoiceCompanion
+    let destination: CompanionDestination
+    @State private var id = UUID()
+    func body(content: Content) -> some View {
+        content.onAppear { voice.enterFlow(id: id, destination: destination, step: .general) }
+            .onDisappear { voice.leaveFlow(id: id) }
     }
 }

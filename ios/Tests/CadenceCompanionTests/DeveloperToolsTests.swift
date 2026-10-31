@@ -29,6 +29,65 @@ final class DeveloperToolsTests: XCTestCase {
         return (app, transport)
     }
 
+    func testFallCheckInPreemptsHeyMetaAudioHandoff() async {
+        let (app, _) = makeApp()
+        await app.useMetaAssistant()
+        XCTAssertTrue(app.isUsingMetaAssistant)
+        app.fallAlert.beginCheckIn(eventUUID: UUID().uuidString)
+        XCTAssertFalse(app.isUsingMetaAssistant)
+        app.fallAlert.cancelByUser()
+    }
+
+    func testMedicationPhotoWriteFailureRetainsPreviousPhotoAndRetriesOriginalBytes() throws {
+        let (app, _) = makeApp()
+        let original = Data("original photo".utf8)
+        let replacement = Data("new glasses photo".utf8)
+        app.setPillPhoto(original)
+        XCTAssertEqual(app.pillPhoto, original)
+        let directory = app.pillPhotos.directory
+        try FileManager.default.removeItem(at: directory)
+        try Data("blocked path".utf8).write(to: directory)
+        app.setPillPhoto(replacement)
+        XCTAssertEqual(app.pillPhoto, original)
+        XCTAssertNotNil(app.photoSaveError)
+        try FileManager.default.removeItem(at: directory)
+        app.retryPillPhotoSave()
+        XCTAssertNil(app.photoSaveError)
+        XCTAssertEqual(app.pillPhoto, replacement)
+        XCTAssertEqual(app.pillPhotos.load(), replacement)
+        app.retryPillPhotoSave()
+        XCTAssertEqual(app.pillPhotos.load(), replacement)
+    }
+
+    func testAnalysis401RequiresSignInWithoutErasingProfileOrPendingHistory() async {
+        let (app, transport) = makeApp(defaultToken: "")
+        app.settings.deviceToken = "rejected-device-token"
+        let profile = app.settings.profile.id
+        _ = app.settings.sync.saveLocalImmediate(eventUUID: "keep-my-event", endpoint: "/fixture", payload: [:])
+        let before = app.settings.sync.pendingCount()
+        transport.error = CadenceAPIError.httpStatus(401)
+        _ = try? await app.settings.api.realityCheck(question: "Check", jpeg: Data([1]))
+        XCTAssertTrue(app.auth.isExpired)
+        XCTAssertTrue(app.auth.needsSignIn)
+        XCTAssertEqual(app.settings.profile.id, profile)
+        XCTAssertEqual(app.settings.sync.pendingCount(), before)
+        XCTAssertEqual(app.settings.deviceToken, "rejected-device-token")
+    }
+
+    func testLate401FromOldTokenCannotExpireARefreshedSession() async throws {
+        let (app, transport) = makeApp(defaultToken: "")
+        let body = Data(#"{"sub":"phone","pid":"wearer","role":"device_writer"}"#.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        app.settings.deviceToken = "header.\(body).old-signature"
+        let old = app.settings.api
+        let refreshed = "header.\(body).new-signature"
+        app.settings.deviceToken = refreshed
+        XCTAssertEqual(app.settings.deviceToken, refreshed)
+        transport.error = CadenceAPIError.httpStatus(401)
+        _ = try? await old.realityCheck(question: "Check", jpeg: Data([1]))
+        XCTAssertFalse(app.auth.isExpired)
+    }
+
     /// Developer mode is a build or launch decision, not something stored in
     /// settings where a care partner would find it.
     func testDeveloperModeComesFromTheBuildNotFromSettings() {
