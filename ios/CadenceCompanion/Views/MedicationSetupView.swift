@@ -13,6 +13,7 @@ struct MedicationSetupView: View {
     @State private var selected = 0
     @State private var loaded = false
     @State private var saveError: String?
+    @State private var saveSuccessMessage: String?
     @State private var newTime = Date()
     @State private var draftPhotos: [String: Data] = [:]
     @State private var loadedPhotos: [String: Data] = [:]
@@ -22,15 +23,17 @@ struct MedicationSetupView: View {
     @State private var automaticVoiceCapture = false
     @State private var showGlassesCamera = false
     @State private var showPillCamera = false
+    let isTab: Bool
 
     private static let presets = [
         DoseTime(hour: 8, minute: 0), DoseTime(hour: 12, minute: 0),
         DoseTime(hour: 16, minute: 0), DoseTime(hour: 20, minute: 0),
     ]
 
-    init(app: CadenceAppModel) {
+    init(app: CadenceAppModel, isTab: Bool = false) {
         self.app = app
         self.settings = app.settings
+        self.isTab = isTab
     }
 
     var body: some View {
@@ -62,20 +65,33 @@ struct MedicationSetupView: View {
                         selected = max(0, min(selected, draft.count - 1))
                     }
                 }
+                if let saveSuccessMessage {
+                    Text(saveSuccessMessage)
+                        .foregroundColor(CadenceTheme.calm)
+                        .font(.subheadline.weight(.semibold))
+                }
                 if let saveError { Text(saveError).foregroundColor(CadenceTheme.caution) }
                 Button("Save medications") { save() }.buttonStyle(PrimaryButtonStyle())
             }
-            .navigationTitle("Medication setup")
-            .onDisappear { app.companion.leaveFlow(id: voiceFlowID) }
+            .navigationTitle(isTab ? "Medication" : "Medication setup")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .onDisappear {
+                if !isTab { app.companion.leaveFlow(id: voiceFlowID) }
+            }
             .onAppear {
-                if !loaded {
-                    draft = settings.medications
-                    for medication in draft {
-                        loadedPhotos[medication.medicationName] = medication.medicationName == settings.schedule.medicationName ? app.pillPhoto : app.pillPhotos.forMedication(medication.medicationName).load()
-                    }
-                    loaded = true
+                draft = settings.medications
+                for medication in draft {
+                    loadedPhotos[medication.medicationName] = medication.medicationName == settings.schedule.medicationName ? app.pillPhoto : app.pillPhotos.forMedication(medication.medicationName).load()
                 }
-                app.companion.enterFlow(id: voiceFlowID, destination: .medication, step: .medication) }
+                loaded = true
+                saveSuccessMessage = nil
+                saveError = nil
+                if !isTab {
+                    app.companion.enterFlow(id: voiceFlowID, destination: .medication, step: .medication)
+                }
+            }
             .onChange(of: app.companion.actionID) { _ in
                 guard app.companion.context == .medication else { return }
                 if app.companion.action == .capture {
@@ -88,7 +104,9 @@ struct MedicationSetupView: View {
             }
             .interactiveDismissDisabled()
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                if !isTab {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                }
                 ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
             }
             .sheet(isPresented: $showGlassesCamera) {
@@ -121,6 +139,8 @@ struct MedicationSetupView: View {
     }
 
     private func save() {
+        saveError = nil
+        saveSuccessMessage = nil
         do {
             try settings.saveMedicationPlan(draft)
             for medication in draft {
@@ -130,7 +150,9 @@ struct MedicationSetupView: View {
                     if let error = app.photoSaveError { saveError = "Medication times are saved. " + error; return }
                 }
             }
-            dismiss()
+            saveSuccessMessage = "Medication schedule saved."
+            Haptics.success()
+            if !isTab { dismiss() }
         } catch { saveError = error.localizedDescription }
     }
 

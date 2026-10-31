@@ -23,7 +23,7 @@ public struct CadenceRootView: View {
     @State private var didReady = false
     private let onReady: ((CadenceAppModel) -> Void)?
 
-    enum Tab: Hashable { case today, diary, help, settings }
+    enum Tab: Hashable { case today, medication, diary, help, settings }
 
     /// `onReady` runs once with the app model so the host app can attach a
     /// real glasses device, which lives outside this platform-neutral package.
@@ -57,6 +57,9 @@ public struct CadenceRootView: View {
                 .safeAreaInset(edge: .bottom) { helpBar }
                 .tag(Tab.today)
                 .tabItem { Label("Today", systemImage: "sun.max.fill") }
+            MedicationSetupView(app: app, isTab: true)
+                .tag(Tab.medication)
+                .tabItem { Label("Medication", systemImage: "pill.fill") }
             DiaryView(app: app)
                 .safeAreaInset(edge: .bottom) { helpBar }
                 .tag(Tab.diary)

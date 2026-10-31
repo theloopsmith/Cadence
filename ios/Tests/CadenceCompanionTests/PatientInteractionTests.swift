@@ -301,3 +301,17 @@ final class DaySummaryPresentationTests: XCTestCase {
         XCTAssertNotNil(reportView)
     }
 }
+
+@MainActor
+final class MedicationTabPresentationTests: XCTestCase {
+    func testMedicationSetupViewInitializesAsTab() {
+        let app = CadenceAppModel()
+        let tabView = MedicationSetupView(app: app, isTab: true)
+        XCTAssertTrue(tabView.isTab)
+    }
+
+    func testCadenceRootViewInitializes() {
+        let rootView = CadenceRootView()
+        XCTAssertNotNil(rootView)
+    }
+}
