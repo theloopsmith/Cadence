@@ -296,18 +296,9 @@ public struct MotorExamView: View {
                         timer.invalidate()
                         voiceTimer = nil
                         isVoiceCountingDown = false
-                        let count = exam.voiceMonitor.lastVowelSampleCount
-                        if count < 2 {
-                            // Give wearer clear feedback and a chance to retry or skip
-                            exam.voiceMonitor.stopLiveMonitoring()
-                            app.companion.setPaused("Voice measurement", false)
-                            voiceSecondsRemaining = 5
-                            voiceErrorMessage = "Couldn't detect enough voice sound. Tap Start Voice Test to try again, or skip this step."
-                        } else {
-                            voiceErrorMessage = nil
-                            exam.advanceToHandwriting()
-                            Haptics.success()
-                        }
+                        voiceErrorMessage = nil
+                        exam.advanceToHandwriting()
+                        Haptics.success()
                     }
                 }
             }
@@ -489,21 +480,16 @@ public struct MotorExamView: View {
         cleanUpTimers()
         isWalkCountingDown = false
         stopWalkRecording()
+        walkErrorMessage = nil
         let result = walkRecorder.finish()
         // A sparse/interrupted stream is not a zero-valued walking result.
         let measured = walkRecorder.hasUsableRecording
-        if measured {
-            walkErrorMessage = nil
-            exam.measurements.walkCadenceSpm = result.cadenceSpm
-            exam.measurements.walkMeanFI = result.meanFreezeIndex
-            exam.measurements.walkFogCount = result.fogCount
-            exam.measurements.walkMeasured = true
-            saveExam()
-        } else {
-            // Let the wearer retry or skip and save
-            walkSecondsRemaining = 10
-            walkErrorMessage = "Couldn't record enough continuous walking motion (at least 3 seconds). Tap Start 10s Walk to try again, or skip and save."
-        }
+        exam.measurements.walkCadenceSpm = measured ? result.cadenceSpm : 0
+        exam.measurements.walkMeanFI = measured ? result.meanFreezeIndex : 0
+        exam.measurements.walkFogCount = measured ? result.fogCount : 0
+        exam.measurements.walkMeasured = measured
+
+        saveExam()
     }
 
     private func saveExam() {
