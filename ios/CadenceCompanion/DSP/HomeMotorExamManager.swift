@@ -183,7 +183,7 @@ public final class HomeMotorExamManager: ObservableObject {
         switch currentStep {
         case .idle: return nil
         case .task1PromptedVoice:
-            return "Step 1 of 3 — Take a deep breath and say “Ahhh” steadily for 5 seconds, then read today's sentence."
+            return "Step 1 of 3 — Take a deep breath and say “Ahhh” steadily for 5 seconds."
         case .task2PromptedHandwriting:
             return "Step 2 of 3 — Write the test sentence on your pad, then look down at the line."
         case .task3PromptedTimedWalk:
@@ -211,7 +211,7 @@ public final class HomeMotorExamManager: ObservableObject {
         measurements.walkMeasured = false
         voiceMonitor.startVowelPhonationRecording()
         audio.speakPrompt(
-            "Step 1: Take a deep breath and say Ahhh steadily for 5 seconds, then read today's sentence.",
+            "Step 1: Take a deep breath and say Ahhh steadily for 5 seconds.",
             priority: 2
         )
     }
@@ -236,6 +236,10 @@ public final class HomeMotorExamManager: ObservableObject {
         voiceMonitor.stopLiveMonitoring()
         measurements.voiceStatus = .skipped
         currentStep = .task2PromptedHandwriting
+        audio.speakPrompt(
+            "Step 2: Write the test sentence on your pad, then look down at the line.",
+            priority: 2
+        )
     }
 
     public func advanceToTimedWalk() {
@@ -244,6 +248,15 @@ public final class HomeMotorExamManager: ObservableObject {
             "Step 3: Stand up when ready and walk forward in a straight line for 10 seconds.",
             priority: 2
         )
+    }
+
+    public func skipHandwriting() {
+        measurements.handwritingStatus = .skipped
+        advanceToTimedWalk()
+    }
+
+    public func skipTimedWalk() {
+        measurements.walkStatus = .skipped
     }
 
     /// Submits the collected measurements and keeps the raw ones on the phone
@@ -337,6 +350,11 @@ public final class HomeMotorExamManager: ObservableObject {
     public func cancelExam() {
         examSessionID = UUID()
         currentStep = .idle
+        measurements = HomeMotorExamMeasurements()
+        lastRecord = nil
+        lastResult = nil
+        lastResultSummary = nil
+        historyPersistenceWarning = nil
         audio.cancelNonEmergencySpeech()
         _ = voiceMonitor.stopVowelPhonationRecording()
         voiceMonitor.stopLiveMonitoring()

@@ -1,26 +1,18 @@
 import SwiftUI
 
-/// Freeze-sensing calibration, labeled motion recording, and the server
-/// connection. Technical setup that lives on the Developer tab, not with
-/// the care partner's contacts.
+/// Freeze calibration and labeled motion recording, under Settings' developer toggle.
 struct TechnicalSetupSections: View {
     @ObservedObject var app: CadenceAppModel
-    @ObservedObject private var settings: AppSettings
     @State private var recordingLabel: GaitLabel = .walking
     @State private var showSensitivity = false
-    @State private var deviceKey = ""
-    @State private var serverAddress: String
 
     init(app: CadenceAppModel) {
         self.app = app
-        self.settings = app.settings
-        _serverAddress = State(initialValue: app.settings.backendBaseURL)
     }
 
     var body: some View {
         calibrationSection
         recordingSection
-        backendSection
     }
 
     // MARK: - Calibration
@@ -125,9 +117,18 @@ struct TechnicalSetupSections: View {
                     Label("Start recording", systemImage: "record.circle")
                 }
                 .buttonStyle(SecondaryButtonStyle())
-                .disabled(!app.motion.isRunning)
+                .disabled(!app.motion.isRunning || recorder.pendingCapture != nil)
             }
 
+            if let error = recorder.saveError {
+                Text(error).foregroundColor(CadenceTheme.caution)
+            }
+            if recorder.pendingCapture != nil {
+                Button("Retry saving recording") {
+                    if recorder.retrySaving() != nil { calibration.recalibrate() }
+                }
+                Button("Discard unsaved recording", role: .destructive) { recorder.discardPendingRecording() }
+            }
             if !calibration.recordedCaptures.isEmpty {
                 ForEach(calibration.recordedCaptures) { capture in
                     HStack {
@@ -156,33 +157,7 @@ struct TechnicalSetupSections: View {
         }
     }
 
-    // MARK: - Backend
-
-    var backendSection: some View {
-        Section {
-            TextField("Server address", text: $serverAddress)
-                #if os(iOS)
-                .textContentType(.URL)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                #endif
-                .autocorrectionDisabled()
-            SecureField("New device key", text: $deviceKey)
-            Button("Apply connection") {
-                settings.backendBaseURL = serverAddress
-                if settings.api.baseURL == DeviceProfile.normalize(serverAddress) {
-                    settings.deviceToken = deviceKey
-                }
-                deviceKey = ""
-            }
-            if let notice = settings.profileNotice { Text(notice).foregroundColor(CadenceTheme.caution) }
-        } header: {
-            Text("Connection")
-        } footer: {
-            Text("Events are saved on the phone first and sent when a connection is available. On an iPhone, localhost points to the phone itself: run scripts/run_phone_backend.py on the Mac and use the .local address it prints; the phone account's username and password are written to .local/phone-login.txt there.")
-        }
-    }
-
+    // MARK: - Labels
 
     private func plain(_ label: GaitLabel) -> String {
         switch label {

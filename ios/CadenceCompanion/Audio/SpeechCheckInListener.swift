@@ -6,6 +6,7 @@ public protocol SpeechCheckInListenerProtocol: AnyObject {
     var maxVocalLevelDbfs: Double { get }
     var latestTranscript: String { get }
     var isListening: Bool { get }
+    var onInputFailure: (() -> Void)? { get set }
 
     func startListening(
         onTranscriptUpdate: @escaping (String, Double) -> Void,
@@ -15,6 +16,7 @@ public protocol SpeechCheckInListenerProtocol: AnyObject {
 }
 
 public final class MockSpeechCheckInListener: SpeechCheckInListenerProtocol {
+    public var onInputFailure: (() -> Void)?
     public var maxVocalLevelDbfs: Double = -100.0
     public var latestTranscript: String = ""
     public var isListening: Bool = false
@@ -56,6 +58,7 @@ public final class MockSpeechCheckInListener: SpeechCheckInListenerProtocol {
 }
 
 public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerProtocol, SFSpeechRecognizerDelegate, @unchecked Sendable {
+    public var onInputFailure: (() -> Void)?
     public static let shared = LiveSpeechCheckInListener()
 
     private let recognizer: SFSpeechRecognizer?
@@ -100,6 +103,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
             self.latestTranscript = self.evidence.transcriptForResolution
             // Losing input cannot turn a provisional affirmative into cancellation.
             _ = self.stopListening()
+            self.onInputFailure?()
         }
     }
 
@@ -146,7 +150,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
         guard session == self.session else { return }
 
         guard AudioCueEngine.shared.prepareMicrophoneSession(owner: .checkIn) else {
-            isListening = false
+            reportInputFailure(session: session)
             return
         }
         guard session == self.session else {
@@ -175,7 +179,7 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
 
             guard recordingFormat.sampleRate > 0 && recordingFormat.channelCount > 0 else {
                 print("[SpeechCheckInListener] Input node has invalid format (sampleRate=\(recordingFormat.sampleRate), channels=\(recordingFormat.channelCount)). Skipping tap.")
-                _ = stopListening()
+                reportInputFailure(session: session)
                 return
             }
 
@@ -227,12 +231,22 @@ public final class LiveSpeechCheckInListener: NSObject, SpeechCheckInListenerPro
                     }
                 }
                 if error != nil || (result?.isFinal ?? false) {
-                    // Task completed or stopped
+                    self.reportInputFailure(session: session)
                 }
             }
         } catch {
             print("SpeechCheckInListener start error: \(error)")
-            _ = stopListening()
+            reportInputFailure(session: session)
+        }
+    }
+
+    private func reportInputFailure(session: Int) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.session == session, self.isListening else { return }
+            self.evidence.invalidateAffirmations()
+            self.latestTranscript = self.evidence.transcriptForResolution
+            _ = self.stopListening()
+            self.onInputFailure?()
         }
     }
 

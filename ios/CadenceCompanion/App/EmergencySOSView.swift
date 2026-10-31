@@ -54,6 +54,12 @@ public struct EmergencySOSView: View {
                     .multilineTextAlignment(.center)
                     .foregroundColor(foregroundColor.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)
+                if !isDispatched && coordinator.checkInInputUnavailable {
+                    Text("Microphone unavailable. Please use the buttons below.")
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                        .accessibilityAddTraits(.isStaticText)
+                }
                 if !isDispatched {
                     ProgressView(value: windowFraction)
                         .tint(CadenceTheme.caution)
@@ -86,7 +92,9 @@ public struct EmergencySOSView: View {
         .accessibilityLabel(
             isDispatched
                 ? "\(coordinator.contactHeadline). \(audio.isAudioAvailable ? "Emergency audio is active." : "Emergency audio is unavailable. Use the call buttons.") Tap I'm OK now to stop."
-                : "Are you OK? Say I am okay, or tap I'm OK. Say help, or tap I need help."
+                : coordinator.checkInInputUnavailable
+                    ? "Are you OK? Microphone unavailable. Tap I'm OK or I need help."
+                    : "Are you OK? Say I am okay, or tap I'm OK. Say help, or tap I need help."
         )
     }
 
@@ -139,6 +147,7 @@ public struct EmergencySOSView: View {
             }
             return "\(sound) \(coordinator.contactHeadline). Provider acceptance does not confirm receipt. Use the call buttons if you need help now."
         }
+        if coordinator.checkInInputUnavailable { return "Use the buttons below. \(secondsRemaining) seconds left before anyone is contacted." }
         return "You can say “I'm okay” or “help”, or tap below. Take your time — \(secondsRemaining) seconds left before anyone is contacted."
     }
 }

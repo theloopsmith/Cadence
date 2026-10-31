@@ -90,7 +90,7 @@ public final class WalkingModel: ObservableObject {
         if enabled {
             let source = glasses.preferredMotionSource
             let label = glasses.preferredSourceLabel
-            let started = motion.start(source: source, label: label) { [location] in location.currentLocation }
+            let started = motion.start(source: source, label: label, captureSource: glasses.preferredCaptureSource) { [location] in location.currentLocation }
             if started && audio.isAudioAvailable {
                 keepAlive.start()
             } else {

@@ -70,14 +70,17 @@ public final class VoiceCompanion: ObservableObject {
     @Published public var destination: CompanionDestination?
     @Published public private(set) var action: CompanionIntent = .unknown
     @Published public private(set) var actionID = UUID()
+    @Published public private(set) var actionContext: CompanionDestination?
     @Published public private(set) var context: CompanionDestination?
     @Published public private(set) var step: CompanionStep = .general
     public var onMetaHandoff: (() -> Void)?
     private struct Flow { let id: UUID; let destination: CompanionDestination; var step: CompanionStep }
     private var flows: [Flow] = []
     private var flowRevision = UUID()
+    public var confirmationPrompt: ((CompanionIntent) -> String?)?
     public var execute: ((CompanionIntent) -> String)?
     public var understand: ((String, [String]) async -> CompanionIntent?)?
+    public private(set) var preservesVoicePreferenceOnStop = false
     public var onDisabled: (() -> Void)?
     private let listener: TranscriptListening
     private let speaker: PromptSpeaking
@@ -85,6 +88,7 @@ public final class VoiceCompanion: ObservableObject {
     private let debounceSeconds: Double
     private let promptDelaySeconds: Double
     private let confirmationWindowSeconds: Double
+    private let listenerHealthDelaySeconds: Double
     private var pending: CompanionIntent?
     private var pauses: Set<String> = []
     private var generation = UUID()
@@ -94,20 +98,26 @@ public final class VoiceCompanion: ObservableObject {
     private var debounce: Task<Void, Never>?
     private var history: [String] = []
 
-    public init(listener: TranscriptListening, speaker: PromptSpeaking, echo: EchoGuarding, debounceSeconds: Double = 0.8, promptDelaySeconds: Double = 0.35, confirmationWindowSeconds: Double = 20) {
+    public init(listener: TranscriptListening, speaker: PromptSpeaking, echo: EchoGuarding, debounceSeconds: Double = 0.8, promptDelaySeconds: Double = 0.35, confirmationWindowSeconds: Double = 20, listenerHealthDelaySeconds: Double = 4) {
         self.listener = listener; self.speaker = speaker; self.echo = echo
         self.debounceSeconds = max(0.001, debounceSeconds)
         self.promptDelaySeconds = max(0.001, promptDelaySeconds)
         self.confirmationWindowSeconds = max(0.001, confirmationWindowSeconds)
+        self.listenerHealthDelaySeconds = max(0.001, listenerHealthDelaySeconds)
     }
 
     public func start() {
         history.removeAll(); lastHeard = ""
         isEnabled = true
+        if !pauses.isEmpty {
+            status = "Voice paused: " + pauses.sorted().joined(separator: ", ")
+            return
+        }
         say("I'm here. Tell me what you need. I can help with your medication, surroundings, or a motor check.")
     }
 
-    public func stop() {
+    public func stop(preservePreference: Bool = false) {
+        preservesVoicePreferenceOnStop = preservePreference
         isEnabled = false; pending = nil; generation = UUID(); turn = UUID()
         task?.cancel(); debounce?.cancel(); healthTask?.cancel(); listener.stopListening(); speaker.cancel()
         status = "Voice companion is off"
@@ -115,6 +125,7 @@ public final class VoiceCompanion: ObservableObject {
     }
 
     public func setPaused(_ reason: String, _ paused: Bool) {
+        guard pauses.contains(reason) != paused else { return }
         if paused { pauses.insert(reason) } else { pauses.remove(reason) }
         guard isEnabled else { return }
         generation = UUID(); turn = UUID(); pending = nil
@@ -170,9 +181,9 @@ public final class VoiceCompanion: ObservableObject {
     }
 
     public func handOffToMeta() {
-        stop()
+        stop(preservePreference: true)
         onMetaHandoff?()
-        status = "Cadence released the glasses. Use Hey Meta; tap Talk to Cadence to return."
+        status = "Cadence released the glasses. Use Hey Meta; say Siri, open Cadence to return."
     }
 
     public func say(_ text: String) {
@@ -221,7 +232,7 @@ public final class VoiceCompanion: ObservableObject {
         listener.stopListening()
         turn = UUID()
         let turn = self.turn
-        status = "Listening"
+        status = "Connecting microphone…"
         listener.startListening { [weak self] text in
             Task { @MainActor in
                 guard let self, self.turn == turn, self.isEnabled, self.pauses.isEmpty,
@@ -238,12 +249,16 @@ public final class VoiceCompanion: ObservableObject {
         }
         healthTask?.cancel()
         healthTask = Task { @MainActor [weak self] in
-            do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
-            guard let self, self.turn == turn, self.isEnabled, self.pauses.isEmpty else { return }
-            if !self.listener.isListening {
-                self.stop()
-                self.status = "Microphone unavailable. Check audio and permissions, then try Talk to Cadence again."
+            guard let self else { return }
+            let deadline = ProcessInfo.processInfo.systemUptime + self.listenerHealthDelaySeconds
+            while true {
+                guard self.turn == turn, self.isEnabled, self.pauses.isEmpty, !Task.isCancelled else { return }
+                if self.listener.isReady { self.status = "Listening"; return }
+                if !self.listener.isListening || ProcessInfo.processInfo.systemUptime >= deadline { break }
+                do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return }
             }
+            self.stop(preservePreference: true)
+            self.status = self.listener.failureReason ?? "Microphone unavailable. Check audio permissions in Settings, then say Siri, open Cadence to retry."
         }
         // Apple recognition tasks end periodically. Reopen between turns rather
         // than leaving a permanently lit microphone after the task has ended.
@@ -266,7 +281,10 @@ public final class VoiceCompanion: ObservableObject {
         let parsed = CompanionIntent.parse(text)
         let intent = pending == nil ? (step.resolve(text) ?? parsed) : parsed
         if intent == .handoffMeta { handOffToMeta(); return }
-        if intent == .cancel { pending = nil; publish(.cancel); say("Okay, I've stopped that. What else can I help with?"); return }
+        if intent == .cancel {
+            if pending != nil { pending = nil; say("Okay. Nothing was changed. " + (context == nil ? "What can I help with?" : step.guidance)); return }
+            publish(.cancel); say("Okay, I've stopped that. What else can I help with?"); return
+        }
         if intent == .stopListening { stop(); return }
         if let pending {
             self.pending = nil
@@ -298,7 +316,7 @@ public final class VoiceCompanion: ObservableObject {
             pending = intent
             let question: String
             switch intent {
-            case .logDose: question = "Just to check: you've taken your medication, and want me to record it now? Say yes or no."
+            case .logDose: question = confirmationPrompt?(.logDose) ?? "Just to check: you've taken your medication, and want me to record it now? Say yes or no."
             case .undoDose: question = "Would you like me to undo your last dose record? Say yes or no."
             case .caregiver: question = "Shall I open a call to your caregiver? Your phone may ask you to confirm the call. Say yes or no."
             case .emergency: question = "Shall I open a call to emergency services? Your phone may ask you to confirm the call. Say yes or no."
@@ -337,5 +355,5 @@ public final class VoiceCompanion: ObservableObject {
         }
     }
 
-    private func publish(_ intent: CompanionIntent) { action = intent; actionID = UUID() }
+    private func publish(_ intent: CompanionIntent) { actionContext = context; action = intent; actionID = UUID() }
 }

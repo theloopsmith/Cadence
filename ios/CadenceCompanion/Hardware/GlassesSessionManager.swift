@@ -128,6 +128,10 @@ public final class GlassesSessionManager: ObservableObject, WearStateProviding {
         return "iPhone"
     }
 
+    public var preferredCaptureSource: CaptureSource {
+        preferredMotionSource === phoneMotion ? .phoneRecording : .glassesRecording
+    }
+
     /// Hardware wear state, or nil when nothing can report it.
     public var isWorn: Bool? {
         guard device != nil, connectionState == .connected else { return nil }

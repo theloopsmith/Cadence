@@ -113,3 +113,114 @@ Protocol checks against the live services, not a wearer or room photo. Real-phot
 Two independent file-by-file reviews (backend and iOS) plus CI and toolchain checks; fixes landed with failing tests first. Headline fixes: the server-owned fall check-in timeout could never dispatch after a wearer had ever reset their data and the failure stopped recovery for every wearer; the siren screen claimed "Trying to contact caregiver" on a signed-out phone; the siren now resumes by itself after a call interruption or media-services reset; the check-in prompt is spoken after the microphone session is configured; walking cues cannot start during a check-in and the echo guard covers PCM playback; production refuses to start without caregiver dispatch settings or with demo/static tokens on; a key misconfiguration no longer deletes a database; NaN, future and unparseable timestamps and out-of-range values are 422s; care partners can enter caregiver and emergency numbers; Today controls meet the 72 pt rule.
 
 **Evidence.** 195 backend, 350 Swift, 8 renderer checks, isolated browser check; the app target builds for simulator and device and launches in the iOS 26.0.1 simulator with the mock kit. CI installs the lockfile, generates the dashboard fixture, installs Playwright and compiles the app target on an Xcode 16 runner. The open list is in the readiness review.
+
+
+## Bounded cloud audio processing (Oct 30)
+
+Resampling, window scans and WAV encoding now run on a serial worker rather than in the microphone callback. A maximum of eight buffers and six seconds of queued PCM prevents unbounded accumulation. Overflow discards the incomplete utterance; generation checks suppress stale replies after echo, dropped audio or stop. Invalid PCM conversion no longer traps. The existing local recognizer continues independently. No runtime model provider changed.
+
+**Evidence.** All 356 Swift tests pass, including nine CloudEar tests; the actual iPhone architecture app target builds with DAT. No app or audio was launched. Physical recording continuity and latency still need device acceptance; the callback retains PCM copying and a short admission lock.
+
+
+## Durable login attempt limits (Oct 30)
+
+SQLite now persists the account login budget across worker processes and server restarts. Attempts reserve a slot atomically before hashing; successful verification only clears the current reservation revision, preventing an older success from erasing newer failures. A crash consumes its reservation until expiry. Scrypt runs outside database write transactions. A startup schema addition preserves existing records; expired reservations are cleaned on admission. No running server or account was modified during verification.
+
+**Evidence.** All 199 backend tests pass. New coverage verifies lock persistence through schema initialization and a fresh Python process, a shared five-attempt budget under parallel requests, successful recovery/expiry and a delayed successful verification racing with newer failures. These are account-level limits for workers sharing the database; distributed edge/IP throttling is not implemented by this change.
+
+
+## Bluetooth configuration and microphone recovery (Oct 30)
+
+A normal Bluetooth profile/sample-rate change could stop the cue engine and latch all audio input off. The companion's retry button did not clear that latch unless returning from Hey Meta. Output engine changes now coalesce for 350 ms and retry up to three times; explicit pauses, interruptions and actual output disconnections override pending recovery. Switching between profiles of the same named output is distinguished from removing that output. The health poll waits during configuration recovery. Redundant session-category writes are avoided.
+
+Talk to Cadence now explicitly retries audio before acquiring its microphone. Input setup waits for Bluetooth negotiation after configuring the session, and a stopped input engine is recreated after a configuration change. Scheduled restarts are fenced by the listening session and skipped if input already recovered. The listener startup health grace is four seconds. This repairs the software recovery path; it does not establish that permissions or physical Bluetooth routing are correct on the user's installed app.
+
+**Evidence.** The full 358-test Swift suite passed and the actual iPhone architecture app target built. Added regression coverage exercises transient restart failure followed by recovery and verifies that an actual disconnection overrides queued recovery. No app or audio was launched. The updated app still needs installation and verification on the connected phone and glasses.
+
+
+## Hands-free companion controls (Oct 30)
+
+The companion status bar no longer contains Talk to Cadence or Use Hey Meta buttons. A one-time Hands-free voice companion switch in Settings requests OS permissions. Voice starts on subsequent launches. “Let me use Meta” releases the microphone and keeps the setup preference. Returning from Siri or backgrounding resumes voice automatically when the app becomes active; “Siri, open Cadence” uses the system's app-opening command, not a Cadence wake word. “Stop listening” explicitly disables the preference; transient microphone errors preserve it for a later foreground retry. Permission dialogs and unlocking remain OS-controlled and may require touch. Cadence cannot hear its own return phrase while its microphone is released. Siri activation, app-name resolution and physical Bluetooth recovery still need an installed-device check.
+
+**Evidence.** All 360 Swift tests pass and the physical-iPhone architecture target builds. Tests cover preserving setup through a Meta handoff and distinguishing it from an explicit voice-off command. No app or audio was launched during verification.
+
+## Walking-first brief and calibration recovery (Oct 30)
+
+The architecture/design contract is in ARCHITECTURE_AND_DESIGN_SPEC.md. Walking cueing remains the first delivery gate under the updated brief. Calibration read failures now remain visible during reference fallback, failed deletes report an error, and a failed recording save retains the original clip in memory for retry or explicit discard. New recording is blocked while a failed clip is pending. Calibration selection requires complete labels from one source; phone and glasses recordings cannot be silently combined. Counts and reference provenance are shown explicitly.
+
+**Evidence.** All 363 Swift tests pass, including new storage-failure recovery, unreadable-store provenance and mixed-source rejection tests. The actual iPhone architecture target builds. No app or audio was launched. Physical worn-device calibration, active-sensor calibration matching, latency and cue/recovery acceptance remain open. Synthetic trap tests do not establish real-world sensitivity, specificity or medical efficacy. Contrast compliance has not been certified; the architecture/design contract records that limit.
+
+## Active-sensor calibration binding (Oct 30)
+
+MotionFeed now selects calibration through a source-start hook before opening a new motion stream. WalkingModel supplies the source kind from GlassesSessionManager's actual selected source, including phone fallback. FoGCalibrationController remembers that target on subsequent recalibrations and selects only that sensor's complete labeled set; missing or invalid matching recordings use disclosed synthetic reference motion. Other sensors' recordings do not fill missing labels.
+
+The capture recorder now tags clips with the active stream's source rather than its default iPhone label. A changed or stopped stream invalidates an incomplete recording, preventing mixed-source or restarted motion from becoming one labeled clip. UI retry/discard controls are offered only when an unsaved clip actually exists.
+
+Verification includes sensor-specific selection, recording provenance and interruption rejection, and an app-model mock-glasses connection/disconnection journey. Physical worn-device calibration, cue latency and recovery acceptance remain open; this work does not validate detection efficacy.
+
+**Evidence.** All 366 Swift tests pass and the actual iPhone architecture target builds. No app or audio was launched. The integration fixture supplies real mock IMU samples; a mock without samples correctly falls back to phone motion rather than claiming an available glasses stream.
+
+
+## Startup voice state and archived-event notice (Oct 30)
+
+A missing voice preference previously decoded as false, leaving first-time setup silently off. It now defaults to automatic startup after OS microphone/speech permission, while explicitly saved false remains false across launches. A startup flag prevents overlapping authorization requests and the companion bar distinguishes starting, permission problems and a saved off choice. Archived records with unknown owners remain quarantined; their explanation is now in account Settings rather than a recurring Today warning. No records were deleted or reassigned.
+
+**Evidence.** All 368 Swift tests pass and the actual iPhone architecture target builds. New tests verify default-on versus persisted explicit-off settings and meaningful startup state. No app/audio was launched; the installed phone still needs this build. If the phone already saved voice off, re-enable Hands-free voice companion once in Cadence Settings.
+
+## Reachable Settings and scrollable voice status (Oct 30)
+
+Settings is now a permanent fourth tab. The voice notice was removed from the inset above the entire TabView and sheet navigation; on Today, Diary and Help it now scrolls with content. Settings puts voice status and the hands-free switch first in its form and omits the repeated enable-voice explanation there. Its Done toolbar control is shown only when presented as a sheet; spoken done/cancel returns the Settings tab to Today. This removes reliance on a gear icon behind an expanding notice without restoring the removed everyday voice-control buttons.
+
+The app display name now matches “Cadence” in the spoken Siri opening guidance (previously “Cadence Companion”). The bundle identifier and stored profile are unchanged. Speech permission copy now describes both companion and safety use. Siri app lookup and the installed-phone layout still require physical acceptance; no app/audio was launched here.
+
+**Evidence.** The 368-test Swift suite passed during the layout update, and the iPhone architecture target compiled. This verifies source integration, not a visual layout check on the user's phone.
+
+## Automatic voice upgrade (Oct 30)
+
+Per the owner's request, first launch of the automatic-startup setup now enables voice for existing profiles too, overriding the older saved-off value once. A profile-scoped migration marker prevents repeated overrides, so a subsequent deliberate off choice is still honored. Microphone and speech permission remain required. All 19 DeveloperToolsTests pass, including an upgrade seeded with the legacy false preference followed by an explicit off choice and reload.
+
+## Settings scrolling work reduction (Oct 30)
+
+Settings no longer observes the app-wide publisher that forwards live motion, recorder and walking health updates. It observes settings, authentication and fall state directly, and subscribes only to reset-error and voice-action events it needs. Root presentation uses an equality boundary for unchanged Settings inputs; local state and directly observed changes continue to update normally. Glasses updates are confined to a small section.
+
+Installed speech voices are loaded on appearance/foreground return instead of scanning AVFoundation during every form evaluation. The quarantined-record count is fetched on a utility task outside rendering and displayed from state, rather than synchronously querying SQLite twice per redraw. Spoken done remains subscribed directly to action IDs rather than depending on app-wide view invalidation.
+
+**Evidence.** The 368-test Swift suite passed during the refactor and the iPhone architecture target built. No app/audio was launched and no physical-device frame-rate or Instruments measurement was taken. These changes remove identified render-path work; smooth scrolling on the installed phone still needs acceptance.
+
+## Simplified Settings and developer tools (Oct 30)
+
+Removed Today's upper-right Settings gear and the Developer tab. Settings remains in the permanent bottom bar. Under Settings → Advanced, Show developer tools reveals focused navigation pages for connection/status, walking replays, motion calibration, safety tests, medication tests, camera checks, hardware, diary fixtures and the outbox. Ordinary debug builds no longer enable tools automatically. The toggle persists per local profile; explicit testing launch flags supply the initial default only when no choice is saved.
+
+Developer pages now use the Settings navigation stack rather than a nested stack. Opening the developer area no longer runs unrelated backend checks or fetches queue data; those run only on their relevant pages. Leaving a replay or capture page stops that active test, and a temporary simple-mode override is cleared. The duplicate raw-token/server connection form was removed; server/account setup remains in the main Settings form. Regression coverage checks toggle persistence, profile isolation and a saved choice overriding the launch default.
+
+**Evidence.** All 368 Swift tests pass, including the updated developer preference test and screen-copy lint; the actual iPhone architecture target builds. No app or audio was launched. Visual acceptance on the installed phone remains pending.
+
+## Reduced main Settings sections (Oct 30)
+
+Removed the People to call editor from Settings without changing saved contacts or call behavior. Account and local history and Photo source now appear only when Settings → Advanced → Show developer tools is enabled. Main Settings contains voice preferences, the developer toggle and About. Hiding developer tools stops Bonjour discovery and clears the password field. This is a presentation change; no saved profiles, records or connection settings were erased.
+
+## Stalled companion startup state (Oct 30)
+
+The generic “Voice is preparing or paused” fallback masked a stopped microphone while the automatic-voice preference remained enabled. The status now preserves the companion's actual failure/pause reason. Starting with an active pause explicitly reports that reason, and repeating an unchanged pause state no longer cancels and reopens the listening turn.
+
+The ordinary transcript listener distinguishes requested listening from a successfully started audio input. The companion polls readiness with a bounded startup deadline rather than reporting Listening immediately or trusting the request flag. Invalid Bluetooth input formats and audio-engine start failures retry twice after settling, then publish an actionable input failure. Setup-time configuration notifications cannot reset those retries indefinitely; only an input that already started can trigger route recovery. Session IDs fence queued work after stop, and media-service generations guard engine cleanup.
+
+No app or audio was launched. Physical microphone/permissions behavior still needs the installed-phone check; the code changes do not establish which device condition caused the user's failure.
+
+**Evidence.** All 371 Swift tests pass and the actual iPhone architecture target builds. New tests verify startup input-failure reporting, preserved retry preference and paused-start recovery; app-model status retains the actual pause reason. Automated checks do not verify acoustic input on physical glasses.
+
+## Multiple medications and clear setup navigation (Oct 30)
+
+Medication setup now edits a draft list with Add medication, exact time selection, removal and visible Save/Cancel controls. Saved schedules and reminder times change only on Save. Photo capture/removal is staged with the draft; if a photo cannot be persisted after the schedules save, the editor stays open and reports that partial result. Today provides an explicit medication selector and Manage medications action, also available in Settings. Help is now Get help and contains calling actions rather than medication or app setup.
+
+The profile stores an array of schedules while retaining the selected schedule interface for existing code. Old single-medication settings migrate without dropping the existing schedule. Duplicate names and invalid times are refused; medication names identify records, so renaming leaves earlier diary entries under the earlier name. Dose history and Undo are scoped to the selected medication. Spoken dose confirmation names that medication, and changing schedules invalidates a pending confirmation. Logging a dose withdraws reminders via an explicit success callback rather than mistaking a switched history list for a new dose. Reminder identifiers include the medication, so identical times do not collide. Selecting a different medication does not rebuild the same reminder plan; startup/plan changes replay suppression from today's records.
+
+Reference photos are stored separately by medication name digest. An older unscoped photo is migrated only when its one-medication owner can be inferred; the original is archived locally and cannot later reappear as a different medication's image. No server payload or caregiver dispatch behavior changed.
+
+**Evidence.** All 375 Swift tests pass and the actual iPhone architecture target builds. New coverage verifies old settings migration, multiple-medication reload/selection, duplicate-name rejection, per-medication dose and photo isolation and independent reminders at the same time. No app or audio was launched; physical UI and reminder-delivery acceptance remain pending.
+
+## Cadence iPhone icon (Oct 30)
+
+Added an opaque 1024-pixel Cadence C-mark app icon to Assets.xcassets and selected AppIcon in Debug and Release build settings. The generated master and generation prompt are retained under docs/branding. Artwork was generated during development with the built-in image tool and bundled as a static asset; no runtime model provider was added.
+
+**Evidence.** The iPhone target builds successfully. The built product contains Assets.car, an AppIcon60x60 PNG, and CFBundlePrimaryIcon metadata naming AppIcon. The artwork was visually inspected after resizing. No app was launched or installed during this check; the home-screen change appears after installing the updated build.

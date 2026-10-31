@@ -130,7 +130,9 @@ public final class VoiceMonitor {
         guard !recordedVowelSamples.isEmpty else {
             return (currentLevelDbfs, 0.0)
         }
-        let mean = recordedVowelSamples.reduce(0.0, +) / Double(recordedVowelSamples.count)
+        let voiced = recordedVowelSamples.filter { $0 > -38.0 }
+        let samplesToUse = voiced.count >= 2 ? voiced : recordedVowelSamples
+        let mean = samplesToUse.reduce(0.0, +) / Double(samplesToUse.count)
         let stability = computeVowelPhonationStabilityDb(vowelWindowDbfsSamples: recordedVowelSamples)
         return (mean, stability)
     }
@@ -138,11 +140,13 @@ public final class VoiceMonitor {
     /// Computes phonation stability sigma_dB strictly over the 5-second sustained vowel ("Ahhh") segment.
     public func computeVowelPhonationStabilityDb(vowelWindowDbfsSamples: [Double]) -> Double {
         guard vowelWindowDbfsSamples.count >= 2 else { return 0.0 }
-        let mean = vowelWindowDbfsSamples.reduce(0.0, +) / Double(vowelWindowDbfsSamples.count)
-        let variance = vowelWindowDbfsSamples.reduce(0.0) { acc, val in
+        let voiced = vowelWindowDbfsSamples.filter { $0 > -38.0 }
+        let samples = voiced.count >= 2 ? voiced : vowelWindowDbfsSamples
+        let mean = samples.reduce(0.0, +) / Double(samples.count)
+        let variance = samples.reduce(0.0) { acc, val in
             let diff = val - mean
             return acc + diff * diff
-        } / Double(vowelWindowDbfsSamples.count)
+        } / Double(samples.count)
         return sqrt(variance)
     }
 }

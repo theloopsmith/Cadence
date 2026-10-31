@@ -37,6 +37,44 @@ final class PromptArbiterTests: XCTestCase {
 }
 
 final class AudioRecoveryTests: XCTestCase {
+    func testConfigurationChangeRetriesAfterBluetoothSettles() {
+        enum Failure: Error { case negotiating }
+        var failures = 0
+        let audio = AudioCueEngine(playbackEnabled: false, engineStarter: {
+            if failures > 0 { failures -= 1; throw Failure.negotiating }
+        })
+        audio.startRASMetronome()
+        failures = 1
+        audio.outputConfigurationChanged()
+        let recovered = expectation(description: "route recovered")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            XCTAssertTrue(audio.isAudioAvailable)
+            XCTAssertTrue(audio.prepareMicrophoneSession(owner: .companion), "a normal route change must not latch input off")
+            audio.releaseMicrophoneSession(owner: .companion)
+            audio.stopRASMetronome()
+            recovered.fulfill()
+        }
+        wait(for: [recovered], timeout: 2)
+    }
+
+    func testDisconnectedOutputWinsOverPendingConfigurationRecovery() {
+        let audio = AudioCueEngine(playbackEnabled: false)
+        audio.startRASMetronome()
+        audio.outputConfigurationChanged()
+        audio.outputDeviceDisconnected()
+        let checked = expectation(description: "disconnect retained")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            XCTAssertFalse(audio.isAudioAvailable)
+            XCTAssertFalse(audio.prepareMicrophoneSession(owner: .companion))
+            audio.retryAudio()
+            XCTAssertTrue(audio.prepareMicrophoneSession(owner: .companion))
+            audio.releaseMicrophoneSession(owner: .companion)
+            audio.stopRASMetronome()
+            checked.fulfill()
+        }
+        wait(for: [checked], timeout: 2)
+    }
+
     func testInterruptionClearsSpeechAndDoesNotResumeWithoutPermission() {
         let audio = AudioCueEngine(playbackEnabled: false)
         audio.startRASMetronome()

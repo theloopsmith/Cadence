@@ -85,6 +85,16 @@ final class RecordingNotificationCenter: DoseNotificationCentering {
 
 @MainActor
 final class DoseReminderSchedulerTests: XCTestCase {
+    func testMedicationsAtTheSameTimeHaveIndependentReminders() async {
+        let center = RecordingNotificationCenter()
+        let scheduler = DoseReminderScheduler(center: center)
+        let first = MedicationSchedule(medicationName: "First", doseTimes: [DoseTime(hour: 8, minute: 0)])
+        let second = MedicationSchedule(medicationName: "Second", doseTimes: first.doseTimes)
+        await scheduler.sync([first, second])
+        XCTAssertEqual(Set(center.requested.map(\.identifier)).count, 2)
+        scheduler.doseTaken(at: first.doseDates(on: Date())[0], schedule: first)
+        XCTAssertTrue(center.requested.contains { $0.title.contains("Second") && $0.repeatsDaily })
+    }
     private var schedule: MedicationSchedule {
         MedicationSchedule(
             medicationName: "Levodopa",

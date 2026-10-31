@@ -4,38 +4,33 @@ struct VoiceCompanionBar: View {
     @ObservedObject var app: CadenceAppModel
     @ObservedObject private var voice: VoiceCompanion
 
-    init(app: CadenceAppModel) { self.app = app; self.voice = app.companion }
+    var showsSetupHint: Bool
+    init(app: CadenceAppModel, showsSetupHint: Bool = true) {
+        self.app = app; self.voice = app.companion; self.showsSetupHint = showsSetupHint
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: voice.isEnabled ? "mic.fill" : "mic.slash")
-                Text(voice.status).font(.subheadline.weight(.semibold))
-                Spacer()
-                Button(voice.isEnabled ? "Turn voice off" : "Talk to Cadence") {
-                    if voice.isEnabled { voice.stop() }
-                    else { Task { await app.enableVoiceCompanion() } }
-                }
-                .buttonStyle(.bordered)
-                .disabled(app.isHandingOffToMeta)
+                Text(app.voiceStatusText).font(.subheadline.weight(.semibold))
             }
-            Button(app.isUsingMetaAssistant ? "Glasses released to Hey Meta" : "Use Hey Meta instead") {
-                Task { await app.useMetaAssistant() }
-            }
-            .disabled(app.fallAlert.isAlertVisible || app.isUsingMetaAssistant || app.isHandingOffToMeta)
             if app.isHandingOffToMeta {
                 Text("Releasing the glasses microphone…").font(.caption)
             } else if app.isUsingMetaAssistant {
-                Text("Cadence camera and voice are paused. Walking audio is unavailable until you return to Cadence.").font(.caption)
+                Text("Use Hey Meta normally. Say “Siri, open Cadence” to return. Cadence camera, voice and walking audio are paused.").font(.caption)
             }
             if let error = app.metaHandoffError { Text(error).font(.footnote).foregroundColor(CadenceTheme.caution) }
             if voice.isEnabled {
                 Text(voice.lastReply.isEmpty ? "Tell me what you need help with." : voice.lastReply)
                     .font(.footnote).lineLimit(4)
-                Text("Microphone: \(AudioRouteManager.shared.activeInputName). Cadence is using the microphone. Use Hey Meta instead to release it.")
+                Text("Microphone: \(AudioRouteManager.shared.activeInputName). Say “let me use Meta” to switch to Hey Meta.")
                     .font(.caption).foregroundColor(.secondary)
             }
             if let error = app.voicePermissionError { Text(error).font(.footnote).foregroundColor(CadenceTheme.caution) }
+            if showsSetupHint, !voice.isEnabled, !app.settings.voiceCompanionEnabled, !app.isUsingMetaAssistant {
+                Text("Enable Hands-free voice companion once in Cadence Settings to listen automatically when the app opens.").font(.caption)
+            }
         }
         .padding(10)
         .background(CadenceTheme.background)

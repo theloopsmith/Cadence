@@ -38,6 +38,25 @@ final class FallAlertCoordinatorTests: XCTestCase {
         )
     }
 
+    func testInputFailureShowsButtonFallbackAndDoesNotCancelCheckIn() {
+        let listener = MockSpeechCheckInListener()
+        let c = makeCoordinator(speechListener: listener)
+        c.beginCheckIn(eventUUID: "first")
+        let oldFailure = listener.onInputFailure
+        oldFailure?()
+        XCTAssertTrue(c.checkInInputUnavailable)
+        XCTAssertFalse(c.isDispatched)
+        c.cancelByUser()
+        c.beginCheckIn(eventUUID: "second")
+        XCTAssertFalse(c.checkInInputUnavailable)
+        oldFailure?()
+        XCTAssertFalse(c.checkInInputUnavailable)
+        listener.onInputFailure?()
+        c.escalate()
+        XCTAssertTrue(c.isDispatched)
+        c.cancelByUser()
+    }
+
     func testDeliveryEvidenceMustMatchTheActiveIncidentAndSeparateAcceptanceFromAcknowledgment() {
         let c = makeCoordinator()
         c.beginCheckIn(eventUUID: "active")

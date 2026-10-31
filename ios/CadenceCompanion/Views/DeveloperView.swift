@@ -3,10 +3,24 @@ import SwiftUI
 import UIKit
 #endif
 
+enum DeveloperArea: String, CaseIterable, Identifiable {
+    case diagnostics = "Connection and status"
+    case walking = "Walking replays"
+    case calibration = "Motion calibration and recordings"
+    case fall = "Safety check-in tests"
+    case medication = "Medication tests"
+    case camera = "Camera checks"
+    case hardware = "Glasses, sound and haptics"
+    case diary = "Diary test data"
+    case queue = "Offline queue"
+    var id: String { rawValue }
+}
+
 /// Drives every feature for testing. Visible only when the Developer switch
 /// in care-partner setup is on. Nothing here is on the wearer's path.
 struct DeveloperView: View {
     @ObservedObject var app: CadenceAppModel
+    let area: DeveloperArea
     @StateObject private var tools: DeveloperToolsModel
     @State private var question = "Is someone sitting in that chair?"
     @State private var cameraPurpose: CameraPurpose?
@@ -18,47 +32,54 @@ struct DeveloperView: View {
         var id: Int { hashValue }
     }
 
-    init(app: CadenceAppModel) {
+    init(app: CadenceAppModel, area: DeveloperArea) {
+        self.area = area
         self.app = app
         _tools = StateObject(wrappedValue: DeveloperToolsModel(app: app))
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                statusSection
-                walkingSection
-                fallSection
-                medicationSection
-                cameraSection
-                glassesSection
-                TechnicalSetupSections(app: app)
-                signalsSection
-                diarySection
-                queueSection
+        Form {
+            switch area {
+            case .diagnostics: statusSection
+            case .walking: walkingSection
+            case .calibration: TechnicalSetupSections(app: app)
+            case .fall: fallSection
+            case .medication: medicationSection
+            case .camera: cameraSection
+            case .hardware: glassesSection; signalsSection
+            case .diary: diarySection
+            case .queue: queueSection
             }
-            .navigationTitle("Developer")
-            .onAppear {
-                tools.refreshQueue()
-                Task { await tools.checkBackend() }
-            }
-            .sheet(isPresented: $showServerSummary) {
-                DaySummaryView(app: app)
-            }
-            .sheet(item: $cameraPurpose) { purpose in
-                CameraPicker(
-                    onCapture: { jpeg in
-                        cameraPurpose = nil
-                        Task {
-                            switch purpose {
-                            case .environment: await tools.runEnvironmentCheck(jpeg: jpeg, question: question)
-                            case .meal: await tools.runMealCheck(jpeg: jpeg)
-                            }
+        }
+        .navigationTitle(area.rawValue)
+        .onAppear {
+            if area == .queue { tools.refreshQueue() }
+        }
+        .task {
+            if area == .diagnostics { await tools.checkBackend() }
+        }
+        .onDisappear {
+            if tools.isReplaying { tools.stopReplay() }
+            if forceSimple { tools.setForcedSimpleMode(nil) }
+            if area == .calibration { app.recorder.cancel() }
+        }
+        .sheet(isPresented: $showServerSummary) {
+            DaySummaryView(app: app)
+        }
+        .sheet(item: $cameraPurpose) { purpose in
+            CameraPicker(
+                onCapture: { jpeg in
+                    cameraPurpose = nil
+                    Task {
+                        switch purpose {
+                        case .environment: await tools.runEnvironmentCheck(jpeg: jpeg, question: question)
+                        case .meal: await tools.runMealCheck(jpeg: jpeg)
                         }
-                    },
-                    onCancel: { cameraPurpose = nil }
-                )
-            }
+                    }
+                },
+                onCancel: { cameraPurpose = nil }
+            )
         }
     }
 

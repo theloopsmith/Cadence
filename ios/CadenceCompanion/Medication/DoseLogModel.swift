@@ -15,8 +15,12 @@ public final class DoseLogModel: ObservableObject {
     @Published public private(set) var isSimpleMode = false
     @Published public private(set) var takenToday: [Date] = []
 
+    public var onDoseTaken: ((Date, MedicationSchedule) -> Void)?
     public var schedule: MedicationSchedule {
-        didSet { refresh() }
+        didSet {
+            if oldValue.medicationName != schedule.medicationName { lastLogged = nil; canUndo = false }
+            reloadTakenToday(); refresh()
+        }
     }
 
     private let diary: DiaryStore
@@ -66,6 +70,7 @@ public final class DoseLogModel: ObservableObject {
         canUndo = true
         if case .failure = queued { saveError = "The dose is recorded on this phone, but sharing could not be saved. Keep Cadence open and check storage." }
         refresh()
+        onDoseTaken?(now, schedule)
         return true
     }
 
@@ -106,7 +111,7 @@ public final class DoseLogModel: ObservableObject {
         let now = clock()
         do {
             let events = try diary.events(on: now)
-            takenToday = events.filter { $0.kind == .doseTaken }.map(\.at)
+            takenToday = events.filter { $0.kind == .doseTaken && $0.detail == schedule.medicationName }.map(\.at)
             historyUnavailable = false
         } catch {
             historyUnavailable = true

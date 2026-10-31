@@ -15,6 +15,8 @@ struct DiaryView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: CadenceTheme.tapGap) {
+                    VoiceCompanionBar(app: app)
+
                     dayPicker
                     factsCard
                     reportCard

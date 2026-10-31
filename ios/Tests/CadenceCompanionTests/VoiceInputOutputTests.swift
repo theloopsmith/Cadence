@@ -126,6 +126,42 @@ final class VoiceSelectionTests: XCTestCase {
 // MARK: - Muse Voice Transcribe as a second listener
 
 final class CloudEarTests: XCTestCase {
+    func testBacklogDropsIncompleteSpeechAndAcceptsFreshAudio() {
+        let sent = expectation(description: "fresh clip")
+        let ear = CloudEar(windowSec: 3, strideSec: 1, transcribe: { _ in
+            sent.fulfill(); return nil
+        }, onTranscript: { _ in })
+        ear.processingQueue.suspend()
+        for _ in 0..<12 { ear.feed(samples: [Float](repeating: 0.3, count: 1024), sampleRate: 48000) }
+        ear.processingQueue.resume()
+        ear.processingQueue.sync {}
+        XCTAssertEqual(ear.bufferedSeconds, 0)
+        ear.feed(samples: speech(seconds: 1.2), sampleRate: 48000)
+        wait(for: [sent], timeout: 2)
+        ear.stop()
+    }
+
+    func testPromptInvalidatesAlreadySubmittedCloudReply() {
+        let started = expectation(description: "request started")
+        let delivered = expectation(description: "stale reply suppressed")
+        delivered.isInverted = true
+        let gate = DispatchSemaphore(value: 0)
+        let ear = CloudEar(windowSec: 3, strideSec: 1, transcribe: { _ in
+            started.fulfill(); gate.wait(); return "I'm okay"
+        }, onTranscript: { _ in delivered.fulfill() })
+        ear.feed(samples: speech(seconds: 1.2), sampleRate: 48000)
+        wait(for: [started], timeout: 2)
+        ear.feed(samples: [0], sampleRate: 48000, echoActive: true)
+        gate.signal()
+        wait(for: [delivered], timeout: 0.2)
+        ear.stop()
+    }
+
+    func testInvalidPCMDoesNotTrapOrProduceInvalidSamples() {
+        XCTAssertTrue(CloudEar.resample([0], from: .nan).isEmpty)
+        XCTAssertEqual(CloudEar.resample([.nan, .infinity], from: 16000), [0, 0])
+    }
+
     private func speech(seconds: Double, rate: Double = 48000, amplitude: Float = 0.3) -> [Float] {
         (0..<Int(seconds * rate)).map { amplitude * sin(Float($0) * 0.05) }
     }

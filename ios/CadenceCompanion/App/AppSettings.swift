@@ -26,26 +26,30 @@ public final class AppSettings: ObservableObject {
         static let schedule = "cadence.medicationSchedule"
     }
 
-    /// Shows the Developer tab. Not a user setting: on in debug builds, and
-    /// on in any build launched with `-cadence-developer`, so testers get it
-    /// from Xcode or a scheme without anything appearing in setup.
-    @Published public var developerModeEnabled: Bool
+    /// Explicit testing tools, hidden behind the Settings toggle by default.
+    @Published public var developerModeEnabled: Bool {
+        didSet { defaults.set(developerModeEnabled, forKey: scoped("developerModeEnabled")) }
+    }
 
     public nonisolated static var defaultDeveloperMode: Bool {
         if ProcessInfo.processInfo.arguments.contains("-cadence-developer") { return true }
         if ProcessInfo.processInfo.environment["CADENCE_DEVELOPER"] == "1" { return true }
-        #if DEBUG
-        return true
-        #else
         return false
-        #endif
     }
 
     /// Dose times set up by a care partner. Reminders only.
+    @Published public private(set) var medications: [MedicationSchedule] = []
+    private var updatingMedicationPlan = false
     @Published public var schedule: MedicationSchedule {
         didSet {
             if let data = try? JSONEncoder().encode(schedule) {
                 defaults.set(data, forKey: scoped(Key.schedule))
+            }
+            if !updatingMedicationPlan {
+                var plan = medications
+                if plan.isEmpty { plan = [schedule] } else { plan[0] = schedule }
+                medications = plan
+                if let data = try? JSONEncoder().encode(plan) { defaults.set(data, forKey: scoped("medications")) }
             }
         }
     }
@@ -145,7 +149,7 @@ public final class AppSettings: ObservableObject {
         self.defaults = defaults
         self.tokenStore = store
         self.sync = sync
-        self.developerModeEnabled = developerMode
+        self.developerModeEnabled = defaults.object(forKey: localKey("developerModeEnabled")) as? Bool ?? developerMode
         backendBaseURL = defaults.string(forKey: Key.backendBaseURL) ?? AppSettings.bundledServerURL
         if let legacy = defaults.string(forKey: Key.legacyDeviceToken), store.read() == nil {
             store.write(legacy)
@@ -162,7 +166,16 @@ public final class AppSettings: ObservableObject {
         signedInUsername = defaults.string(forKey: localKey(Key.signedInUsername))
         summaryName = defaults.string(forKey: localKey(Key.summaryName)) ?? ""
         preferredVoiceIdentifier = defaults.string(forKey: localKey(Key.preferredVoice))
-        voiceCompanionEnabled = defaults.bool(forKey: localKey("voiceCompanionEnabled"))
+        // Upgrade the old button-driven setup once. Afterwards, an explicit
+        // voice-off choice made in the new setup still survives reopening.
+        let automaticVoiceKey = localKey("automaticVoiceStartupV1")
+        if !defaults.bool(forKey: automaticVoiceKey) {
+            voiceCompanionEnabled = true
+            defaults.set(true, forKey: localKey("voiceCompanionEnabled"))
+            defaults.set(true, forKey: automaticVoiceKey)
+        } else {
+            voiceCompanionEnabled = defaults.object(forKey: localKey("voiceCompanionEnabled")) as? Bool ?? true
+        }
         cloudListeningEnabled = defaults.object(forKey: localKey(Key.cloudListening)) as? Bool ?? true
         caregiverName = defaults.string(forKey: localKey(Key.caregiverName)) ?? ""
         caregiverPhone = defaults.string(forKey: localKey(Key.caregiverPhone)) ?? ""
@@ -172,8 +185,13 @@ public final class AppSettings: ObservableObject {
            let saved = try? JSONDecoder().decode(MedicationSchedule.self, from: data) {
             schedule = saved
         } else {
-            schedule = MedicationSchedule(medicationName: "Levodopa", doseTimes: [])
+            schedule = MedicationSchedule(medicationName: "", doseTimes: [])
         }
+        if let data = defaults.data(forKey: localKey("medications")),
+           let plan = try? JSONDecoder().decode([MedicationSchedule].self, from: data) {
+            medications = plan
+            schedule = plan.first ?? MedicationSchedule(medicationName: "", doseTimes: [])
+        } else { medications = schedule.isEmpty && schedule.medicationName.isEmpty ? [] : [schedule] }
         if let move = profile.pendingServerMove {
             do {
                 try sync.relocateDestination(from: move.from, to: move.to, owner: move.owner)
@@ -223,6 +241,25 @@ public final class AppSettings: ObservableObject {
         var url = backendBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         while url.hasSuffix("/") { url.removeLast() }
         return url
+    }
+
+    public func saveMedicationPlan(_ plan: [MedicationSchedule]) throws {
+        let normalized = plan.map { MedicationSchedule(medicationName: $0.medicationName.trimmingCharacters(in: .whitespacesAndNewlines), doseTimes: Array(Set($0.doseTimes)).sorted(), calendar: $0.calendar) }
+        guard normalized.allSatisfy({ !$0.medicationName.isEmpty && $0.doseTimes.allSatisfy { (0..<24).contains($0.hour) && (0..<60).contains($0.minute) } }),
+              Set(normalized.map { $0.medicationName.lowercased() }).count == normalized.count else {
+            throw NSError(domain: "MedicationPlan", code: 1, userInfo: [NSLocalizedDescriptionKey: "Give each medication a different name and valid reminder times."])
+        }
+        let data = try JSONEncoder().encode(normalized)
+        defaults.set(data, forKey: scoped("medications"))
+        updatingMedicationPlan = true
+        medications = normalized
+        schedule = normalized.first ?? MedicationSchedule(medicationName: "", doseTimes: [])
+        updatingMedicationPlan = false
+    }
+
+    public func selectMedication(named name: String) {
+        guard let chosen = medications.first(where: { $0.medicationName == name }) else { return }
+        try? saveMedicationPlan([chosen] + medications.filter { $0.medicationName != name })
     }
 
     private func scoped(_ key: String) -> String { "cadence.profile.\(profile.id).\(key)" }

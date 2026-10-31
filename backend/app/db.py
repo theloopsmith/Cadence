@@ -230,6 +230,17 @@ CREATE TABLE IF NOT EXISTS users (
     created_at_utc TEXT NOT NULL
 );
 
+-- Reservations count as failed attempts until successful verification. This
+-- budget is shared by every worker using the same database and survives restart.
+CREATE TABLE IF NOT EXISTS login_attempts (
+    username_hash TEXT PRIMARY KEY,
+    attempts INTEGER NOT NULL,
+    locked_until REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    revision TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_expiry ON login_attempts(expires_at);
+
 -- 8. Voice Hypophonia Logs
 CREATE TABLE IF NOT EXISTS voice_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

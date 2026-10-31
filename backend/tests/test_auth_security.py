@@ -1,6 +1,12 @@
 """Login, tokens, roles, and the demo-only paths."""
 
 import time
+import os
+import subprocess
+import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import jwt
 import pytest
@@ -8,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from app import auth
 from app.config import settings
-from app.db import fetch_one_sync, init_db_sync
+from app.db import execute_write_sync, fetch_one_sync, init_db_sync
 from app.main import app
 
 
@@ -106,6 +112,79 @@ def test_repeated_failures_lock_the_account_for_a_while(server):
     locked = _login(server, "dana", "correct horse battery staple")
     assert locked.status_code == 429
     assert "minutes" in locked.json()["message"]
+
+
+def test_lockout_survives_database_reinitialization_and_fresh_process(server):
+    for _ in range(auth.MAX_FAILED_ATTEMPTS):
+        with pytest.raises(auth.AuthError):
+            auth.authenticate_sync("dana", "wrong")
+    init_db_sync()
+    script = """
+import sys
+from app.config import settings
+from app import auth
+settings.sqlite_db_path = sys.argv[1]
+settings.sqlite_encryption_key = ''
+try:
+    auth.authenticate_sync('dana', 'correct horse battery staple')
+except auth.AuthError as error:
+    assert error.locked
+    print('locked')
+else:
+    raise AssertionError('restart lost the login budget')
+"""
+    env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1]))
+    result = subprocess.run([sys.executable, "-c", script, settings.sqlite_db_path],
+                            env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "locked"
+
+
+def test_parallel_logins_cannot_exceed_attempt_budget(server):
+    def attempt(_):
+        try:
+            auth.authenticate_sync("dana", "wrong")
+        except auth.AuthError as error:
+            return "locked" if error.locked else "wrong"
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        outcomes = list(pool.map(attempt, range(12)))
+    assert outcomes.count("wrong") == auth.MAX_FAILED_ATTEMPTS
+    assert outcomes.count("locked") == 12 - auth.MAX_FAILED_ATTEMPTS
+
+
+def test_success_resets_budget_and_expired_locks_recover(server):
+    for _ in range(auth.MAX_FAILED_ATTEMPTS - 1):
+        assert _login(server, "dana", "wrong").status_code == 401
+    assert _login(server, "dana", "correct horse battery staple").status_code == 200
+    assert fetch_one_sync("SELECT COUNT(*) AS n FROM login_attempts")["n"] == 0
+    for _ in range(auth.MAX_FAILED_ATTEMPTS):
+        assert _login(server, "dana", "wrong").status_code == 401
+    execute_write_sync("UPDATE login_attempts SET expires_at=?", (time.time() - 1,))
+    assert _login(server, "dana", "correct horse battery staple").status_code == 200
+
+
+def test_older_success_cannot_clear_a_newer_lockout(server, monkeypatch):
+    started, release = threading.Event(), threading.Event()
+    verify = auth.verify_password
+    def delayed_verify(password, stored):
+        if password == "correct horse battery staple":
+            started.set()
+            assert release.wait(5)
+        return verify(password, stored)
+    monkeypatch.setattr(auth, "verify_password", delayed_verify)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        old_login = pool.submit(auth.authenticate_sync, "dana", "correct horse battery staple")
+        try:
+            assert started.wait(5)
+            for _ in range(auth.MAX_FAILED_ATTEMPTS - 1):
+                with pytest.raises(auth.AuthError):
+                    auth.authenticate_sync("dana", "wrong")
+        finally:
+            release.set()
+        with pytest.raises(auth.AuthError) as rejected:
+            old_login.result(timeout=5)
+        assert rejected.value.locked
+    assert _login(server, "dana", "correct horse battery staple").status_code == 429
 
 
 # ---------------------------------------------------------------- tokens

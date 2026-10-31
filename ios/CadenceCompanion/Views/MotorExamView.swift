@@ -14,6 +14,7 @@ public struct MotorExamView: View {
     @State private var voiceSecondsRemaining: Int = 5
     @State private var isVoiceCountingDown = false
     @State private var voiceTimer: Timer?
+    @State private var voiceErrorMessage: String?
 
     @State private var walkSecondsRemaining: Int = 10
     @State private var isWalkCountingDown = false
@@ -21,6 +22,7 @@ public struct MotorExamView: View {
     @State private var walkRecorder = WalkTestRecorder()
     @State private var walkSinkToken: UUID?
     @State private var startedMotionForWalk = false
+    @State private var walkErrorMessage: String?
 
     @State private var automaticVoiceCapture = false
     @State private var showGlassesCamera = false
@@ -196,6 +198,10 @@ public struct MotorExamView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
 
+            if let error = voiceErrorMessage {
+                InlineNotice(text: error, color: CadenceTheme.caution, systemName: "exclamationmark.triangle.fill")
+            }
+
             VStack(spacing: 12) {
                 Text("\(voiceSecondsRemaining)")
                     .font(.system(size: 64, weight: .bold, design: .rounded))
@@ -213,10 +219,15 @@ public struct MotorExamView: View {
                 }) {
                     Label("Start Voice Test", systemImage: "mic.fill")
                 }
-                Button("Skip voice this time") { exam.skipVoice() }
+                Button("Skip voice this time") {
+                    cleanUpTimers()
+                    voiceErrorMessage = nil
+                    exam.skipVoice()
+                }
             } else {
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
                     cleanUpTimers()
+                    voiceErrorMessage = nil
                     exam.skipVoice()
                 }) {
                     Text("Skip voice this time")
@@ -235,11 +246,18 @@ public struct MotorExamView: View {
             startVoiceStep()
             app.companion.say("First, we'll record a steady ah for five seconds. Say ready, then hold the sound until I speak again.")
         case (.task1PromptedVoice, .start): if !isVoiceCountingDown { beginVoiceCountdown() }
-        case (.task1PromptedVoice, .skip): cleanUpTimers(); exam.skipVoice()
+        case (.task1PromptedVoice, .skip):
+            cleanUpTimers()
+            voiceErrorMessage = nil
+            exam.skipVoice()
         case (.task2PromptedHandwriting, .capture), (.task2PromptedHandwriting, .start): automaticVoiceCapture = true; showGlassesCamera = true
-        case (.task2PromptedHandwriting, .skip): exam.measurements.handwritingStatus = .skipped; exam.advanceToTimedWalk()
+        case (.task2PromptedHandwriting, .skip): exam.skipHandwriting()
         case (.task3PromptedTimedWalk, .start): if !isWalkCountingDown { beginWalkCountdown() }
-        case (.task3PromptedTimedWalk, .skip): exam.measurements.walkStatus = .skipped; saveExam()
+        case (.task3PromptedTimedWalk, .skip):
+            cleanUpTimers()
+            walkErrorMessage = nil
+            exam.skipTimedWalk()
+            saveExam()
         case (.task3PromptedTimedWalk, .finish): if isWalkCountingDown { finishWalkTest() }
         case (.completed, .finish): dismiss()
         default: app.companion.say("You can say ready, skip this step, or cancel.")
@@ -249,12 +267,14 @@ public struct MotorExamView: View {
     private func startVoiceStep() {
         voiceSecondsRemaining = 5
         isVoiceCountingDown = false
+        voiceErrorMessage = nil
         handwritingStatus = nil
         isAnalyzingHandwriting = false
         exam.startExam()
     }
 
     private func beginVoiceCountdown() {
+        voiceErrorMessage = nil
         isVoiceCountingDown = true
         voiceSecondsRemaining = 5
         let startingSession = exam.examSessionID
@@ -276,8 +296,18 @@ public struct MotorExamView: View {
                         timer.invalidate()
                         voiceTimer = nil
                         isVoiceCountingDown = false
-                        exam.advanceToHandwriting()
-                        Haptics.success()
+                        let count = exam.voiceMonitor.lastVowelSampleCount
+                        if count < 2 {
+                            // Give wearer clear feedback and a chance to retry or skip
+                            exam.voiceMonitor.stopLiveMonitoring()
+                            app.companion.setPaused("Voice measurement", false)
+                            voiceSecondsRemaining = 5
+                            voiceErrorMessage = "Couldn't detect enough voice sound. Tap Start Voice Test to try again, or skip this step."
+                        } else {
+                            voiceErrorMessage = nil
+                            exam.advanceToHandwriting()
+                            Haptics.success()
+                        }
                     }
                 }
             }
@@ -340,8 +370,7 @@ public struct MotorExamView: View {
                     Button("Use iPhone camera instead") { showCamera = true }
                 }
                 GuardedButton(size: .big, style: .tinted(.secondary), action: {
-                    exam.measurements.handwritingStatus = .skipped
-                    exam.advanceToTimedWalk()
+                    exam.skipHandwriting()
                 }) {
                     Text("Skip handwriting this time")
                 }
@@ -363,6 +392,7 @@ public struct MotorExamView: View {
                     isAnalyzingHandwriting = false
                     if result.measured, let decay = result.opencvDecayPct {
                         exam.measurements.handwritingOpencvDecayPct = decay
+                        exam.measurements.handwritingSamDecayPct = result.sam31DecayPct
                         exam.measurements.handwritingMeasured = true
                         Haptics.success()
                         exam.advanceToTimedWalk()
@@ -392,6 +422,10 @@ public struct MotorExamView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
 
+            if let error = walkErrorMessage {
+                InlineNotice(text: error, color: CadenceTheme.caution, systemName: "exclamationmark.triangle.fill")
+            }
+
             VStack(spacing: 12) {
                 Text("\(walkSecondsRemaining)")
                     .font(.system(size: 64, weight: .bold, design: .rounded))
@@ -411,7 +445,8 @@ public struct MotorExamView: View {
                 }
                 Button("Skip walk and save") {
                     cleanUpTimers()
-                    exam.measurements.walkStatus = .skipped
+                    walkErrorMessage = nil
+                    exam.skipTimedWalk()
                     saveExam()
                 }
             } else {
@@ -426,6 +461,7 @@ public struct MotorExamView: View {
     }
 
     private func beginWalkCountdown() {
+        walkErrorMessage = nil
         isWalkCountingDown = true
         walkSecondsRemaining = 10
         let recorder = WalkTestRecorder()
@@ -456,12 +492,18 @@ public struct MotorExamView: View {
         let result = walkRecorder.finish()
         // A sparse/interrupted stream is not a zero-valued walking result.
         let measured = walkRecorder.hasUsableRecording
-        exam.measurements.walkCadenceSpm = measured ? result.cadenceSpm : 0
-        exam.measurements.walkMeanFI = measured ? result.meanFreezeIndex : 0
-        exam.measurements.walkFogCount = measured ? result.fogCount : 0
-        exam.measurements.walkMeasured = measured
-
-        saveExam()
+        if measured {
+            walkErrorMessage = nil
+            exam.measurements.walkCadenceSpm = result.cadenceSpm
+            exam.measurements.walkMeanFI = result.meanFreezeIndex
+            exam.measurements.walkFogCount = result.fogCount
+            exam.measurements.walkMeasured = true
+            saveExam()
+        } else {
+            // Let the wearer retry or skip and save
+            walkSecondsRemaining = 10
+            walkErrorMessage = "Couldn't record enough continuous walking motion (at least 3 seconds). Tap Start 10s Walk to try again, or skip and save."
+        }
     }
 
     private func saveExam() {
@@ -558,8 +600,11 @@ public struct MotorExamView: View {
     private func cleanUpTimers() {
         voiceTimer?.invalidate()
         voiceTimer = nil
+        isVoiceCountingDown = false
         walkTimer?.invalidate()
         walkTimer = nil
+        isWalkCountingDown = false
         stopWalkRecording()
+        app.companion.setPaused("Voice measurement", false)
     }
 }

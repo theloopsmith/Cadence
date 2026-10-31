@@ -14,6 +14,7 @@ public final class FoGCalibrationController: ObservableObject {
     @Published public private(set) var problem: String?
     @Published public private(set) var recordedCaptures: [LabeledCapture] = []
 
+    @Published public private(set) var targetSource: CaptureSource = .phoneRecording
     public let store: LabeledCaptureStore
     private let detector: FoGDetector
     private let calibrator = FoGCalibrator()
@@ -24,18 +25,20 @@ public final class FoGCalibrationController: ObservableObject {
     }
 
     /// Loads recordings, picks a source, calibrates, and applies the result.
-    public func recalibrate() {
+    public func recalibrate(for target: CaptureSource? = nil) {
+        if let target { targetSource = target }
         let recorded: [LabeledCapture]
+        var loadProblem: String?
         do {
             recorded = try store.loadAll()
         } catch {
             recorded = []
-            problem = "Saved recordings could not be read."
+            loadProblem = "Saved recordings could not be read. Using built-in reference motion."
         }
         recordedCaptures = recorded
 
         let reference = LabeledCaptureLibrary.referenceCaptures()
-        let chosen = FoGCalibrationSource.choose(recorded: recorded, reference: reference)
+        let chosen = FoGCalibrationSource.choose(recorded: recorded, reference: reference, preferredSource: targetSource)
 
         if chosen.source != .syntheticReference {
             do {
@@ -48,9 +51,9 @@ public final class FoGCalibrationController: ObservableObject {
                     ?? "Your recordings could not be used for calibration."
             }
         } else if !recorded.isEmpty {
-            problem = "Record walking, a freeze, and sitting still to calibrate from your own motion."
+            problem = "Calibration needs walking, stillness and a labeled freeze clip from the same sensor. Using built-in reference motion until suitable recordings are available."
         } else {
-            problem = nil
+            problem = loadProblem
         }
 
         do {
@@ -65,8 +68,12 @@ public final class FoGCalibrationController: ObservableObject {
     }
 
     public func deleteRecording(id: String) {
-        try? store.remove(id: id)
-        recalibrate()
+        do {
+            try store.remove(id: id)
+            recalibrate()
+        } catch {
+            problem = "The recording could not be deleted. Your saved calibration is unchanged."
+        }
     }
 
     private func apply(_ result: FoGCalibrationResult, source: CaptureSource) {
@@ -80,11 +87,11 @@ public final class FoGCalibrationController: ObservableObject {
     public var sourceDescription: String {
         switch source {
         case .syntheticReference:
-            return "Built-in reference motion. Record your own walking, a freeze, and sitting still to personalise."
+            return "Built-in synthetic reference motion. Personal motion has not been validated."
         case .phoneRecording:
-            return "Your iPhone recordings (\(recordedCaptures.count) clips)."
+            return "Your iPhone recordings (\(recordedCaptures.filter { $0.source == .phoneRecording }.count) clips)."
         case .glassesRecording:
-            return "Your glasses recordings (\(recordedCaptures.count) clips)."
+            return "Your glasses recordings (\(recordedCaptures.filter { $0.source == .glassesRecording }.count) clips)."
         }
     }
 }
@@ -92,6 +99,8 @@ public final class FoGCalibrationController: ObservableObject {
 /// Records a labeled stretch of live motion for calibration.
 @MainActor
 public final class LabeledCaptureRecorder: ObservableObject {
+    @Published public private(set) var saveError: String?
+    @Published public private(set) var pendingCapture: LabeledCapture?
     @Published public private(set) var isRecording = false
     @Published public private(set) var label: GaitLabel?
     @Published public private(set) var sampleCount = 0
@@ -101,6 +110,8 @@ public final class LabeledCaptureRecorder: ObservableObject {
     private let store: LabeledCaptureStore
     private let source: CaptureSource
     private var samples: [IMUSample] = []
+    private var recordingStreamID: UUID?
+    private var recordingSource: CaptureSource?
     private var sinkToken: UUID?
 
     public init(motion: MotionFeed, store: LabeledCaptureStore = .default, source: CaptureSource) {
@@ -110,14 +121,22 @@ public final class LabeledCaptureRecorder: ObservableObject {
     }
 
     public func start(label: GaitLabel) {
-        guard !isRecording else { return }
+        guard !isRecording, pendingCapture == nil else { return }
+        saveError = nil
         self.label = label
+        recordingStreamID = motion.streamID
+        recordingSource = motion.activeCaptureSource ?? source
         samples.removeAll()
         sampleCount = 0
         elapsedSec = 0
         isRecording = true
         sinkToken = motion.addSink { [weak self] sample in
             guard let self, self.isRecording else { return }
+            guard self.recordingStreamID == self.motion.streamID else {
+                self.cancel()
+                self.saveError = "Motion source changed. The incomplete recording was discarded; start a new recording."
+                return
+            }
             self.samples.append(sample)
             self.sampleCount = self.samples.count
             if let first = self.samples.first {
@@ -130,6 +149,11 @@ public final class LabeledCaptureRecorder: ObservableObject {
     @discardableResult
     public func stopAndSave() -> LabeledCapture? {
         guard isRecording, let label else { return nil }
+        guard recordingStreamID == motion.streamID else {
+            cancel()
+            saveError = "Motion source changed. The incomplete recording was discarded; start a new recording."
+            return nil
+        }
         isRecording = false
         if let sinkToken { motion.removeSink(sinkToken) }
         sinkToken = nil
@@ -150,13 +174,28 @@ public final class LabeledCaptureRecorder: ObservableObject {
                 gx: $0.gx, gy: $0.gy, gz: $0.gz, pitchDeg: $0.pitchDeg, rollDeg: $0.rollDeg
             )
         }
-        let capture = LabeledCapture(label: label, source: source, sampleRateHz: rate, samples: rebased)
+        let capture = LabeledCapture(label: label, source: recordingSource ?? source, sampleRateHz: rate, samples: rebased)
+        pendingCapture = capture
+        return retrySaving()
+    }
+
+    @discardableResult
+    public func retrySaving() -> LabeledCapture? {
+        guard let capture = pendingCapture else { return nil }
         do {
             try store.save(capture)
+            pendingCapture = nil
+            saveError = nil
+            return capture
         } catch {
+            saveError = "Recording could not be saved. It is kept in memory while Cadence stays open. Retry saving or discard it."
             return nil
         }
-        return capture
+    }
+
+    public func discardPendingRecording() {
+        pendingCapture = nil
+        saveError = nil
     }
 
     public func cancel() {

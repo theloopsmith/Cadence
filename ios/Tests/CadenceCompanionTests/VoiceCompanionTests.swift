@@ -6,6 +6,13 @@ private final class CompanionEcho: EchoGuarding {
     func isInEchoWindow(at date: Date) -> Bool { active }
 }
 
+private final class UnavailableTranscript: TranscriptListening {
+    var isListening: Bool { false }
+    var failureReason: String? { "The glasses microphone has no usable audio input." }
+    func startListening(onTranscript: @escaping (String) -> Void) {}
+    func stopListening() {}
+}
+
 private final class DelayedReleaseTranscript: TranscriptListening {
     var isListening = false
     var waitsForMicrophoneReleaseBeforeSpeech: Bool { true }
@@ -23,6 +30,37 @@ private final class DelayedReleaseTranscript: TranscriptListening {
 
 @MainActor
 final class VoiceCompanionTests: XCTestCase {
+    func testStartupFailureKeepsActualMicrophoneReasonAndRetryPreference() async throws {
+        let voice = VoiceCompanion(listener: UnavailableTranscript(), speaker: SpokenLog(), echo: CompanionEcho(),
+                                   promptDelaySeconds: 0.001, listenerHealthDelaySeconds: 0.005)
+        voice.start()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertFalse(voice.isEnabled)
+        XCTAssertTrue(voice.preservesVoicePreferenceOnStop)
+        XCTAssertEqual(voice.status, "The glasses microphone has no usable audio input.")
+    }
+
+    func testStartingWhilePausedExplainsPauseAndResumesWhenReleased() async throws {
+        let listener = MockTranscriptListener()
+        let voice = VoiceCompanion(listener: listener, speaker: SpokenLog(), echo: CompanionEcho(), promptDelaySeconds: 0.001)
+        defer { voice.stop() }
+        voice.setPaused("App in background", true)
+        voice.start()
+        XCTAssertEqual(voice.status, "Voice paused: App in background")
+        XCTAssertEqual(listener.startCount, 0)
+        voice.setPaused("App in background", false)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertTrue(listener.isListening)
+    }
+    func testHandoffAndMicrophoneFailureCanPreserveSetupButExplicitStopDoesNot() {
+        let (voice, _, _) = make()
+        voice.start()
+        voice.submit("let me use Meta")
+        XCTAssertTrue(voice.preservesVoicePreferenceOnStop)
+        voice.start()
+        voice.submit("stop listening")
+        XCTAssertFalse(voice.preservesVoicePreferenceOnStop)
+    }
     func testAReplyDroppedByWalkingCuesIsReportedNotShownAsSpeaking() async {
         let (voice, log, _) = make()
         voice.start()
@@ -126,6 +164,29 @@ final class VoiceCompanionTests: XCTestCase {
         voice.start(); voice.stop(); voice.submit("start a motor exam")
         XCTAssertNil(voice.destination)
         XCTAssertFalse(voice.isEnabled)
+    }
+
+    func testCancelingConfirmationDoesNotCancelCurrentTask() {
+        let (voice, _, _) = make(); defer { voice.stop() }
+        voice.start()
+        voice.enterFlow(id: UUID(), destination: .motor, step: .handwriting)
+        let previousAction = voice.actionID
+        voice.submit("call my caregiver")
+        voice.submit("cancel")
+        XCTAssertEqual(voice.actionID, previousAction)
+        XCTAssertEqual(voice.context, .motor)
+    }
+
+    func testCameraCancelKeepsOriginalActionContextAfterCameraCloses() {
+        let (voice, _, _) = make(); defer { voice.stop() }
+        let motor = UUID(), camera = UUID()
+        voice.start()
+        voice.enterFlow(id: motor, destination: .motor, step: .handwriting)
+        voice.enterFlow(id: camera, destination: .camera, step: .photoReview)
+        voice.submit("cancel")
+        voice.leaveFlow(id: camera)
+        XCTAssertEqual(voice.context, .motor)
+        XCTAssertEqual(voice.actionContext, .camera)
     }
 
     func testConfirmationExpiryCannotBeRevivedByALateYes() async throws {

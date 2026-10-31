@@ -19,6 +19,10 @@ public final class MotionFeed: ObservableObject {
     /// Which device the running stream comes from ("iPhone" or the glasses' name).
     @Published public private(set) var activeSourceLabel: String?
 
+    public private(set) var activeCaptureSource: CaptureSource?
+    public var streamID: UUID { sourceGeneration }
+    public var onSourceWillStart: ((CaptureSource) -> Void)?
+
     public let phoneSource = PhoneMotionSource()
     private var source: MotionSource?
     private var engine: LiveEdgeEngine?
@@ -113,6 +117,7 @@ public final class MotionFeed: ObservableObject {
     public func start(
         source newSource: MotionSource,
         label: String,
+        captureSource: CaptureSource = .phoneRecording,
         location: @escaping () -> LocationCoordinate?
     ) -> Bool {
         guard engine != nil else {
@@ -121,6 +126,8 @@ public final class MotionFeed: ObservableObject {
         }
         if let source, source === newSource, source.isActive, health != .stale { return true }
         source?.stop()
+        activeCaptureSource = captureSource
+        onSourceWillStart?(captureSource)
         health = .starting
         discardStaleMotion()
         let generation = UUID()
@@ -169,6 +176,7 @@ public final class MotionFeed: ObservableObject {
         discardStaleMotion()
         isFoGActive = false
         activeSourceLabel = nil
+        activeCaptureSource = nil
         status = "Protection is off"
     }
 

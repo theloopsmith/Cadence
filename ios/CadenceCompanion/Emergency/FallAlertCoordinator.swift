@@ -117,6 +117,7 @@ public final class RecordingPhoneDialer: PhoneDialer {
 public final class FallAlertCoordinator: ObservableObject {
     @Published public private(set) var phase: FallAlertPhase = .idle
     @Published public var persistenceWarning: String?
+    @Published public private(set) var checkInInputUnavailable = false
     @Published public private(set) var lastOutcome: String?
 
     /// Caregiver number offered as a one-tap call on the SOS screen. Falls back
@@ -253,6 +254,7 @@ public final class FallAlertCoordinator: ObservableObject {
     /// Called when `FallDetector` completes Stage 3. Opens the check-in window
     /// and starts the countdown that escalates on silence.
     public func beginCheckIn(eventUUID: String, now: Date = Date()) {
+        checkInInputUnavailable = false
         activeDataGeneration = sync.currentDataGeneration
         persistenceWarning = sync.persistenceError?.message
         checkInTask?.cancel()
@@ -272,7 +274,7 @@ public final class FallAlertCoordinator: ObservableObject {
         audio.checkInActive = true
         // Configure the two-way session first, then ask: a prompt spoken across
         // the playback-to-record switch is the one sentence that must be heard.
-        _ = audio.prepareMicrophoneSession(owner: .checkIn)
+        if !audio.prepareMicrophoneSession(owner: .checkIn) { checkInInputUnavailable = true }
         audio.speakPrompt(FallDetector.checkInPrompt, priority: 0)
 
         let window = checkInWindow
@@ -288,6 +290,10 @@ public final class FallAlertCoordinator: ObservableObject {
         }
 
         let listener = speechListener
+        listener.onInputFailure = { [weak self] in
+            guard let self, case let .checkIn(active, _) = self.phase, active == eventUUID else { return }
+            self.checkInInputUnavailable = true
+        }
         listener.startListening(
             onTranscriptUpdate: { _, _ in },
             onEarlyResolution: { [weak self, weak listener] earlyOutcome in

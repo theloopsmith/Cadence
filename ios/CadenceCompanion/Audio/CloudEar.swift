@@ -22,6 +22,14 @@ public final class CloudEar: @unchecked Sendable {
     private let deliverQueue: DispatchQueue
 
     private let lock = NSLock()
+    // Only admission and small snapshots use the lock. PCM work stays on the
+    // serial worker, and producers never wait for resampling or WAV encoding.
+    let processingQueue = DispatchQueue(label: "com.cadence.cloud-ear", qos: .userInitiated)
+    private var queuedBuffers = 0
+    private var queuedSeconds = 0.0
+    private var generation = 0
+    private var bufferedDuration = 0.0
+    private var bufferGeneration = -1
     private var buffer: [Int16] = []
     private var newSinceSend = 0
     private var inFlight = false
@@ -45,27 +53,59 @@ public final class CloudEar: @unchecked Sendable {
 
     public var bufferedSeconds: Double {
         lock.lock(); defer { lock.unlock() }
-        return Double(buffer.count) / Self.sampleRate
+        return bufferedDuration
     }
 
-    /// Feeds one microphone buffer (mono, -1…1). Safe from the audio thread.
+    /// Enqueues a copied mono buffer. Admission is bounded to eight buffers and
+    /// six seconds of PCM; overload discards the incomplete utterance rather
+    /// than joining speech across a missing segment.
     public func feed(samples: [Float], sampleRate: Double, echoActive: Bool = false) {
+        guard sampleRate.isFinite, sampleRate >= 8000, sampleRate <= 192000 else { return }
+        let duration = Double(samples.count) / sampleRate
         lock.lock()
         defer { lock.unlock() }
         guard !stopped else { return }
-        if echoActive {
-            // The phone's own voice: drop it so it is never sent.
+        if echoActive || queuedBuffers >= 8 || queuedSeconds + duration > 6 {
+            generation += 1
+            bufferedDuration = 0
+            return
+        }
+        guard !samples.isEmpty else { return }
+        let generation = self.generation
+        queuedBuffers += 1
+        queuedSeconds += duration
+        // Submit while holding admission's short lock so producer order is kept.
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            defer {
+                self.lock.lock()
+                self.queuedBuffers -= 1
+                self.queuedSeconds = max(0, self.queuedSeconds - duration)
+                self.lock.unlock()
+            }
+            self.process(samples: samples, sampleRate: sampleRate, generation: generation)
+        }
+    }
+
+    private func process(samples: [Float], sampleRate: Double, generation: Int) {
+        lock.lock()
+        let current = !stopped && self.generation == generation
+        lock.unlock()
+        guard current else { return }
+        if bufferGeneration != generation {
             buffer.removeAll(keepingCapacity: true)
             newSinceSend = 0
-            return
+            bufferGeneration = generation
         }
         let converted = Self.resample(samples, from: sampleRate)
         buffer.append(contentsOf: converted)
-        if buffer.count > windowSamples {
-            buffer.removeFirst(buffer.count - windowSamples)
-        }
+        if buffer.count > windowSamples { buffer.removeFirst(buffer.count - windowSamples) }
         newSinceSend += converted.count
-        guard newSinceSend >= strideSamples, !inFlight else { return }
+        lock.lock()
+        let stillCurrent = !stopped && self.generation == generation
+        if stillCurrent { bufferedDuration = Double(buffer.count) / Self.sampleRate }
+        lock.unlock()
+        guard stillCurrent, newSinceSend >= strideSamples, !inFlight else { return }
         let window = buffer
         let peak = window.reduce(Int16(0)) { max($0, $1 == Int16.min ? Int16.max : abs($1)) }
         guard Float(peak) / Float(Int16.max) >= speechThreshold else {
@@ -77,29 +117,36 @@ public final class CloudEar: @unchecked Sendable {
         let wav = Self.wav(window)
         let transcribe = self.transcribe
         Task.detached { [weak self] in
+            guard let self else { return }
+            guard self.isCurrent(generation) else { self.finished(with: nil, generation: generation); return }
             let text = await transcribe(wav)
-            self?.finished(with: text)
+            self.finished(with: text, generation: generation)
         }
+    }
+
+    private func isCurrent(_ generation: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return !stopped && self.generation == generation
     }
 
     public func stop() {
         lock.lock()
         stopped = true
-        buffer.removeAll()
+        generation += 1
+        bufferedDuration = 0
         lock.unlock()
+        processingQueue.async { [weak self] in self?.buffer.removeAll() }
     }
 
-    private func finished(with text: String?) {
-        lock.lock()
-        inFlight = false
-        let deliver = !stopped
-        lock.unlock()
-        guard deliver, let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
-        let callback = onTranscript
+    private func finished(with text: String?, generation: Int) {
+        processingQueue.async { [weak self] in self?.inFlight = false }
+        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
         deliverQueue.async { [weak self] in
             guard let self else { return }
-            self.lock.lock(); let stillOn = !self.stopped; self.lock.unlock()
-            if stillOn { callback(text) }
+            self.lock.lock()
+            let current = !self.stopped && self.generation == generation
+            self.lock.unlock()
+            if current { self.onTranscript(text) }
         }
     }
 
@@ -107,7 +154,7 @@ public final class CloudEar: @unchecked Sendable {
 
     /// Linear resampling to 16 kHz with conversion to 16-bit integers.
     static func resample(_ input: [Float], from rate: Double) -> [Int16] {
-        guard !input.isEmpty, rate > 0 else { return [] }
+        guard !input.isEmpty, rate.isFinite, rate >= 8000, rate <= 192000 else { return [] }
         let ratio = rate / sampleRate
         let count = Int(Double(input.count) / ratio)
         var out = [Int16]()
@@ -118,7 +165,7 @@ public final class CloudEar: @unchecked Sendable {
             let upper = min(lower + 1, input.count - 1)
             let fraction = Float(position - Double(lower))
             let value = input[lower] + (input[upper] - input[lower]) * fraction
-            out.append(Int16(max(-1, min(1, value)) * Float(Int16.max)))
+            out.append(value.isFinite ? Int16(max(-1, min(1, value)) * Float(Int16.max)) : 0)
         }
         return out
     }

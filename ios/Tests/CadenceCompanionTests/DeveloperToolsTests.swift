@@ -3,6 +3,106 @@ import XCTest
 
 @MainActor
 final class DeveloperToolsTests: XCTestCase {
+    func testLegacyMedicationMigratesAndMultipleMedicationPlanSurvivesReload() throws {
+        let suite = "medications-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let profile = DeviceProfile(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(suite))
+        let sync = EventSyncManager(databasePath: NSTemporaryDirectory() + "\(suite).sqlite", startPeriodicDrain: false)
+        let original = MedicationSchedule(medicationName: "First", doseTimes: [DoseTime(hour: 8, minute: 10)])
+        defaults.set(try JSONEncoder().encode(original), forKey: "cadence.profile.\(profile.id).cadence.medicationSchedule")
+        let settings = AppSettings(defaults: defaults, sync: sync, profile: profile)
+        XCTAssertEqual(settings.medications, [original])
+        try settings.saveMedicationPlan([original, MedicationSchedule(medicationName: "Second", doseTimes: [DoseTime(hour: 9, minute: 5)])])
+        settings.selectMedication(named: "Second")
+        let reopened = AppSettings(defaults: defaults, sync: sync, profile: profile)
+        XCTAssertEqual(reopened.medications.count, 2)
+        XCTAssertEqual(reopened.schedule.medicationName, "Second")
+        XCTAssertEqual(reopened.medications.last, original)
+    }
+    func testMultipleMedicationsKeepDoseHistoryAndPhotosSeparate() throws {
+        let (app, _) = makeApp()
+        let time = DoseTime(hour: 8, minute: 0)
+        try app.settings.saveMedicationPlan([
+            MedicationSchedule(medicationName: "First medication", doseTimes: [time]),
+            MedicationSchedule(medicationName: "Second medication", doseTimes: [time])
+        ])
+        app.setPillPhoto(Data("first photo".utf8))
+        app.setPillPhoto(Data("second photo".utf8), medicationName: "Second medication")
+        XCTAssertEqual(app.pillPhoto, Data("first photo".utf8))
+        XCTAssertTrue(app.doses.markTaken())
+        XCTAssertEqual(app.doses.takenToday.count, 1)
+        app.settings.selectMedication(named: "Second medication")
+        XCTAssertEqual(app.doses.takenToday.count, 0)
+        XCTAssertEqual(app.pillPhoto, Data("second photo".utf8))
+        XCTAssertFalse(app.doses.canUndo)
+        app.setPillPhoto(Data("second photo".utf8))
+        XCTAssertTrue(app.doses.markTaken())
+        app.settings.selectMedication(named: "First medication")
+        XCTAssertEqual(app.doses.takenToday.count, 1)
+        XCTAssertEqual(app.pillPhoto, Data("first photo".utf8))
+        XCTAssertEqual(app.settings.medications.count, 2)
+    }
+
+    func testMedicationPlanRejectsAmbiguousNamesWithoutChangingSavedPlan() throws {
+        let (app, _) = makeApp()
+        let original = MedicationSchedule(medicationName: "First", doseTimes: [DoseTime(hour: 8, minute: 0)])
+        try app.settings.saveMedicationPlan([original])
+        XCTAssertThrowsError(try app.settings.saveMedicationPlan([original, MedicationSchedule(medicationName: " first ", doseTimes: [])]))
+        XCTAssertEqual(app.settings.medications, [original])
+    }
+    func testVoiceDefaultsToAutomaticButExplicitOffSurvivesReload() {
+        let suite = "voice-setup-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let profile = DeviceProfile(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(suite))
+        let sync = EventSyncManager(databasePath: NSTemporaryDirectory() + "\(suite).sqlite", startPeriodicDrain: false)
+        // An installed phone may still carry false from the old startup flow.
+        defaults.set(false, forKey: "cadence.profile.\(profile.id).voiceCompanionEnabled")
+        let first = AppSettings(defaults: defaults, sync: sync, profile: profile)
+        XCTAssertTrue(first.voiceCompanionEnabled)
+        first.voiceCompanionEnabled = false
+        let reopened = AppSettings(defaults: defaults, sync: sync, profile: profile)
+        XCTAssertFalse(reopened.voiceCompanionEnabled)
+        reopened.voiceCompanionEnabled = true
+        XCTAssertTrue(AppSettings(defaults: defaults, sync: sync, profile: profile).voiceCompanionEnabled)
+    }
+
+    func testVoiceStatusExplainsSetupInsteadOfGenericOff() {
+        let (app, _) = makeApp()
+        XCTAssertTrue(app.settings.voiceCompanionEnabled)
+        XCTAssertNotEqual(app.voiceStatusText, "Voice companion is off")
+        app.companion.stop()
+        XCTAssertEqual(app.voiceStatusText, "Voice is turned off in Settings")
+    }
+
+    func testVoiceStatusKeepsTheActualPauseReason() {
+        let (app, _) = makeApp()
+        app.companion.setPaused("Safety check-in", true)
+        app.companion.start()
+        XCTAssertEqual(app.voiceStatusText, "Voice paused: Safety check-in")
+        app.companion.stop()
+    }
+    func testWalkingSwitchesCalibrationWithGlassesAndPhoneFallback() throws {
+        let (app, _) = makeApp()
+        defer { app.walking.setProtection(enabled: false) }
+        for var clip in LabeledCaptureLibrary.referenceCaptures() {
+            clip.source = .phoneRecording
+            try app.calibration.store.save(clip)
+        }
+        app.calibration.recalibrate(for: .phoneRecording)
+        XCTAssertEqual(app.calibration.source, .phoneRecording)
+        let glasses = MockGlassesDevice(name: "Calibration test glasses", loopSamples: LabeledCaptureLibrary.referenceCaptures()[0].samples)
+        app.glasses.attach(glasses)
+        app.glasses.connect()
+        app.walking.setProtection(enabled: true)
+        XCTAssertEqual(app.motion.activeCaptureSource, .glassesRecording)
+        XCTAssertEqual(app.calibration.targetSource, .glassesRecording)
+        XCTAssertEqual(app.calibration.source, .syntheticReference)
+        app.glasses.disconnect()
+        XCTAssertEqual(app.calibration.targetSource, .phoneRecording)
+        XCTAssertEqual(app.calibration.source, .phoneRecording)
+    }
     private func makeApp(transport: RecordingJSONTransport = RecordingJSONTransport(), defaultToken: String = AppSettings.developmentToken) -> (CadenceAppModel, RecordingJSONTransport) {
         let suite = "dev-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -38,6 +138,17 @@ final class DeveloperToolsTests: XCTestCase {
         app.fallAlert.cancelByUser()
     }
 
+    func testHeyMetaHandoffKeepsHandsFreeSetupWhileVoiceOffDisablesIt() async {
+        let (app, _) = makeApp()
+        app.settings.voiceCompanionEnabled = true
+        await app.useMetaAssistant()
+        XCTAssertTrue(app.isUsingMetaAssistant)
+        XCTAssertTrue(app.settings.voiceCompanionEnabled)
+        app.companion.stop()
+        XCTAssertFalse(app.settings.voiceCompanionEnabled)
+        AudioCueEngine.shared.retryAudio()
+    }
+
     func testMedicationPhotoWriteFailureRetainsPreviousPhotoAndRetriesOriginalBytes() throws {
         let (app, _) = makeApp()
         let original = Data("original photo".utf8)
@@ -54,9 +165,9 @@ final class DeveloperToolsTests: XCTestCase {
         app.retryPillPhotoSave()
         XCTAssertNil(app.photoSaveError)
         XCTAssertEqual(app.pillPhoto, replacement)
-        XCTAssertEqual(app.pillPhotos.load(), replacement)
+        XCTAssertEqual(app.pillPhotos.forMedication(app.settings.schedule.medicationName).load(), replacement)
         app.retryPillPhotoSave()
-        XCTAssertEqual(app.pillPhotos.load(), replacement)
+        XCTAssertEqual(app.pillPhotos.forMedication(app.settings.schedule.medicationName).load(), replacement)
     }
 
     func testAnalysis401RequiresSignInWithoutErasingProfileOrPendingHistory() async {
@@ -88,17 +199,21 @@ final class DeveloperToolsTests: XCTestCase {
         XCTAssertFalse(app.auth.isExpired)
     }
 
-    /// Developer mode is a build or launch decision, not something stored in
-    /// settings where a care partner would find it.
-    func testDeveloperModeComesFromTheBuildNotFromSettings() {
+    func testDeveloperTogglePersistsPerProfileAndCanOverrideLaunchDefault() {
         let (app, _) = makeApp()
-        XCTAssertFalse(app.settings.developerModeEnabled)
-        let defaults = UserDefaults(suiteName: "dev-flag-\(UUID().uuidString)")!
-        let release = AppSettings(defaults: defaults, sync: app.settings.sync, developerMode: false)
-        XCTAssertFalse(release.developerModeEnabled)
-        let debug = AppSettings(defaults: defaults, sync: app.settings.sync, developerMode: true)
-        XCTAssertTrue(debug.developerModeEnabled)
-        XCTAssertNil(defaults.object(forKey: "cadence.developerMode"), "nothing persisted")
+        let suite = "dev-flag-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let profile = app.settings.profile
+        let initial = AppSettings(defaults: defaults, sync: app.settings.sync, developerMode: false, profile: profile)
+        XCTAssertFalse(initial.developerModeEnabled)
+        initial.developerModeEnabled = true
+        let reopened = AppSettings(defaults: defaults, sync: app.settings.sync, developerMode: false, profile: profile)
+        XCTAssertTrue(reopened.developerModeEnabled)
+        reopened.developerModeEnabled = false
+        XCTAssertFalse(AppSettings(defaults: defaults, sync: app.settings.sync, developerMode: true, profile: profile).developerModeEnabled)
+        let otherProfile = DeviceProfile(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString))
+        XCTAssertFalse(AppSettings(defaults: defaults, sync: app.settings.sync, developerMode: false, profile: otherProfile).developerModeEnabled)
     }
 
     func testLaunchKeepsHomeAvailableBeforeSetupAfterOfflineLoginAndAfterSignOut() async {

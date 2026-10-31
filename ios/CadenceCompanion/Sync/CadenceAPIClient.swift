@@ -98,6 +98,7 @@ public struct HandwritingResult: Decodable {
     public let eventUUID: String
     public let measured: Bool
     public let opencvDecayPct: Double?
+    public let sam31DecayPct: Double?
     public let handwritingScore: Double?
     public let micrographiaDetected: Bool
     public let spokenResponse: String
@@ -106,6 +107,7 @@ public struct HandwritingResult: Decodable {
         case eventUUID = "event_uuid"
         case measured
         case opencvDecayPct = "opencv_cc_decay_pct"
+        case sam31DecayPct = "sam_3_1_decay_pct"
         case handwritingScore = "handwriting_score"
         case micrographiaDetected = "micrographia_detected"
         case spokenResponse = "spoken_response"

@@ -316,11 +316,14 @@ public struct FoGCalibrationSource {
 
     /// Recorded data wins when it covers the labels the calibrator needs;
     /// otherwise the shipped reference set is used and shown as such.
-    public static func choose(recorded: [LabeledCapture], reference: [LabeledCapture]) -> FoGCalibrationSource {
-        let recordedLabels = Set(recorded.map(\.label))
+    public static func choose(recorded: [LabeledCapture], reference: [LabeledCapture], preferredSource: CaptureSource? = nil) -> FoGCalibrationSource {
         let required: Set<GaitLabel> = [.walking, .freeze, .still]
-        if required.isSubset(of: recordedLabels), let source = recorded.first?.source {
-            return FoGCalibrationSource(source: source, captures: recorded)
+        let sources = preferredSource.map { [$0] } ?? [.phoneRecording, .glassesRecording]
+        for source in sources where source != .syntheticReference {
+            let matching = recorded.filter { $0.source == source }
+            if required.isSubset(of: Set(matching.map(\.label))) {
+                return FoGCalibrationSource(source: source, captures: matching)
+            }
         }
         return FoGCalibrationSource(source: .syntheticReference, captures: reference)
     }

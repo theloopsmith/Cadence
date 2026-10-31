@@ -76,8 +76,9 @@ public final class WalkTestRecorder {
 
     private func countSteps() -> Int {
         // Dynamic vertical component, smoothed over five samples so sensor
-        // jitter does not read as a footfall.
-        let dynamic = samples.map { $0.ay - 1.0 }
+        // jitter does not read as a footfall. Centered by subtracting mean baseline ay.
+        let meanAy = samples.reduce(0.0) { $0 + $1.ay } / Double(max(1, samples.count))
+        let dynamic = samples.map { $0.ay - meanAy }
         var smoothed: [Double] = []
         smoothed.reserveCapacity(dynamic.count)
         for i in 0..<dynamic.count {

@@ -9,6 +9,14 @@ import UIKit
 struct MedicationSetupView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var voiceFlowID = UUID()
+    @State private var draft: [MedicationSchedule] = []
+    @State private var selected = 0
+    @State private var loaded = false
+    @State private var saveError: String?
+    @State private var newTime = Date()
+    @State private var draftPhotos: [String: Data] = [:]
+    @State private var loadedPhotos: [String: Data] = [:]
+    @State private var removedPhotos: Set<String> = []
     @ObservedObject var app: CadenceAppModel
     @ObservedObject private var settings: AppSettings
     @State private var automaticVoiceCapture = false
@@ -28,27 +36,70 @@ struct MedicationSetupView: View {
     var body: some View {
         NavigationStack {
             Form {
-                nameSection
-                photoSection
-                timesSection
+                Section("Your medications") {
+                    ForEach(Array(draft.enumerated()), id: \.offset) { index, medication in
+                        Button {
+                            selected = index
+                        } label: {
+                            HStack {
+                                Text(medication.medicationName.isEmpty ? "New medication" : medication.medicationName)
+                                Spacer()
+                                if selected == index { Image(systemName: "checkmark") }
+                            }
+                        }
+                    }
+                    Button("Add medication") {
+                        draft.append(MedicationSchedule(medicationName: "", doseTimes: []))
+                        selected = draft.count - 1
+                    }
+                }
+                if draft.indices.contains(selected) {
+                    nameSection
+                    photoSection.disabled(draft[selected].medicationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    timesSection
+                    Button("Remove this medication", role: .destructive) {
+                        draft.remove(at: selected)
+                        selected = max(0, min(selected, draft.count - 1))
+                    }
+                }
+                if let saveError { Text(saveError).foregroundColor(CadenceTheme.caution) }
+                Button("Save medications") { save() }.buttonStyle(PrimaryButtonStyle())
             }
             .navigationTitle("Medication setup")
             .onDisappear { app.companion.leaveFlow(id: voiceFlowID) }
-            .onAppear { app.companion.enterFlow(id: voiceFlowID, destination: .medication, step: .medication) }
+            .onAppear {
+                if !loaded {
+                    draft = settings.medications
+                    for medication in draft {
+                        loadedPhotos[medication.medicationName] = medication.medicationName == settings.schedule.medicationName ? app.pillPhoto : app.pillPhotos.forMedication(medication.medicationName).load()
+                    }
+                    loaded = true
+                }
+                app.companion.enterFlow(id: voiceFlowID, destination: .medication, step: .medication) }
             .onChange(of: app.companion.actionID) { _ in
                 guard app.companion.context == .medication else { return }
-                if app.companion.action == .capture { automaticVoiceCapture = true; showGlassesCamera = true }
-                if app.companion.action == .finish || app.companion.action == .cancel { dismiss() }
+                if app.companion.action == .capture {
+                    if draft.indices.contains(selected), !draft[selected].medicationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        automaticVoiceCapture = true; showGlassesCamera = true
+                    } else { app.companion.say("Add the medication's name first so I can keep its photo with the right medication.") }
+                }
+                if app.companion.action == .finish { save() }
+                if app.companion.action == .cancel { dismiss() }
+            }
+            .interactiveDismissDisabled()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
             }
             .sheet(isPresented: $showGlassesCamera) {
                 GlassesCameraView(glasses: app.glasses, voice: app.companion, captureWhenReady: automaticVoiceCapture, title: "Medication photo") { jpeg in
-                    app.setPillPhoto(jpeg)
+                    stagePhoto(jpeg)
                 }
             }
             .cameraPresentation(
                 isPresented: $showPillCamera,
                 onCapture: { jpeg in
-                    app.setPillPhoto(jpeg)
+                    stagePhoto(jpeg)
                     showPillCamera = false
                 },
                 onCancel: { showPillCamera = false }
@@ -56,9 +107,36 @@ struct MedicationSetupView: View {
         }
     }
 
+    private var currentPhoto: Data? {
+        guard draft.indices.contains(selected) else { return nil }
+        let name = draft[selected].medicationName
+        return draftPhotos[name] ?? (removedPhotos.contains(name) ? nil : loadedPhotos[name])
+    }
+
+    private func stagePhoto(_ data: Data?) {
+        guard draft.indices.contains(selected) else { return }
+        let name = draft[selected].medicationName
+        draftPhotos[name] = data
+        if data == nil { removedPhotos.insert(name) } else { removedPhotos.remove(name) }
+    }
+
+    private func save() {
+        do {
+            try settings.saveMedicationPlan(draft)
+            for medication in draft {
+                let name = medication.medicationName
+                if draftPhotos[name] != nil || removedPhotos.contains(name) {
+                    app.setPillPhoto(draftPhotos[name], medicationName: name.trimmingCharacters(in: .whitespacesAndNewlines))
+                    if let error = app.photoSaveError { saveError = "Medication times are saved. " + error; return }
+                }
+            }
+            dismiss()
+        } catch { saveError = error.localizedDescription }
+    }
+
     private var nameSection: some View {
         Section {
-            TextField("Medication name", text: $settings.schedule.medicationName)
+            TextField("Medication name", text: $draft[selected].medicationName)
                 .frame(minHeight: CadenceTheme.minimumTapHeight)
         } header: {
             Text("Medication")
@@ -71,7 +149,7 @@ struct MedicationSetupView: View {
         Section {
             HStack(spacing: 14) {
                 #if canImport(UIKit)
-                if let data = app.pillPhoto, let image = UIImage(data: data) {
+                if let data = currentPhoto, let image = UIImage(data: data) {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
@@ -82,7 +160,7 @@ struct MedicationSetupView: View {
                 }
                 #endif
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(app.pillPhoto == nil ? "Add a photo of the pill" : "Pill photo")
+                    Text(currentPhoto == nil ? "Add a photo of the pill" : "Pill photo")
                         .font(.headline)
                     Text("Shown on the Today card so the right tablet is easy to recognise.")
                         .font(.footnote)
@@ -92,13 +170,9 @@ struct MedicationSetupView: View {
                 Button("Open glasses camera") { showGlassesCamera = true }
                 .frame(minHeight: CadenceTheme.minimumTapHeight)
             }
-            if let saveError = app.photoSaveError {
-                Text(saveError).foregroundColor(CadenceTheme.caution)
-                Button("Retry saving photo") { app.retryPillPhotoSave() }
-            }
             Button("Use iPhone camera instead") { showPillCamera = true }
-            if app.pillPhoto != nil {
-                Button("Remove pill photo", role: .destructive) { app.setPillPhoto(nil) }
+            if currentPhoto != nil {
+                Button("Remove pill photo", role: .destructive) { stagePhoto(nil) }
                     .frame(minHeight: CadenceTheme.minimumTapHeight)
             }
         } header: {
@@ -108,11 +182,11 @@ struct MedicationSetupView: View {
 
     private var timesSection: some View {
         Section {
-            if settings.schedule.doseTimes.isEmpty {
+            if draft[selected].doseTimes.isEmpty {
                 Text("No times yet. Add one below.")
                     .foregroundColor(.secondary)
             }
-            ForEach(Array(settings.schedule.doseTimes.enumerated()), id: \.element) { index, time in
+            ForEach(Array(draft[selected].doseTimes.enumerated()), id: \.element) { index, time in
                 HStack(spacing: 12) {
                     Text(String(format: "%d:%02d", time.hour, time.minute))
                         .font(.title2.weight(.semibold).monospacedDigit())
@@ -121,9 +195,9 @@ struct MedicationSetupView: View {
                     stepper("−15 min", systemImage: "minus") { adjust(index: index, minutes: -15) }
                     stepper("+15 min", systemImage: "plus") { adjust(index: index, minutes: 15) }
                     Button(role: .destructive) {
-                        var times = settings.schedule.doseTimes
+                        var times = draft[selected].doseTimes
                         times.remove(at: index)
-                        settings.schedule.doseTimes = times
+                        draft[selected].doseTimes = times
                     } label: {
                         Image(systemName: "trash")
                             .frame(width: CadenceTheme.minimumTapHeight, height: CadenceTheme.minimumTapHeight)
@@ -135,6 +209,11 @@ struct MedicationSetupView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
+                DatePicker("Reminder time", selection: $newTime, displayedComponents: .hourAndMinute)
+                Button("Add selected time") {
+                    let calendar = Calendar.current
+                    addTime(DoseTime(hour: calendar.component(.hour, from: newTime), minute: calendar.component(.minute, from: newTime)))
+                }
                 Text("Add a time")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
@@ -147,7 +226,7 @@ struct MedicationSetupView: View {
                         .frame(maxWidth: .infinity, minHeight: CadenceTheme.minimumTapHeight)
                         .buttonStyle(.bordered)
                         .tint(CadenceTheme.accent)
-                        .disabled(settings.schedule.doseTimes.contains(preset))
+                        .disabled(draft[selected].doseTimes.contains(preset))
                     }
                 }
             }
@@ -171,18 +250,18 @@ struct MedicationSetupView: View {
     }
 
     private func adjust(index: Int, minutes delta: Int) {
-        var times = settings.schedule.doseTimes
+        var times = draft[selected].doseTimes
         guard times.indices.contains(index) else { return }
         var total = times[index].minutesFromMidnight + delta
         total = min(max(total, 0), 23 * 60 + 45)
         times[index] = DoseTime(hour: total / 60, minute: total % 60)
-        settings.schedule.doseTimes = times.sorted()
+        draft[selected].doseTimes = times.sorted()
     }
 
     private func addTime(_ time: DoseTime) {
-        var times = settings.schedule.doseTimes
+        var times = draft[selected].doseTimes
         guard !times.contains(time) else { return }
         times.append(time)
-        settings.schedule.doseTimes = times.sorted()
+        draft[selected].doseTimes = times.sorted()
     }
 }

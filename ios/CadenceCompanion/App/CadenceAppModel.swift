@@ -96,7 +96,21 @@ public final class CadenceAppModel: ObservableObject {
         self.diary = diary
         self.transcripts = transcripts
         self.pillPhotos = pillPhotos
-        self.pillPhoto = pillPhotos.load()
+        self.pillPhotoOwner = settings.schedule.medicationName
+        let scopedPhoto = pillPhotos.forMedication(settings.schedule.medicationName)
+        var initialPhoto = scopedPhoto.load()
+        var migrationError: String?
+        do {
+            if settings.medications.count == 1, initialPhoto == nil, let legacy = pillPhotos.load() {
+                try scopedPhoto.save(legacy)
+                initialPhoto = legacy
+            }
+            // Retain the original file separately; it must never be assigned to
+            // a different medication on a later single-medication launch.
+            try pillPhotos.archiveLegacy()
+        } catch { migrationError = "The previous medication photo could not be migrated. Check phone storage." }
+        self.pillPhoto = initialPhoto
+        self.photoSaveError = migrationError
         self.offHours = OffHourLearner(diary: diary)
         let detector = FoGDetector()
         detector.eventSync = settings.sync
@@ -114,9 +128,13 @@ public final class CadenceAppModel: ObservableObject {
         self.voiceDose = VoiceDoseAssistant(doses: doses, listener: transcripts, speaker: AudioCueEngine.shared)
         self.companion = VoiceCompanion(listener: transcripts, speaker: AudioCueEngine.shared, echo: AudioCueEngine.shared)
         settings.bind(fallAlert: fallAlert, exam: exam)
+        companion.confirmationPrompt = { [weak self] intent in
+            guard intent == .logDose, let self else { return nil }
+            return "Have you taken \(self.settings.schedule.medicationName) and want to record it now? Say yes or no."
+        }
         companion.execute = { [weak self] intent in self?.executeCompanionAction(intent) ?? "That action is unavailable." }
         companion.onDisabled = { [weak self] in
-            self?.settings.voiceCompanionEnabled = false
+            if self?.companion.preservesVoicePreferenceOnStop != true { self?.settings.voiceCompanionEnabled = false }
             self?.voiceDose.cancel()
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -134,7 +152,8 @@ public final class CadenceAppModel: ObservableObject {
                   !self.settings.restartRequired else { return nil }
             return result
         }
-        calibration.recalibrate()
+        motion.onSourceWillStart = { [weak controller = self.calibration] source in controller?.recalibrate(for: source) }
+        calibration.recalibrate(for: .phoneRecording)
         refreshSimpleMode()
         settings.sync.onServerDataErased = { [weak self] in
             Task { @MainActor in
@@ -203,19 +222,29 @@ public final class CadenceAppModel: ObservableObject {
             .sink { [weak self] schedule in
                 guard let self else { return }
                 self.doses.schedule = schedule
-                Task { await self.reminders.sync(schedule) }
+                if self.pillPhotoOwner != schedule.medicationName {
+                    if let photo = self.pillPhoto {
+                        do { try self.pillPhotos.forMedication(self.pillPhotoOwner).save(photo) }
+                        catch { self.photoSaveError = "The previous medication photo could not be saved. Check phone storage." }
+                    }
+                    self.pillPhotoOwner = schedule.medicationName
+                    self.pillPhoto = self.pillPhotos.forMedication(schedule.medicationName).load()
+                }
+                self.voiceDose.cancel()
+                self.companion.setPaused("Medication changed", true)
+                self.companion.setPaused("Medication changed", false)
             }
             .store(in: &cancellables)
 
-        // A logged dose withdraws today's reminder for it.
-        doses.$takenToday
-            .dropFirst()
-            .scan(([Date](), [Date]())) { ($0.1, $1) }
-            .sink { [weak self] previous, current in
-                guard let self, current.count > previous.count, let latest = current.last else { return }
-                self.reminders.doseTaken(at: latest, schedule: self.settings.schedule)
-            }
-            .store(in: &cancellables)
+        settings.$medications.removeDuplicates(by: { a, b in
+            a.sorted { $0.medicationName < $1.medicationName } == b.sorted { $0.medicationName < $1.medicationName }
+        }).dropFirst().sink { [weak self] plan in
+            Task { await self?.syncMedicationReminders(plan) }
+        }.store(in: &cancellables)
+
+        doses.onDoseTaken = { [weak self] date, schedule in
+            self?.reminders.doseTaken(at: date, schedule: schedule)
+        }
 
         // A confirmed impact opens the check-in; the overlay follows `fallAlert.phase`.
         motion.$fallEventUUID
@@ -380,21 +409,23 @@ public final class CadenceAppModel: ObservableObject {
 
     /// Saves the care partner's pill photo for the medication card.
     @Published public private(set) var photoSaveError: String?
-    private var pendingPillPhoto: (data: Data?, pending: Bool) = (nil, false)
+    private var pillPhotoOwner = ""
+    private var pendingPillPhoto: (data: Data?, pending: Bool, owner: String) = (nil, false, "")
 
-    public func setPillPhoto(_ jpeg: Data?) {
+    public func setPillPhoto(_ jpeg: Data?, medicationName: String? = nil) {
         guard !settings.restartRequired else { return }
-        pendingPillPhoto = (jpeg, true)
+        pendingPillPhoto = (jpeg, true, medicationName ?? settings.schedule.medicationName)
         retryPillPhotoSave()
     }
 
     public func retryPillPhotoSave() {
         guard !settings.restartRequired, pendingPillPhoto.pending else { return }
         do {
-            if let data = pendingPillPhoto.data { try pillPhotos.save(data) }
-            else { try pillPhotos.remove() }
-            pillPhoto = pendingPillPhoto.data
-            pendingPillPhoto = (nil, false)
+            let store = pillPhotos.forMedication(pendingPillPhoto.owner)
+            if let data = pendingPillPhoto.data { try store.save(data) }
+            else { try store.remove() }
+            if pendingPillPhoto.owner == settings.schedule.medicationName { pillPhoto = pendingPillPhoto.data }
+            pendingPillPhoto = (nil, false, "")
             photoSaveError = nil
         } catch {
             photoSaveError = "The medication photo could not be saved on this phone. Keep Cadence open and retry saving."
@@ -471,8 +502,36 @@ public final class CadenceAppModel: ObservableObject {
         }
     }
 
+    private var voiceWasBackgrounded = false
+    @Published public private(set) var isStartingVoice = false
+
+    public var voiceStatusText: String {
+        if isUsingMetaAssistant { return "Using Hey Meta" }
+        if companion.isEnabled { return companion.status }
+        if isStartingVoice { return "Starting voice companion…" }
+        if voicePermissionError != nil { return "Voice needs attention" }
+        if settings.voiceCompanionEnabled {
+            if fallAlert.isAlertVisible { return "Voice paused for the safety check-in" }
+            return companion.status == "Voice companion is off" ? "Voice waiting to start" : companion.status
+        }
+        return "Voice is turned off in Settings"
+    }
+
+    public func voiceSceneChanged(isActive: Bool, isBackground: Bool) {
+        // Siri can overlay this foreground app without sending it to background.
+        if isBackground || (!isActive && isUsingMetaAssistant) { voiceWasBackgrounded = true }
+        companion.setPaused("App in background", !isActive)
+        guard isActive, voiceWasBackgrounded else { return }
+        voiceWasBackgrounded = false
+        if settings.voiceCompanionEnabled, !companion.isEnabled {
+            Task { await enableVoiceCompanion() }
+        }
+    }
+
     public func enableVoiceCompanion() async {
-        guard !settings.restartRequired, !fallAlert.isAlertVisible, !isHandingOffToMeta else { return }
+        guard !settings.restartRequired, !fallAlert.isAlertVisible, !isHandingOffToMeta, !isStartingVoice else { return }
+        isStartingVoice = true
+        defer { isStartingVoice = false }
         let activationID = UUID()
         voiceActivationID = activationID
         let speech = await withCheckedContinuation { continuation in
@@ -480,13 +539,13 @@ public final class CadenceAppModel: ObservableObject {
         }
         let microphone = await AVCaptureDevice.requestAccess(for: .audio)
         guard voiceActivationID == activationID, !isHandingOffToMeta else { return }
-        guard speech, microphone, !settings.restartRequired, !fallAlert.isAlertVisible else {
+        guard !settings.restartRequired, !fallAlert.isAlertVisible else { return }
+        guard speech, microphone else {
             voicePermissionError = "Allow Microphone and Speech Recognition for Cadence in iPhone Settings to use the voice companion."
             return
         }
-        if isUsingMetaAssistant {
-            AudioCueEngine.shared.retryAudio()
-        }
+        // This tap is also the explicit recovery action after a route failure.
+        AudioCueEngine.shared.retryAudio()
         guard AudioCueEngine.shared.prepareMicrophoneSession(owner: .companion) else {
             voicePermissionError = AudioCueEngine.shared.audioProblem ?? "The microphone could not start. Check audio, then retry."
             return
@@ -507,7 +566,7 @@ public final class CadenceAppModel: ObservableObject {
         isHandingOffToMeta = true
         voiceActivationID = UUID()
         defer { isHandingOffToMeta = false }
-        companion.stop()
+        companion.stop(preservePreference: true)
         companion.destination = nil
         if exam.isRunning { exam.cancelExam() }
         glasses.stopCameraPreview()
@@ -562,6 +621,19 @@ public final class CadenceAppModel: ObservableObject {
         }
     }
 
+    private func syncMedicationReminders(_ plan: [MedicationSchedule]) async {
+        await reminders.sync(plan)
+        guard settings.medications.sorted(by: { $0.medicationName < $1.medicationName }) == plan.sorted(by: { $0.medicationName < $1.medicationName }) else { return }
+        do {
+            let events = try diary.events(on: Date())
+            for medication in plan {
+                for event in events where event.kind == .doseTaken && event.detail == medication.medicationName {
+                    reminders.doseTaken(at: event.at, schedule: medication)
+                }
+            }
+        } catch { diaryWarning = "Medication history could not be read. Reminder suppression could not be checked." }
+    }
+
     /// Called once the first screen appears.
     public func start() {
         guard !settings.restartRequired, settings.profile.failure == nil else { return }
@@ -573,7 +645,7 @@ public final class CadenceAppModel: ObservableObject {
         if settings.protectionEnabled {
             walking.setProtection(enabled: true)
         }
-        Task { await reminders.sync(settings.schedule) }
+        Task { await syncMedicationReminders(settings.medications) }
     }
 
     @discardableResult

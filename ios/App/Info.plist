@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Cadence Companion</string>
+	<string>Cadence</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -71,7 +71,7 @@
 	<key>NSMotionUsageDescription</key>
 	<string>Cadence reads iPhone motion to detect freezing of gait and falls when the glasses motion stream is not available.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Cadence uses on-device Apple Speech recognition to listen for "I'm okay" or "Help" during the 30-second post-fall check-in when recognition is available.</string>
+	<string>Cadence uses on-device speech recognition for hands-free companion commands and replies during safety check-ins.</string>
 	<key>UISupportedExternalAccessoryProtocols</key>
 	<array>
 		<string>com.meta.ar.wearable</string>

@@ -78,22 +78,27 @@ public final class DoseReminderScheduler: ObservableObject {
     }
 
     /// Replaces every pending reminder with one per dose time.
-    public func sync(_ schedule: MedicationSchedule) async {
+    public func sync(_ schedule: MedicationSchedule) async { await sync([schedule]) }
+
+    private var syncID = UUID()
+    public func sync(_ schedules: [MedicationSchedule]) async {
+        let id = UUID(); syncID = id
         guard !suspended else { return }
         center.removeAllPending()
-        guard !schedule.isEmpty else {
+        guard schedules.contains(where: { !$0.isEmpty }) else {
             status = .none
             return
         }
-        guard await center.requestAuthorization() else {
+        let authorized = await center.requestAuthorization()
+        guard !suspended, syncID == id else { return }
+        guard authorized else {
             status = .notAllowed
             return
         }
-        guard !suspended else { return }
-        for time in schedule.doseTimes {
-            center.add(Self.dailyRequest(for: time, schedule: schedule))
+        for schedule in schedules {
+            for time in schedule.doseTimes { center.add(Self.dailyRequest(for: time, schedule: schedule)) }
         }
-        status = .scheduled(schedule.doseTimes.count)
+        status = .scheduled(schedules.reduce(0) { $0 + $1.doseTimes.count })
     }
 
     /// Today's dose was logged: withdraw today's reminder for it and put the
@@ -106,7 +111,7 @@ public final class DoseReminderScheduler: ObservableObject {
             return
         }
         let time = DoseTime(hour: cal.component(.hour, from: due), minute: cal.component(.minute, from: due))
-        let id = Self.identifier(for: time)
+        let id = Self.identifier(for: time, medication: schedule.medicationName)
         center.removePending(withIdentifiers: [id])
 
         guard let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: date)) else { return }
@@ -127,8 +132,9 @@ public final class DoseReminderScheduler: ObservableObject {
         schedule.doseDates(on: date).min { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) }
     }
 
-    static func identifier(for time: DoseTime) -> String {
-        String(format: "%@%02d-%02d", prefix, time.hour, time.minute)
+    static func identifier(for time: DoseTime, medication: String = "") -> String {
+        let key = Data(medication.utf8).base64EncodedString()
+        return String(format: "%@%@.%02d-%02d", prefix, key, time.hour, time.minute)
     }
 
     static func dailyRequest(for time: DoseTime, schedule: MedicationSchedule) -> DoseReminderRequest {
@@ -143,7 +149,7 @@ public final class DoseReminderScheduler: ObservableObject {
         identifierSuffix: String
     ) -> DoseReminderRequest {
         DoseReminderRequest(
-            identifier: identifier(for: time) + identifierSuffix,
+            identifier: identifier(for: time, medication: schedule.medicationName) + identifierSuffix,
             title: "Time for your \(schedule.medicationName)",
             body: "Whenever you're ready, take your \(schedule.medicationName). Then open Cadence and tap Taken, or just say it.",
             hour: time.hour,

@@ -21,6 +21,8 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: CadenceTheme.tapGap) {
+                    VoiceCompanionBar(app: app)
+
                     if app.isUsingMockGlasses {
                         InlineNotice(text: "Mock kit: sensor inputs are simulated. This does not verify physical glasses or audio routing.", color: CadenceTheme.caution, systemName: "testtube.2")
                     }
@@ -35,9 +37,6 @@ struct TodayView: View {
                         GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { app.companion.destination = .settings }) {
                             Label("Set up connection", systemImage: "antenna.radiowaves.left.and.right")
                         }
-                    }
-                    if app.settings.sync.quarantinedCount() > 0 {
-                        InlineNotice(text: "Older events with an unknown account are held on this phone and will not be sent under a new sign-in.", color: CadenceTheme.caution, systemName: "person.crop.circle.badge.exclamationmark")
                     }
                     if let warning = app.persistenceWarning {
                         InlineNotice(text: warning, color: CadenceTheme.danger, systemName: "exclamationmark.triangle.fill")
@@ -70,18 +69,7 @@ struct TodayView: View {
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle(simple ? "Right now" : "Today")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        app.companion.destination = .settings
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(CadenceTheme.accent)
-                    }
-                    .accessibilityLabel("Settings")
-                }
-            }
+
 
         }
     }
@@ -279,6 +267,14 @@ struct TodayView: View {
 
     private var medicationCard: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if app.settings.medications.count > 1 {
+                Picker("Medication", selection: Binding(get: { app.settings.schedule.medicationName }, set: { app.settings.selectMedication(named: $0) })) {
+                    ForEach(app.settings.medications, id: \.medicationName) { medication in
+                        Text(medication.medicationName).tag(medication.medicationName)
+                    }
+                }
+            }
+            Button("Manage medications") { app.companion.destination = .medication }
             HStack(spacing: 14) {
                 pillImage
                 VStack(alignment: .leading, spacing: 4) {

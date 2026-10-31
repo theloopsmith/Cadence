@@ -9,16 +9,15 @@ import base64
 import hashlib
 import hmac
 import secrets
-import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 import jwt
 
 from app.config import settings
-from app.db import execute_write_sync, fetch_one_sync
+from app.db import _connect_sync, execute_write_sync, fetch_one_sync
 
 ROLES = {"device_writer", "clinician_reader"}
 MIN_PASSWORD_LENGTH = 12
@@ -99,33 +98,64 @@ def create_user_sync(username: str, password: str, role: str, patient_id: str) -
 
 
 # ---------------------------------------------------------------- lockout
-_failures: Dict[str, Tuple[int, float]] = {}
-_lock = threading.Lock()
-
-
 def reset_lockouts() -> None:
-    with _lock:
-        _failures.clear()
+    """Explicit test/operator reset; never called during server startup."""
+    execute_write_sync("DELETE FROM login_attempts")
 
 
-def _check_lockout(username: str) -> None:
-    with _lock:
-        count, locked_until = _failures.get(username, (0, 0.0))
-    if locked_until > time.monotonic():
-        raise AuthError("Too many tries. Please wait a few minutes and try again.", locked=True)
+def _locked() -> AuthError:
+    return AuthError("Too many tries. Please wait a few minutes and try again.", locked=True)
 
 
-def _record_failure(username: str) -> None:
-    with _lock:
-        count, _ = _failures.get(username, (0, 0.0))
-        count += 1
-        locked_until = time.monotonic() + LOCKOUT_SECONDS if count >= MAX_FAILED_ATTEMPTS else 0.0
-        _failures[username] = (count, locked_until)
+def _reserve_attempt(username: str) -> str:
+    """Reserve before hashing so parallel requests cannot exceed the budget.
+
+    A crashed or abandoned verification consumes its reservation. Hashing runs
+    outside the write transaction so it cannot hold up fall-event persistence.
+    Unknown usernames use the same budget and store only a fixed-size digest.
+    """
+    key = hashlib.sha256(username.encode("utf-8")).hexdigest()
+    revision = secrets.token_hex(16)
+    conn = _connect_sync()
+    try:
+        conn.execute("PRAGMA synchronous=FULL")
+        conn.execute("BEGIN IMMEDIATE")
+        now = time.time()
+        conn.execute("DELETE FROM login_attempts WHERE expires_at <= ?", (now,))
+        prior = conn.execute("SELECT * FROM login_attempts WHERE username_hash=?", (key,)).fetchone()
+        if prior and prior["locked_until"] > now:
+            raise _locked()
+        attempts = (prior["attempts"] if prior else 0) + 1
+        conn.execute("""INSERT OR REPLACE INTO login_attempts
+            (username_hash,attempts,locked_until,expires_at,revision) VALUES(?,?,?,?,?)""",
+            (key, attempts, now + LOCKOUT_SECONDS if attempts >= MAX_FAILED_ATTEMPTS else 0,
+             now + LOCKOUT_SECONDS, revision))
+        conn.commit()
+        return revision
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
-def _record_success(username: str) -> None:
-    with _lock:
-        _failures.pop(username, None)
+def _record_success(username: str, revision: str) -> None:
+    key = hashlib.sha256(username.encode("utf-8")).hexdigest()
+    conn = _connect_sync()
+    try:
+        conn.execute("PRAGMA synchronous=FULL")
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT * FROM login_attempts WHERE username_hash=?", (key,)).fetchone()
+        # An older successful check must not clear failures from newer requests.
+        if row and row["revision"] != revision and row["locked_until"] > time.time():
+            raise _locked()
+        conn.execute("DELETE FROM login_attempts WHERE username_hash=? AND revision=?", (key, revision))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------- login
@@ -138,15 +168,14 @@ class IssuedToken:
 
 def authenticate_sync(username: str, password: str) -> IssuedToken:
     username = username.strip()
-    _check_lockout(username)
+    revision = _reserve_attempt(username)
     row = fetch_one_sync(
         "SELECT username, password_hash, role, patient_id FROM users WHERE username = ?", (username,)
     )
     stored = row["password_hash"] if row else _DUMMY_HASH
     if not verify_password(password, stored) or row is None:
-        _record_failure(username)
         raise AuthError("That username or password didn't match.")
-    _record_success(username)
+    _record_success(username, revision)
     ttl = (
         settings.jwt_device_ttl_days * 24 * 3600
         if row["role"] == "device_writer"

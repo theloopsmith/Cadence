@@ -3,6 +3,46 @@ import XCTest
 
 @MainActor
 final class FoGCalibrationControllerTests: XCTestCase {
+    func testActiveSensorSelectsOnlyItsRecordingsAndMissingSetFallsBack() throws {
+        let store = tempStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        for var clip in LabeledCaptureLibrary.referenceCaptures() {
+            clip.source = .phoneRecording
+            try store.save(clip)
+        }
+        let controller = FoGCalibrationController(store: store, detector: FoGDetector())
+        controller.recalibrate(for: .phoneRecording)
+        XCTAssertEqual(controller.source, .phoneRecording)
+        controller.recalibrate(for: .glassesRecording)
+        XCTAssertEqual(controller.source, .syntheticReference)
+        XCTAssertNotNil(controller.problem)
+        for var clip in LabeledCaptureLibrary.referenceCaptures() {
+            clip.id = "glasses-" + clip.id
+            clip.source = .glassesRecording
+            try store.save(clip)
+        }
+        controller.recalibrate()
+        XCTAssertEqual(controller.source, .glassesRecording)
+        XCTAssertEqual(controller.report?.source, .glassesRecording)
+        controller.recalibrate(for: .phoneRecording)
+        XCTAssertEqual(controller.source, .phoneRecording)
+    }
+    func testUnreadableStoreKeepsVisibleReferenceFallbackReason() throws {
+        let store = tempStore()
+        try Data("blocked".utf8).write(to: store.directory)
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let controller = FoGCalibrationController(store: store, detector: FoGDetector())
+        controller.recalibrate()
+        XCTAssertEqual(controller.source, .syntheticReference)
+        XCTAssertTrue(controller.problem?.contains("could not be read") == true)
+    }
+
+    func testCalibrationDoesNotCombineDifferentMotionPlacements() {
+        var captures = LabeledCaptureLibrary.referenceCaptures().filter { [.walking, .freeze, .still].contains($0.label) }
+        for i in captures.indices { captures[i].source = captures[i].label == .freeze ? .glassesRecording : .phoneRecording }
+        let selected = FoGCalibrationSource.choose(recorded: captures, reference: LabeledCaptureLibrary.referenceCaptures())
+        XCTAssertEqual(selected.source, .syntheticReference)
+    }
     private func tempStore() -> LabeledCaptureStore {
         LabeledCaptureStore(
             directory: URL(fileURLWithPath: NSTemporaryDirectory())
@@ -65,6 +105,47 @@ final class FoGCalibrationControllerTests: XCTestCase {
 
 @MainActor
 final class LabeledCaptureRecorderTests: XCTestCase {
+    func testRecorderLabelsActualStreamAndRejectsSourceChange() throws {
+        let store = LabeledCaptureStore(directory: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString))
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let feed = MotionFeed()
+        feed.attach(fogDetector: FoGDetector(), fallDetector: FallDetector())
+        let sensor = MockMotionSource(available: true)
+        XCTAssertTrue(feed.start(source: sensor, label: "Glasses", captureSource: .glassesRecording) { nil })
+        let recorder = LabeledCaptureRecorder(motion: feed, store: store, source: .phoneRecording)
+        recorder.start(label: .walking)
+        for i in 0..<100 { feed.ingest(IMUSample(timestamp: Double(i) / 50, ax: 0, ay: 1, az: 0, gx: 0, gy: 0, gz: 0)) }
+        XCTAssertEqual(recorder.stopAndSave()?.source, .glassesRecording)
+        recorder.start(label: .walking)
+        for i in 100..<200 { feed.ingest(IMUSample(timestamp: Double(i) / 50, ax: 0, ay: 1, az: 0, gx: 0, gy: 0, gz: 0)) }
+        feed.stopSource()
+        XCTAssertNil(recorder.stopAndSave())
+        XCTAssertNotNil(recorder.saveError)
+        XCTAssertEqual(try store.loadAll().count, 1)
+    }
+    func testFailedSaveRetainsClipAndRetryUsesSameRecording() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try Data("blocked".utf8).write(to: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = LabeledCaptureStore(directory: directory)
+        let feed = MotionFeed()
+        feed.attach(fogDetector: FoGDetector(), fallDetector: FallDetector())
+        let recorder = LabeledCaptureRecorder(motion: feed, store: store, source: .phoneRecording)
+        recorder.start(label: .walking)
+        for i in 0..<100 { feed.ingest(IMUSample(timestamp: Double(i) / 50, ax: 0, ay: 1, az: 0, gx: 0, gy: 0, gz: 0)) }
+        XCTAssertNil(recorder.stopAndSave())
+        let pending = try XCTUnwrap(recorder.pendingCapture)
+        XCTAssertNotNil(recorder.saveError)
+        recorder.start(label: .still)
+        XCTAssertFalse(recorder.isRecording)
+        try FileManager.default.removeItem(at: directory)
+        let saved = try XCTUnwrap(recorder.retrySaving())
+        XCTAssertEqual(saved.id, pending.id)
+        XCTAssertEqual(saved.samples.count, 100)
+        XCTAssertEqual(try store.loadAll().first?.id, pending.id)
+        XCTAssertNil(recorder.saveError)
+        XCTAssertNil(recorder.pendingCapture)
+    }
     func testRecordingCollectsSamplesAndSavesWithTheLabel() throws {
         let store = LabeledCaptureStore(
             directory: URL(fileURLWithPath: NSTemporaryDirectory())

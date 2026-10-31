@@ -261,4 +261,55 @@ final class HomeMotorExamTests: XCTestCase {
         XCTAssertEqual(mgr.measurements.voiceMeanDbfs, -22.0, accuracy: 0.01)
         XCTAssertEqual(mgr.measurements.voiceStabilityDb, sqrt(0.5), accuracy: 0.01)
     }
+
+    /// Skipping handwriting and timed walk via manager sets task statuses appropriately.
+    func testSkipHandwritingAndSkipTimedWalkMethods() {
+        let mgr = HomeMotorExamManager(submitter: StubExamSubmitter(result: scoredResult), audio: .shared, sync: sync)
+        mgr.startExam()
+        mgr.skipVoice()
+        XCTAssertEqual(mgr.measurements.voiceStatus, .skipped)
+        XCTAssertEqual(mgr.currentStep, .task2PromptedHandwriting)
+
+        mgr.skipHandwriting()
+        XCTAssertEqual(mgr.measurements.handwritingStatus, .skipped)
+        XCTAssertEqual(mgr.currentStep, .task3PromptedTimedWalk)
+
+        mgr.skipTimedWalk()
+        XCTAssertEqual(mgr.measurements.walkStatus, .skipped)
+    }
+
+    /// Cancelling an exam resets measurements and record state back to idle cleanly.
+    func testCancelExamResetsMeasurements() {
+        let mgr = HomeMotorExamManager(submitter: StubExamSubmitter(result: scoredResult), audio: .shared, sync: sync)
+        mgr.startExam()
+        mgr.measurements.voiceMeanDbfs = -20.0
+        mgr.measurements.voiceMeasured = true
+        mgr.cancelExam()
+
+        XCTAssertEqual(mgr.currentStep, .idle)
+        XCTAssertFalse(mgr.isRunning)
+        XCTAssertFalse(mgr.measurements.voiceMeasured)
+        XCTAssertEqual(mgr.measurements.voiceStatus, .unavailable)
+        XCTAssertNil(mgr.lastRecord)
+        XCTAssertNil(mgr.lastResult)
+    }
+
+    /// HandwritingResult decodes sam_3_1_decay_pct properly when present.
+    func testHandwritingResultDecodesSam31DecayPct() throws {
+        let json = """
+        {
+            "event_uuid": "hw-1",
+            "measured": true,
+            "opencv_cc_decay_pct": -25.5,
+            "sam_3_1_decay_pct": -24.0,
+            "handwriting_score": 80.0,
+            "micrographia_detected": true,
+            "spoken_response": "Measured"
+        }
+        """.data(using: .utf8)!
+
+        let result = try JSONDecoder().decode(HandwritingResult.self, from: json)
+        XCTAssertEqual(result.opencvDecayPct, -25.5)
+        XCTAssertEqual(result.sam31DecayPct, -24.0)
+    }
 }

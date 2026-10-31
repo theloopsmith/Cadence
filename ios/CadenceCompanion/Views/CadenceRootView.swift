@@ -15,8 +15,7 @@ enum CadenceLaunchScreen: Equatable {
     }
 }
 
-/// Three tabs and one help button that never moves. Setup lives behind the
-/// Help tab for a care partner; the wearer's day is Today and Diary.
+/// Settings stays reachable from the tab bar even when voice needs setup.
 public struct CadenceRootView: View {
     @StateObject private var app = CadenceAppModel.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -24,7 +23,7 @@ public struct CadenceRootView: View {
     @State private var didReady = false
     private let onReady: ((CadenceAppModel) -> Void)?
 
-    enum Tab: Hashable { case today, diary, help, developer }
+    enum Tab: Hashable { case today, diary, help, settings }
 
     /// `onReady` runs once with the app model so the host app can attach a
     /// real glasses device, which lives outside this platform-neutral package.
@@ -64,15 +63,14 @@ public struct CadenceRootView: View {
                 .tabItem { Label("Diary", systemImage: "book.fill") }
             HelpView(app: app)
                 .tag(Tab.help)
-                .tabItem { Label("Help", systemImage: "phone.fill") }
-            if app.settings.developerModeEnabled {
-                DeveloperView(app: app)
-                    .tag(Tab.developer)
-                    .tabItem { Label("Developer", systemImage: "wrench.and.screwdriver.fill") }
-            }
+                .tabItem { Label("Get help", systemImage: "phone.fill") }
+            SettingsView(app: app, isTab: true)
+                .equatable()
+                .tag(Tab.settings)
+                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+
         }
         .tint(CadenceTheme.accent)
-        .safeAreaInset(edge: .top) { VoiceCompanionBar(app: app) }
         .sheet(item: Binding(get: { app.companion.destination }, set: { app.companion.destination = $0 }), onDismiss: {
             if app.companion.destination == nil {
                 if app.exam.isRunning { app.exam.cancelExam() }
@@ -89,13 +87,12 @@ public struct CadenceRootView: View {
                 case .camera: GlassesCameraView(glasses: app.glasses, voice: app.companion)
                 case .diary: DiaryView(app: app).modifier(CompanionReadOnlyFlow(voice: app.companion, destination: .diary))
                 case .meal: MealCheckView(app: app)
-                case .settings: SettingsView(app: app)
+                case .settings: SettingsView(app: app).equatable()
                 case .help: HelpView(app: app).modifier(CompanionReadOnlyFlow(voice: app.companion, destination: .help))
                 }
             }
 
-            .safeAreaInset(edge: .top) { VoiceCompanionBar(app: app) }
-        }
+            }
         .onChange(of: app.companion.destination) { destination in
             if destination != .motor, app.exam.isRunning {
                 app.exam.cancelExam()
@@ -103,7 +100,12 @@ public struct CadenceRootView: View {
             }
         }
         .onChange(of: app.companion.actionID) { _ in
-            if app.companion.action == .cancel { app.companion.destination = nil }
+            if tab == .settings, app.companion.destination == nil,
+               app.companion.actionContext == .settings,
+               [.finish, .cancel].contains(app.companion.action) {
+                tab = .today
+            }
+            if app.companion.action == .cancel, app.companion.actionContext != .camera { app.companion.destination = nil }
             if app.companion.action == .finish,
                app.companion.context == app.companion.destination,
                let context = app.companion.context, [.diary, .settings, .help].contains(context) {
@@ -112,7 +114,7 @@ public struct CadenceRootView: View {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active { AudioCueEngine.shared.refreshVoiceSelection() }
-            app.companion.setPaused("App in background", phase != .active)
+            app.voiceSceneChanged(isActive: phase == .active, isBackground: phase == .background)
         }
         .onAppear {
             guard !didReady else { return }
