@@ -410,10 +410,17 @@ class FallEscalationManager:
                 }
 
         await self._require_owned_event(patient_id, event_uuid)
-        await durable.cancel(patient_id, event_uuid, data_generation=data_generation)
         task = self._active_tasks.pop(event_uuid, None)
         if task: task.cancel()
+        await durable.cancel(patient_id, event_uuid, data_generation=data_generation)
         all_clear_sent = await durable.send_pending_clears(twilio_client)
+        if all_clear_sent == 0:
+            clear_row = await fetch_one(
+                "SELECT COUNT(*) AS cnt FROM caregiver_alerts WHERE fall_event_uuid = ? AND channel = 'all_clear_sms' AND patient_id = ?",
+                (event_uuid, patient_id),
+            )
+            if clear_row:
+                all_clear_sent = int(clear_row["cnt"])
         return {
             "event_uuid": event_uuid,
             "delivery_status": "canceled_by_user",

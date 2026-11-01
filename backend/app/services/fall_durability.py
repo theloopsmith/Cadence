@@ -146,7 +146,7 @@ async def cancel(patient_id,event_uuid,data_generation=0):
             from fastapi import HTTPException
             raise HTTPException(404,'Fall event not found.')
         c.execute("UPDATE fall_events SET status='canceled_false_alarm' WHERE event_uuid=? AND patient_id=?",(event_uuid,patient_id))
-        c.execute("UPDATE fall_jobs SET state='resolved' WHERE event_uuid=? AND patient_id=?",(event_uuid,patient_id))
+        c.execute("UPDATE fall_jobs SET state='resolved', lease_until=0, lease_token=NULL WHERE event_uuid=? AND patient_id=?",(event_uuid,patient_id))
         c.execute("UPDATE caregiver_alerts SET delivery_status='canceled_by_user' WHERE fall_event_uuid=? AND patient_id=?",(event_uuid,patient_id))
         queue_clears(c,event_uuid,patient_id)
     await transact(stop)
