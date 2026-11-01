@@ -187,7 +187,7 @@ public struct DaySummaryView: View {
                 Link(destination: url) {
                     Label("Open the full summary", systemImage: "safari.fill")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(CadenceTheme.ink(on: CadenceTheme.accent))
                         .frame(maxWidth: .infinity, minHeight: CadenceTheme.bigTapHeight)
                         .background(
                             RoundedRectangle(cornerRadius: CadenceTheme.cardRadius, style: .continuous)

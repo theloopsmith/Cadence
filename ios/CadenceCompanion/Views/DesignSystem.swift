@@ -1,14 +1,14 @@
 import SwiftUI
 
-/// Shared look for every screen: system grouped backgrounds, one card
-/// radius, one accent, generous type for hands that shake.
+/// A quiet graphite canvas, readable mint accents, and generous touch targets.
+/// Shared by the wearer screens and aligned with the public experience.
 public enum CadenceTheme {
-    public static let accent = Color(red: 0.07, green: 0.47, blue: 0.95)
-    public static let calm = Color(red: 0.10, green: 0.64, blue: 0.47)
+    public static let accent = Color(red: 0.72, green: 0.89, blue: 0.77)
+    public static let calm = Color(red: 0.62, green: 0.82, blue: 0.69)
     public static let caution = Color(red: 0.95, green: 0.58, blue: 0.08)
-    public static let danger = Color(red: 0.86, green: 0.16, blue: 0.16)
-    public static let cardRadius: CGFloat = 16
-    public static let controlRadius: CGFloat = 12
+    public static let danger = Color(red: 0.98, green: 0.38, blue: 0.40)
+    public static let cardRadius: CGFloat = 24
+    public static let controlRadius: CGFloat = 18
     /// Minimum touch target, per the Human Interface Guidelines.
     public static let minimumTapHeight: CGFloat = 44
     /// What this app uses for anything the wearer taps: a trembling finger
@@ -19,29 +19,15 @@ public enum CadenceTheme {
     /// Vertical gap between tappable things, so a miss lands on nothing.
     public static let tapGap: CGFloat = 20
 
-    public static var background: Color {
-        #if canImport(UIKit)
-        return Color(uiColor: .systemGroupedBackground)
-        #else
-        return Color.gray.opacity(0.08)
-        #endif
+    public static let background = Color(red: 0.035, green: 0.035, blue: 0.04)
+    public static let card = Color(red: 0.075, green: 0.075, blue: 0.08)
+    public static let subtleFill = Color.white.opacity(0.08)
+
+    /// Bright semantic fills use dark ink to preserve readable contrast.
+    static func ink(on tint: Color) -> Color {
+        tint == accent || tint == calm || tint == caution || tint == danger ? background : .white
     }
 
-    public static var card: Color {
-        #if canImport(UIKit)
-        return Color(uiColor: .secondarySystemGroupedBackground)
-        #else
-        return Color.white
-        #endif
-    }
-
-    public static var subtleFill: Color {
-        #if canImport(UIKit)
-        return Color(uiColor: .tertiarySystemFill)
-        #else
-        return Color.gray.opacity(0.15)
-        #endif
-    }
 }
 
 struct CardModifier: ViewModifier {
@@ -54,6 +40,7 @@ struct CardModifier: ViewModifier {
             .background(
                 RoundedRectangle(cornerRadius: CadenceTheme.cardRadius, style: .continuous)
                     .fill(CadenceTheme.card)
+                    .overlay(RoundedRectangle(cornerRadius: CadenceTheme.cardRadius, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
             )
     }
 }
@@ -76,7 +63,7 @@ public struct PrimaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.headline)
             .frame(maxWidth: .infinity, minHeight: 56)
-            .foregroundColor(.white)
+            .foregroundColor(CadenceTheme.ink(on: tint))
             .background(
                 RoundedRectangle(cornerRadius: CadenceTheme.controlRadius, style: .continuous)
                     .fill(tint.opacity(configuration.isPressed ? 0.75 : 1.0))
@@ -144,7 +131,7 @@ struct GuardedButton<Label: View>: View {
 
     private var foreground: Color {
         switch style {
-        case .filled: return .white
+        case let .filled(c): return CadenceTheme.ink(on: c)
         case let .tinted(c): return c
         }
     }
@@ -278,7 +265,7 @@ struct StatusPill: View {
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .foregroundColor(filled ? .white : color)
+            .foregroundColor(filled ? CadenceTheme.ink(on: color) : color)
             .background(Capsule().fill(filled ? color : color.opacity(0.14)))
     }
 }

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
-function setup() {
+function setup({allowAutoplay = false} = {}) {
   let now = 0, nextId = 1, requests = 0;
   const scrolls = [];
   const timers = new Map(), frames = new Map(), events = new Map();
@@ -66,9 +66,10 @@ function setup() {
     createElement:() => new Element(),
     addEventListener:(name,handler) => events.set('document:'+name,handler)
   };
-  const speech = {current:null,getVoices:() => [],cancel(){this.current = null;},speak(utterance){this.current = utterance;}};
+  let firstSpeech = true;
+  const speech = {current:null,getVoices:() => [],cancel(){this.current = null;},speak(utterance){if (firstSpeech && !allowAutoplay) {firstSpeech=false;utterance.onerror?.({error:'not-allowed'});return;} firstSpeech=false; this.current = utterance;utterance.onstart?.();}};
   const win = {
-    innerHeight:800, speechSynthesis:speech,
+    innerHeight:800, speechSynthesis:speech, location:{hash:"#experience"},
     scrollY:0,
     scrollTo(options){scrolls.push(options);this.scrollY=options.top;},
     matchMedia:() => ({matches:false,addEventListener(){}}),
@@ -102,8 +103,8 @@ function setup() {
     requests:()=>requests,
     step:()=>motor.querySelector('[data-step-count]').textContent,
     async selectMotor(index) {for (let i=0;i<=index;i++) await click(motor.querySelector('[data-next]'));},
-    async soundOn(){if (get('soundButton')['aria-pressed'] !== 'true') await click(get('soundButton'));},
-    async mute(){if (get('soundButton')['aria-pressed'] === 'true') await click(get('soundButton'));},
+    async soundOn(){if (get('soundButton')['aria-pressed'] !== 'true' || get('soundButton').textContent.startsWith('Enable')) await click(get('soundButton'));},
+    async mute(){for(let i=0;i<2 && get('soundButton')['aria-pressed'] === 'true';i++) await click(get('soundButton'));},
     async finishSpeech(){assert.ok(speech.current);speech.current.onend();await flush();}
   };
 }
@@ -188,7 +189,7 @@ test('whole-day playback finishes on the care view without API or audio calls',a
   assert.equal(env.speech.current,null);
 });
 
-test('sound is enabled by default but no speech occurs before a Play gesture',async()=>{
+test('blocked autoplay leaves sound enabled and a Play gesture starts narration',async()=>{
   const env=setup();
   assert.equal(env.get('soundButton')['aria-pressed'],'true');
   assert.equal(env.speech.current,null);
@@ -260,4 +261,44 @@ test('opening architecture pauses a guided task and fences future timer callback
   assert.equal(env.step(),'3 / 11');
   assert.equal(env.motor.dataset.running,'false');
   assert.equal(env.requests(),0);
+});
+
+
+test('welcome plays on load when the browser allows autoplay',async()=>{
+  const env=setup({allowAutoplay:true});
+  assert.ok(env.speech.current.text.startsWith('Welcome to Cadence'));
+  assert.equal(env.get('soundButton').textContent,'Sound on ◉');
+});
+
+test('first sound tap unlocks blocked audio instead of muting it',async()=>{
+  const env=setup();
+  assert.equal(env.get('soundButton').textContent,'Enable sound ◉');
+  await env.click(env.get('soundButton'));
+  assert.equal(env.get('soundButton')['aria-pressed'],'true');
+  assert.ok(env.speech.current);
+});
+
+test('layout or programmatic scroll cannot pause the day after Your Rhythm',async()=>{
+  const env=setup();
+  await env.mute();
+  await env.click(env.get('playDay'));
+  // Responsive walking layout can leave the viewport center outside the section.
+  // Scroll/RAF events must still run repeatedly throughout the whole journey.
+  env.chapters[2].getBoundingClientRect = () => ({top:100,bottom:300,height:200});
+  for(let i=0;i<70;i++) {
+    env.events.get('window:scroll')();
+    await env.advance(5000);
+  }
+  assert.equal(env.get('care').scrolled,true);
+  assert.equal(env.chapters[3].querySelector('[data-step-count]').textContent,'Guided preview');
+});
+
+test('deliberate wheel scrolling pauses a guided task',async()=>{
+  const env=setup();
+  await env.mute();
+  await env.click(env.get('playDay'));
+  env.events.get('window:wheel')();
+  await env.advance(300000);
+  assert.equal(env.chapters[0].dataset.running,'false');
+  assert.notEqual(env.get('care').scrolled,true);
 });

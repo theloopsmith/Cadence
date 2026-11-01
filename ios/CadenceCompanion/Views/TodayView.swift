@@ -8,6 +8,8 @@ import UIKit
 /// two things that matter and makes them bigger.
 struct TodayView: View {
     @ObservedObject var app: CadenceAppModel
+    @State private var showDeviceDetails = false
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 44
 
     @ObservedObject private var audioRoute = AudioRouteManager.shared
     @ObservedObject private var audio = AudioCueEngine.shared
@@ -21,22 +23,29 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: CadenceTheme.tapGap) {
-                    VoiceCompanionBar(app: app)
+                    homeHeader
+                    VoiceCompanionBar(app: app, compact: true)
+                        .card(padding: 20)
 
                     if app.isUsingMockGlasses {
                         InlineNotice(text: "Mock kit: sensor inputs are simulated. This does not verify physical glasses or audio routing.", color: CadenceTheme.caution, systemName: "testtube.2")
                     }
                     if app.auth.needsSignIn {
-                        InlineNotice(
-                            text: app.settings.profile.isBound
-                                ? "Your diary works offline. Sign in through Settings when you want to sync this wearer's events."
-                                : "You can use Cadence now. Connect your server in Settings to enable online checks. Events recorded before account setup stay on this phone.",
-                            color: CadenceTheme.accent,
-                            systemName: "info.circle.fill"
-                        )
-                        GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { app.companion.destination = .settings }) {
-                            Label("Set up connection", systemImage: "antenna.radiowaves.left.and.right")
-                        }
+                        Button { app.companion.destination = .settings } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "arrow.triangle.2.circlepath").foregroundColor(CadenceTheme.accent)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Connect your diary").font(.headline).foregroundColor(.primary)
+                                    Text(app.settings.profile.isBound
+                                        ? "Your diary works offline. Open Settings to sign in and sync."
+                                        : "Set up your server in Settings. Earlier offline records stay on this phone.")
+                                        .font(.subheadline).foregroundColor(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right").foregroundColor(.secondary)
+                            }.frame(minHeight: CadenceTheme.bigTapHeight).card(padding: 20)
+                        }.buttonStyle(.plain)
                     }
                     if let warning = app.persistenceWarning {
                         InlineNotice(text: warning, color: CadenceTheme.danger, systemName: "exclamationmark.triangle.fill")
@@ -47,14 +56,19 @@ struct TodayView: View {
                     if let notice = app.syncNotice {
                         InlineNotice(text: notice, color: CadenceTheme.caution, systemName: "arrow.triangle.2.circlepath")
                     }
-                    protectionCard
-                    if !isGlassesConnected {
-                        glassesCard
-                    }
-                    GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { app.companion.destination = .camera }) {
-                        Label("Open live glasses camera", systemImage: "video")
+                    if walking.isProtectionRequested && !walking.isProtectionOn {
+                        VStack(alignment: .leading, spacing: 12) {
+                            InlineNotice(text: walking.protectionProblem ?? audio.audioProblem ?? walking.detail,
+                                         color: CadenceTheme.caution, systemName: "exclamationmark.triangle")
+                            GuardedButton(style: .tinted(CadenceTheme.caution), action: {
+                                showDeviceDetails = true
+                                walking.setProtection(enabled: true)
+                            }) { Text("Retry walking support") }
+                            .disabled(audio.isInterrupted)
+                        }
                     }
                     if let error = doses.saveError { Text(error).foregroundColor(CadenceTheme.caution) }
+                    SectionHeader(title: "Your routine")
                     medicationCard
                     if !simple {
                         checksCard
@@ -62,16 +76,59 @@ struct TodayView: View {
                         // In simple mode, offer the motor check directly
                         simpleChecksCard
                     }
+                    deviceDetails
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 96)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 24)
             }
             .background(CadenceTheme.background.ignoresSafeArea())
-            .navigationTitle(simple ? "Right now" : "Today")
+            #if os(iOS)
+            .toolbar(.hidden, for: .navigationBar)
+            #endif
 
 
         }
+    }
+
+    private var homeHeader: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(spacing: 8) {
+                Image(systemName: "waveform.path.ecg").foregroundColor(CadenceTheme.accent)
+                Text("Cadence").font(.title3.weight(.semibold))
+                Spacer()
+                Text("TODAY").font(.caption.weight(.medium)).tracking(1.5).foregroundColor(.secondary)
+            }
+            Text(simple ? "One thing\nat a time." : "Your day.\nStill yours.")
+                .font(.system(size: heroSize, weight: .semibold))
+                .tracking(-1.4)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text("Ask out loud. I’ll guide you, one step at a time.")
+                .font(.body).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 4)
+    }
+
+    private var deviceDetails: some View {
+        DisclosureGroup(isExpanded: $showDeviceDetails) {
+            VStack(alignment: .leading, spacing: CadenceTheme.tapGap) {
+                protectionCard
+                if !isGlassesConnected { glassesCard }
+                GuardedButton(style: .tinted(CadenceTheme.accent), action: { app.companion.destination = .camera }) {
+                    Label("Glasses camera", systemImage: "video")
+                }
+            }.padding(.top, 20)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Walking support & glasses").font(.headline).foregroundColor(.primary)
+                Text(walking.headline).font(.subheadline).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 8)
+        }
+        .card(padding: 20)
     }
 
     // MARK: - Protection & Status
@@ -181,7 +238,6 @@ struct TodayView: View {
                     .foregroundColor(.secondary)
             }
         }
-        .card()
     }
 
     // MARK: - Glasses
@@ -194,7 +250,7 @@ struct TodayView: View {
         case .connecting:
             return "Connecting to glasses…"
         case .disconnected, .notPaired:
-            return "Tap to connect for head motion, mic & cues"
+            return "Connect the camera and audio; available phone motion is the fallback."
         }
     }
 
@@ -234,7 +290,6 @@ struct TodayView: View {
                 }
             }
         }
-        .card(padding: 14)
     }
 
     // MARK: - Medication
@@ -274,7 +329,7 @@ struct TodayView: View {
                     }
                 }
             }
-            Button("Manage medications") { app.companion.destination = .medication }
+            Button("Edit routine") { app.companion.destination = .medication }
             HStack(spacing: 14) {
                 pillImage
                 VStack(alignment: .leading, spacing: 4) {
@@ -313,13 +368,15 @@ struct TodayView: View {
                     Label("Taken", systemImage: "checkmark")
                 }
                 .accessibilityHint("Logs this dose as taken. You can undo afterwards.")
-                GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: {
-                    if app.companion.isEnabled { app.companion.submit("I took my medication") }
-                    else { voice.begin() }
-                }) {
-                    Label("Say it instead", systemImage: "mic.fill")
+                if app.companion.isEnabled {
+                    Text("Or say “I took my medication.”")
+                        .font(.subheadline).foregroundColor(.secondary)
+                } else {
+                    GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { voice.begin() }) {
+                        Label("Say it instead", systemImage: "mic.fill")
+                    }
+                    .accessibilityHint("Cadence asks whether you have taken it and reads your answer back")
                 }
-                .accessibilityHint("Cadence asks whether you have taken it and reads your answer back")
             } else if doses.canUndo {
                 GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: { doses.undo() }) {
                     Label("Undo — I haven't taken it yet", systemImage: "arrow.uturn.backward")
@@ -333,14 +390,14 @@ struct TodayView: View {
 
     private var checksCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Quick Checks")
+            Text("A little help, when you need it")
                 .font(.headline)
                 .foregroundColor(.secondary)
 
             VStack(spacing: 8) {
                 actionRow(
-                    title: "1-Minute Motor Check",
-                    subtitle: "Voice stability, handwriting size & walk rhythm",
+                    title: "Daily check",
+                    subtitle: "Voice, handwriting and a short walk",
                     icon: "figure.walk.motion",
                     tint: CadenceTheme.accent
                 ) {
@@ -350,8 +407,8 @@ struct TodayView: View {
                 Divider().padding(.vertical, 2)
 
                 actionRow(
-                    title: "Check Surroundings",
-                    subtitle: "Vision AI reality check for shadows or objects",
+                    title: "Describe a photo",
+                    subtitle: "Review a photo from your glasses",
                     icon: "eye.fill",
                     tint: CadenceTheme.calm
                 ) {
@@ -361,13 +418,19 @@ struct TodayView: View {
                 Divider().padding(.vertical, 2)
 
                 actionRow(
-                    title: "Log a Meal",
+                    title: "Save a meal time",
                     subtitle: "Save a meal time in your routine diary",
                     icon: "fork.knife",
                     tint: CadenceTheme.caution
                 ) {
                     app.companion.destination = .meal
                 }
+
+                Divider().padding(.vertical, 2)
+                actionRow(title: "Your diary", subtitle: "Return to what you recorded", icon: "book.closed", tint: CadenceTheme.accent) {
+                    app.companion.destination = .diary
+                }
+
             }
         }
         .card()
@@ -380,7 +443,7 @@ struct TodayView: View {
                 .foregroundColor(.secondary)
 
             actionRow(
-                title: "1-Minute Motor Check",
+                title: "Daily check",
                 subtitle: "Voice, handwriting & walk",
                 icon: "figure.walk.motion",
                 tint: CadenceTheme.accent
@@ -391,12 +454,16 @@ struct TodayView: View {
             Divider().padding(.vertical, 2)
 
             actionRow(
-                title: "Check Surroundings",
-                subtitle: "See what is in the room",
+                title: "Describe a photo",
+                subtitle: "Choose a photo, then hear a description",
                 icon: "eye.fill",
                 tint: CadenceTheme.calm
             ) {
                 app.companion.destination = .surroundings
+            }
+            Divider().padding(.vertical, 2)
+            actionRow(title: "Your diary", subtitle: "Your saved moments", icon: "book.closed", tint: CadenceTheme.accent) {
+                app.companion.destination = .diary
             }
         }
         .card()
@@ -426,6 +493,7 @@ struct TodayView: View {
                     .foregroundColor(Color.secondary.opacity(0.6))
             }
             .contentShape(Rectangle())
+            .frame(minHeight: CadenceTheme.bigTapHeight)
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)

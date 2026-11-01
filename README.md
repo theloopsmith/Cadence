@@ -66,6 +66,8 @@ This scope is a product boundary, not a statement of organizer approval. The sup
 
 ## Run and test
 
+The wearer interface follows the web experience: a dark graphite canvas, mint accents, readable cards and three tabs—**Today**, **My routine**, and **Settings**. Today keeps medication and guided tasks together; the diary is a home-screen action, device details expand when needed, and **I need help** stays within reach. Spoken commands remain available without navigating the tabs.
+
 ### Clean clone setup
 ```bash
 git clone https://github.com/theloopsmith/Cadence.git
@@ -108,7 +110,7 @@ The supplied brief requires a public repository, an accessible three-minute vide
 
 Start the Mac backend with `python3 scripts/run_phone_backend.py` and leave the Mac awake on the same Wi-Fi as the iPhone. Install the latest app build through `ios/App/CadenceCompanionApp.xcodeproj`. In the app, open **Settings → Find my Mac server**, select your Mac, then sign in using `.local/phone-login.txt`. Allow Local Network access. If discovery fails, enter the address printed by the launcher; check its `/health` URL in iPhone Safari first. This local development setup uses simulated caregiver delivery.
 
-Choose **Today → Open live glasses camera** to see the glasses video. Pair/register the glasses in Meta AI, enable Developer Mode where required, and grant camera permission. Medication setup uses that same camera: capture, review, then **Use this photo** to put the pill reference on Today. The phone shutter works in the camera screen; glasses shutter short presses are supported when DAT exposes that input. Photos taken outside the Cadence camera session are not automatically imported. Live video and local medication photo saving do not require the backend; online analysis/sync does.
+Choose **Today → Walking support & glasses → Glasses camera** to see the glasses video. Pair/register the glasses in Meta AI, enable Developer Mode where required, and grant camera permission. Medication setup uses that same camera: capture, review, then **Use this photo** to put the pill reference on Today. The phone shutter works in the camera screen; glasses shutter short presses are supported when DAT exposes that input. Photos taken outside the Cadence camera session are not automatically imported. Live video and local medication photo saving do not require the backend; online analysis/sync does.
 
 ### Questions inside Cadence
 

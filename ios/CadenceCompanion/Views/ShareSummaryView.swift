@@ -102,7 +102,7 @@ struct ShareSummaryView: View {
                 ShareLink(item: fileURL) {
                     Label("Share PDF", systemImage: "square.and.arrow.up")
                         .font(.title2.weight(.bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(CadenceTheme.ink(on: CadenceTheme.calm))
                         .frame(maxWidth: .infinity, minHeight: CadenceTheme.giantTapHeight)
                         .background(
                             RoundedRectangle(cornerRadius: CadenceTheme.cardRadius, style: .continuous)

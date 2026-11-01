@@ -3,6 +3,7 @@ import SwiftUI
 /// Calling actions only. Calls open the dialer for confirmation.
 struct HelpView: View {
     @ObservedObject var app: CadenceAppModel
+    @Environment(\.dismiss) private var dismiss
     private var caregiverName: String {
         let name = app.settings.caregiverName.trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? "your caregiver" : name
@@ -50,6 +51,11 @@ struct HelpView: View {
             }
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle("Get help")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
 
 
         }

@@ -23,7 +23,7 @@ public struct CadenceRootView: View {
     @State private var didReady = false
     private let onReady: ((CadenceAppModel) -> Void)?
 
-    enum Tab: Hashable { case today, medication, diary, help, settings }
+    enum Tab: Hashable { case today, medication, settings }
 
     /// `onReady` runs once with the app model so the host app can attach a
     /// real glasses device, which lives outside this platform-neutral package.
@@ -56,23 +56,17 @@ public struct CadenceRootView: View {
             TodayView(app: app)
                 .safeAreaInset(edge: .bottom) { helpBar }
                 .tag(Tab.today)
-                .tabItem { Label("Today", systemImage: "sun.max.fill") }
+                .tabItem { Label("Today", systemImage: "circle.grid.2x2.fill") }
             MedicationSetupView(app: app, isTab: true)
                 .tag(Tab.medication)
-                .tabItem { Label("Medication", systemImage: "pill.fill") }
-            DiaryView(app: app)
-                .safeAreaInset(edge: .bottom) { helpBar }
-                .tag(Tab.diary)
-                .tabItem { Label("Diary", systemImage: "book.fill") }
-            HelpView(app: app)
-                .tag(Tab.help)
-                .tabItem { Label("Get help", systemImage: "phone.fill") }
+                .tabItem { Label("My routine", systemImage: "pill.fill") }
             SettingsView(app: app, isTab: true)
                 .equatable()
                 .tag(Tab.settings)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
 
         }
+        .preferredColorScheme(.dark)
         .tint(CadenceTheme.accent)
         .sheet(item: Binding(get: { app.companion.destination }, set: { app.companion.destination = $0 }), onDismiss: {
             if app.companion.destination == nil {
@@ -128,11 +122,11 @@ public struct CadenceRootView: View {
         .modifier(FallOverlay(coordinator: app.fallAlert))
     }
 
-    /// Sits just above the tab bar on Today and Diary, in thumb reach. Opens
+    /// Sits just above the Today tab bar, in thumb reach. Opens
     /// Help; never dials on its own, so an accidental tap cannot send an alert.
     private var helpBar: some View {
-        GuardedButton(size: .giant, style: .filled(CadenceTheme.danger), action: { tab = .help }) {
-            Label("I need help", systemImage: "phone.fill")
+        GuardedButton(size: .big, style: .tinted(CadenceTheme.danger), action: { app.companion.destination = .help }) {
+            Label("I need help", systemImage: "hand.raised.fill")
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)

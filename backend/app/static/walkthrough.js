@@ -8,7 +8,7 @@
   let soundEnabled = 'speechSynthesis' in window;
   let narrationUnlocked = false;
   soundButton.setAttribute('aria-pressed', String(soundEnabled));
-  soundButton.textContent = soundEnabled ? 'Sound on ◉' : 'Audio unavailable';
+  soundButton.textContent = soundEnabled ? 'Enable sound ◉' : 'Audio unavailable';
   soundButton.disabled = !soundEnabled;
   let activeChapter = null;
   let lastSpoken = '';
@@ -88,6 +88,10 @@
     utterance.pitch = 1.0;
     const voice = getBestHumanVoice();
     if (voice) utterance.voice = voice;
+    utterance.onstart = () => { if (lastSpoken !== key || !soundEnabled) return; narrationUnlocked = true; soundButton.textContent = 'Sound on ◉'; };
+    utterance.onerror = event => {
+      if (lastSpoken === key && event.error === 'not-allowed') { narrationUnlocked = false; soundButton.textContent = 'Enable sound ◉'; }
+    };
     window.speechSynthesis.speak(utterance);
   }
 
@@ -129,7 +133,8 @@
       if (active) nextActive = chapter;
     }
     if (!playback && activeChapter && !nextActive) silence();
-    if (playback && playback.playing && performance.now() > playback.scriptedUntil && nextActive !== playback.chapter) pausePlayback();
+    // Viewport centers change during our own scrolls and responsive layouts.
+    // Only actual user scroll input below pauses a guided journey.
     // Only announce when smoothly arriving at a new chapter, starting cleanly from stage 0
     if (!playback && soundEnabled && nextActive && nextActive !== activeChapter) {
       speak(story[nextActive.dataset.chapter].replies[0], nextActive.id + ':0');
@@ -148,13 +153,15 @@
       soundButton.disabled = true;
       return;
     }
-    soundEnabled = !soundEnabled;
+    // A browser-blocked first play is an unlock action, not a mute action.
+    soundEnabled = !narrationUnlocked || !soundEnabled;
     narrationUnlocked = true;
     soundButton.setAttribute('aria-pressed', String(soundEnabled));
     soundButton.textContent = soundEnabled ? 'Sound on ◉' : 'Sound off ◌';
     lastSpoken = '';
     if (!soundEnabled) silence();
-    else if (playback) { /* Guided narration resumes with the next explicit step. */ }
+    else if (playback && playback.playing) { void showBeat(playback.chapter, playback.index, true, playback.allDay); }
+    else if (playback) { /* Continue remains an explicit action after a pause. */ }
     else if (activeChapter) {
       const stage = Number(activeChapter.dataset.stage || 0);
       speak(story[activeChapter.id].replies[stage], activeChapter.id + ':' + stage);
@@ -167,10 +174,21 @@
   window.addEventListener('pagehide', silence);
   reducedMotion.addEventListener('change', scheduleFrame);
   window.addEventListener('scroll', scheduleFrame, {passive: true});
+  window.addEventListener('wheel', pausePlayback, {passive:true});
+  window.addEventListener('touchmove', pausePlayback, {passive:true});
+  window.addEventListener('keydown', event => {
+    const target = event.target;
+    if (target && /INPUT|TEXTAREA|SELECT|BUTTON/.test(target.tagName)) return;
+    if (['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(event.key)) pausePlayback();
+  });
   window.addEventListener('resize', scheduleFrame, {passive: true});
   document.documentElement.classList.add('enhanced');
   chapters.forEach((chapter) => updateScene(chapter, 0));
   renderScroll();
+  if (soundEnabled && window.location.hash !== '#how-it-works') {
+    narrationUnlocked = true;
+    speak('Welcome to Cadence. Play Arun’s day to follow along.', 'welcome');
+  }
 
   // The playable journeys use the iPhone flow's prompts, but all captures,
   // confirmations and outcomes below are illustrations, not measurements.
@@ -361,7 +379,6 @@
       playback.chapter.querySelector('.beat-progress i').style.transform = 'scaleX(0)';
     }
     playback = null;
-    narrationUnlocked = false;
     updatePlaybackControls();
     scheduleFrame();
   }
@@ -400,7 +417,7 @@
     }
     const revision = playbackRevision;
     const beat = journeys[chapter.id][index];
-    playback = {chapter, index, playing:auto, allDay, finished:false, endAt:0, scriptedUntil:performance.now() + 1500};
+    playback = {chapter, index, playing:auto, allDay, finished:false, endAt:0};
     chapter.dataset.controlled = 'true';
     chapter.dataset.running = 'false';
     chapter.dataset.stage = String(beat.group);
@@ -471,8 +488,12 @@
       utterance.pitch = 1.0;
       const voice = getBestHumanVoice();
       if (voice) utterance.voice = voice;
+      utterance.onstart = () => { if (lastSpoken !== key || !soundEnabled) return; narrationUnlocked = true; soundButton.textContent = 'Sound on ◉'; };
       utterance.onend = finish;
-      utterance.onerror = finish;
+      utterance.onerror = event => {
+        if (revision === playbackRevision && event.error === 'not-allowed') { narrationUnlocked = false; soundButton.textContent = 'Enable sound ◉'; }
+        finish();
+      };
       utterance.onboundary = (event) => {
         if (event.name !== 'word' || !playback || finished || revision !== playbackRevision) return;
         const words = playback.chapter.querySelectorAll('.writing-chunk.is-reading .writing-word');

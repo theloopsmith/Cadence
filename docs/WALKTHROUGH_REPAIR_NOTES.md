@@ -6,7 +6,7 @@ The user's latest dark styling, model labels and existing scene assets were reta
 
 - Play Arun’s day explicitly navigates to the medication scene on the very first click. Navigation uses the visible scene and actual header bounds, rather than the outer tall chapter. Starting or advancing an individual guided exam does not request a scroll.
 - Sticky chapters now use normal block flow rather than a vertically centered flex parent; scroll anchoring is disabled to prevent content updates moving the viewport.
-- Sound is enabled by default. Narration is unlocked by a Play/Continue gesture; nothing is spoken on page load. Muting is respected. Existing narration-before-countdown and cancellation behavior is retained.
+- Sound is enabled by default. A short welcome is attempted on story-page load; browsers that require user activation show Enable sound. A Play/Continue gesture or the first sound-button tap unlocks narration. Muting is respected. Narration-before-countdown and cancellation behavior is retained.
 - A highlighted writing chunk is always visible, with additional word underlining when OS speech boundary events are available. Stale boundary callbacks cannot alter a later step.
 - Voice, progressive handwriting and walking use distinct images. The notebook grows from the first phrase to the full sentence. Photo review uses a closer, legible capture with the complete writing.
 - Countdown number and seconds unit are separate elements with a literal text space and a 14px visual gap.

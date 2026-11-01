@@ -4,6 +4,7 @@ import SwiftUI
 /// no interpretation.
 struct DiaryView: View {
     @ObservedObject var app: CadenceAppModel
+    @Environment(\.dismiss) private var dismiss
     @State private var day = Date()
     @State private var events: [DiaryEvent] = []
     @State private var facts: [String] = []
@@ -35,6 +36,9 @@ struct DiaryView: View {
             .background(CadenceTheme.background.ignoresSafeArea())
             .navigationTitle("Diary")
             .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingReport = true
