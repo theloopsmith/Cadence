@@ -43,6 +43,32 @@
     }
   };
 
+  let cachedVoices = [];
+  function refreshVoices() {
+    if ('speechSynthesis' in window) {
+      cachedVoices = window.speechSynthesis.getVoices().filter((v) => v.lang && v.lang.startsWith('en'));
+    }
+  }
+  if ('speechSynthesis' in window) {
+    refreshVoices();
+    window.speechSynthesis.onvoiceschanged = refreshVoices;
+  }
+
+  function getBestHumanVoice() {
+    if (!cachedVoices.length) refreshVoices();
+    if (!cachedVoices.length) return null;
+    const natural = cachedVoices.find((v) => /natural|neural/i.test(v.name));
+    if (natural) return natural;
+    const enhanced = cachedVoices.find((v) => /premium|enhanced/i.test(v.name));
+    if (enhanced) return enhanced;
+    const google = cachedVoices.find((v) => /google\s+us\s+english|google\s+uk\s+english\s+female/i.test(v.name));
+    if (google) return google;
+    const warm = cachedVoices.find((v) => /samantha|ava|allison|karen|zoe|serena|fiona|daniel/i.test(v.name));
+    if (warm) return warm;
+    const nonRobotic = cachedVoices.find((v) => !/alex|fred|junior|ralph|albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|hysterical|pipe organ|trinoids|whisper|zarvox/i.test(v.name));
+    return nonRobotic || cachedVoices[0];
+  }
+
   function silence() {
     if (pendingNarrationDone) pendingNarrationDone();
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
@@ -54,9 +80,10 @@
     lastSpoken = key;
     const utterance = new SpeechSynthesisUtterance(text.replace(/[“”]/g, ''));
     utterance.lang = 'en-US';
-    utterance.rate = 0.94;
-    const voices = window.speechSynthesis.getVoices().filter((voice) => voice.lang.startsWith('en'));
-    utterance.voice = voices.find((voice) => voice.localService && /premium|enhanced|samantha|ava/i.test(voice.name)) || voices.find((voice) => voice.localService) || null;
+    utterance.rate = 0.92;
+    utterance.pitch = 1.0;
+    const voice = getBestHumanVoice();
+    if (voice) utterance.voice = voice;
     window.speechSynthesis.speak(utterance);
   }
 
@@ -94,12 +121,14 @@
       const progress = reducedMotion.matches ? 0 : clamp((60 - rect.top) / Math.max(1, rect.height - height + 60));
       const stage = progress < 0.28 ? 0 : progress < 0.67 ? 1 : 2;
       if ((!playback || playback.chapter !== chapter) && rect.bottom > 0 && rect.top < height) updateScene(chapter, stage);
-      if (!active) continue;
-      nextActive = chapter;
-      if (!playback) speak(story[chapter.dataset.chapter].replies[stage], chapter.id + ':' + stage);
+      if (active) nextActive = chapter;
     }
     if (!playback && activeChapter && !nextActive) silence();
     if (playback && playback.playing && performance.now() > playback.scriptedUntil && nextActive !== playback.chapter) pausePlayback();
+    // Only announce when smoothly arriving at a new chapter, starting cleanly from stage 0
+    if (!playback && soundEnabled && nextActive && nextActive !== activeChapter) {
+      speak(story[nextActive.dataset.chapter].replies[0], nextActive.id + ':0');
+    }
     activeChapter = nextActive;
   }
   function scheduleFrame() {
@@ -244,9 +273,9 @@
       chapter.querySelector('[data-next]').disabled = Boolean(selected && playback.finished);
       chapter.querySelector('[data-step-count]').textContent = selected ? `${playback.index + 1} / ${journeys[chapter.id].length}` : 'Guided preview';
     }
-    $('journeyPlayer').hidden = !playback;
-    if (playback) {
-      $('journeyLabel').textContent = (playback.allDay ? 'Arun’s day · ' : '') + journeys[playback.chapter.id][playback.index].title;
+    $('journeyPlayer').hidden = !(playback && playback.allDay);
+    if (playback && playback.allDay) {
+      $('journeyLabel').textContent = 'Arun’s day · ' + journeys[playback.chapter.id][playback.index].title;
       $('journeyPause').textContent = playback.playing ? 'Pause' : playback.finished ? 'Replay' : 'Continue';
       $('journeyPrevious').disabled = playback.index === 0;
       $('journeyNext').disabled = playback.finished;
@@ -320,13 +349,13 @@
     chapter.querySelector('.beat-progress i').style.transform = 'scaleX(0)';
     renderTask(chapter, beat);
     updatePlaybackControls();
-    const chapterTop = chapter.getBoundingClientRect().top;
-    if (oldChapter !== chapter || chapterTop < 40 || chapterTop > 140) {
+    // Only scroll smoothly if navigating to a different chapter; never jump on in-chapter step clicks
+    if (oldChapter && oldChapter !== chapter) {
       chapter.scrollIntoView({behavior:reducedMotion.matches ? 'auto' : 'smooth', block:'start'});
     }
     if (!auto) return;
     // Dictation pauses and capture timers begin only after OS speech ends.
-    await narrateGuided(beat.reply, chapter.id + ':guided:' + index, beat.visual === 'writing' ? 0.78 : 0.94);
+    await narrateGuided(beat.reply, chapter.id + ':guided:' + index, beat.visual === 'writing' ? 0.78 : 0.92);
     if (!playback || revision !== playbackRevision || !playback.playing) return;
     chapter.dataset.running = 'true';
     playback.endAt = performance.now() + beat.duration;
@@ -376,8 +405,9 @@
       const utterance = new SpeechSynthesisUtterance(text.replace(/[“”]/g, ''));
       utterance.lang = 'en-US';
       utterance.rate = rate;
-      const voices = window.speechSynthesis.getVoices().filter(voice => voice.lang.startsWith('en'));
-      utterance.voice = voices.find(voice => voice.localService && /premium|enhanced|samantha|ava/i.test(voice.name)) || voices.find(voice => voice.localService) || null;
+      utterance.pitch = 1.0;
+      const voice = getBestHumanVoice();
+      if (voice) utterance.voice = voice;
       utterance.onend = finish;
       utterance.onerror = finish;
       timeout = window.setTimeout(() => { window.speechSynthesis.cancel(); finish(); }, 45000);
