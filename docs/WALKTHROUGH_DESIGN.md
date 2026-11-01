@@ -1,6 +1,6 @@
 # Cadence wearer walkthrough
 
-Live page: <https://35.209.6.236.sslip.io/walkthrough> (`/demo` is an alias).
+Live page: <https://cadence-companion.duckdns.org/walkthrough> (`/demo` is an alias).
 
 The reference is Apple's [MacBook Pro display page](https://www.apple.com/macbook-pro/proled-xdr-display/): generous spacing, large restrained typography, product-led imagery, and a story that advances with scrolling. No Apple assets or copy were reused.
 
@@ -58,4 +58,46 @@ Saved project asset: `backend/app/static/walkthrough/together.jpg`. Built-in `im
 
 Use the man in the supplied portrait as a character reference, preserving his recognizable face, age around 62, salt and pepper hair, cream linen shirt and chunky black smart glasses. Create a new photorealistic editorial lifestyle photograph, wide landscape 16:9, for the closing scene of a premium accessibility companion website. He is now sitting outside at a warm oak garden table on the veranda of a calm contemporary home in late afternoon sunlight, enjoying tea and a relaxed, authentic conversation with his adult daughter, an Indian woman around 35 in a muted sage cotton shirt. They face each other naturally, smiling subtly, attentive and equal; the daughter is not providing physical assistance. Two ceramic tea cups on the table, green garden beyond, soft gold light, everyday intimacy and dignity. Medium wide composition with both complete faces visible, no camera posing, no medical props, no sad expressions or heroic triumph, no text, no logos, no screens, no interface, no watermarks. Quiet cinematic photography with realistic human hands and natural skin, beautiful restrained colors. This is a fictional illustrative scene, not a patient testimonial.
 
-See [playback and photo repair notes](WALKTHROUGH_REPAIR_NOTES.md) for the current scroll behavior, phase-specific motor imagery, full-photo viewer, and image prompts.
+## Playback and photo behavior
+
+The first full-day Play navigates to the medication scene. Individual task controls do not request a scroll. Deliberate wheel/touch/key scrolling pauses playback; responsive layout changes and programmatic navigation do not. Switching tabs, hiding the page and opening photo review also pause. Speech and timers are fenced against stale callbacks.
+
+The Experience / How it works tabs use an equal-column grid to stay centered independently of the brand and audio controls. Very narrow phones use a second header row. Sound activation may require a browser gesture even though narration defaults on.
+
+The active writing chunk remains highlighted, with word underlining when the OS supplies boundary events. Each task has appropriate voice/writing/walking imagery; countdown values and units have visible spacing. Photos use contain sizing without zoom, with a full-image review dialog.
+
+## Guided-task asset prompts
+
+
+
+Five original project-bound images were created with the built-in image_gen tool. Existing source artwork was used as character/scene reference. Generated PNGs were retained and encoded as JPEGs in the project. No runtime model API was added.
+
+### motor-voice.jpg
+
+Project path: `backend/app/static/walkthrough/motor-voice.jpg`
+
+Use the same man in this reference, preserving his face, age around 62, salt-and-pepper hair, cream shirt and black smart glasses. New wide 16:9 photograph for a guided voice sample: he sits comfortably in a warm bright living room, hands resting naturally on his lap, mouth gently open sustaining a comfortable ah sound, calm attentive expression, chest-up three-quarter camera angle, not looking at camera. Soft natural daylight, dignified realistic photography, generous quiet background. No text, no UI, no logos or medical equipment.
+
+### writing-first.jpg
+
+Project path: `backend/app/static/walkthrough/writing-first.jpg`
+
+Edit this first-person photograph preserving the same notebook, hands, cream sleeves, desk, daylight and camera perspective. Replace the tiny loop mark on the right notebook page with clearly legible natural black-ink handwriting that reads exactly: "The quick brown fox". Spell every word correctly, no extra words or marks. The hand holding the pen is positioned just after the last written word. Let the writing flow across two gently spaced lines on the right page if needed, comfortably inside page margins. The left page stays blank. Make the right page's complete writing visible with generous clear margins and no hand or pen obscuring any letters. Realistic ordinary handwriting, crisp readable ink, natural photography. No captions, no printed typography, no UI or logos.
+
+### writing-second.jpg
+
+Project path: `backend/app/static/walkthrough/writing-second.jpg`
+
+Edit this first-person photograph preserving the same notebook, hands, cream sleeves, desk, daylight and camera perspective. Replace the tiny loop mark on the right notebook page with clearly legible natural black-ink handwriting that reads exactly: "The quick brown fox jumps over". Spell every word correctly, no extra words or marks. The hand holding the pen is positioned just after the last written word. Let the writing flow across two gently spaced lines on the right page if needed, comfortably inside page margins. The left page stays blank. Make the right page's complete writing visible with generous clear margins and no hand or pen obscuring any letters. Realistic ordinary handwriting, crisp readable ink, natural photography. No captions, no printed typography, no UI or logos.
+
+### writing-complete.jpg
+
+Project path: `backend/app/static/walkthrough/writing-complete.jpg`
+
+Edit this first-person photograph preserving the same notebook, hands, cream sleeves, desk, daylight and camera perspective. Replace the tiny loop mark on the right notebook page with clearly legible natural black-ink handwriting that reads exactly: "The quick brown fox jumps over the lazy dog.". Spell every word correctly, no extra words or marks. The hand holding the pen is positioned just after the last written word. Let the writing flow across two gently spaced lines on the right page if needed, comfortably inside page margins. The left page stays blank. Make the right page's complete writing visible with generous clear margins and no hand or pen obscuring any letters. Realistic ordinary handwriting, crisp readable ink, natural photography. No captions, no printed typography, no UI or logos.
+
+### handwriting-capture.jpg
+
+Project path: `backend/app/static/walkthrough/handwriting-capture.jpg`
+
+Create a closer, readable photo review of the completed right-hand notebook page in this reference. Preserve the exact black-ink handwriting "The quick brown fox jumps over the lazy dog." with correct spelling and period, same warm daylight and cream paper. Camera is now almost directly above the right page, showing the ENTIRE right page including all four edges and generous margins, with the page occupying 85 percent of the image. The left blank page can appear as a narrow strip at left; most desk clutter is out of frame. Keep a small part of the older man's hand and pen near the outside right edge but do not cover any text. The sentence is handwritten large across two or three lines in the central part of the page and very clearly legible. Landscape 4:3 framing. This is a photorealistic glasses-camera image of the actual notebook, not a flat generated text document. No digital UI, captions, labels, branding or other writing.

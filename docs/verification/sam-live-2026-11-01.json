@@ -1,0 +1,31 @@
+{
+  "checked_at_utc": "2026-11-01T08:24:09+00:00",
+  "endpoint": "https://api.meta.ai/v1/responses",
+  "model": "sam-3.1",
+  "image_source": "cadence-real-photo-upload.jpg",
+  "image_bytes": 324761,
+  "concepts": [
+    "lamp"
+  ],
+  "sam_verified": true,
+  "failed_labels": [],
+  "errors": {},
+  "reason": null,
+  "wall_ms": 1470,
+  "records": [
+    {
+      "label": "lamp",
+      "object_id": "0",
+      "confidence": 0.8827838897705078,
+      "box": {
+        "x1": 435,
+        "y1": 630,
+        "x2": 493,
+        "y2": 712,
+        "w": 1200,
+        "h": 1600
+      },
+      "area_ratio": 0.0026
+    }
+  ]
+}

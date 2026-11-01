@@ -1,0 +1,50 @@
+{
+  "checked_at_utc": "2026-11-01T08:22:19.228222+00:00",
+  "origin": "https://cadence-companion.duckdns.org",
+  "endpoint": "/api/v1/reality-check",
+  "evidence_grade": "live real-photo attempt; inspect stage evidence",
+  "image_source": {
+    "filename": "IMG_2173.HEIC",
+    "kind": "user-provided iPhone HEIC; not a DAT glasses capture",
+    "original_sha256": "d25c85abff34c7d0c94e3392bc7c8c46a53ee627acb616863583948a9aef2388",
+    "uploaded_sha256": "87b8a0ef7f0a2af830cfa10a9b2a856491654e996764ac2d101c1d7bd07e3ac5",
+    "uploaded_dimensions": [
+      1200,
+      1600
+    ],
+    "uploaded_bytes": 324761,
+    "preprocessing": "orientation applied, resized, sRGB JPEG; EXIF/location metadata removed; full frame retained",
+    "media_committed": false
+  },
+  "user_query": "Can you identify the lamp by the shelves?",
+  "end_to_end_ms": 3596,
+  "response": {
+    "event_uuid": "real-photo-proof-62ecbc74-376f-44c9-8338-1581f76ebca2",
+    "sam_verified": true,
+    "chosen_inanimate_label": null,
+    "template_id": "REASSURE_EMPTY_SPACE",
+    "spoken_response": "I cannot identify any clear objects in this frame. Try another view or ask someone nearby.",
+    "tts_source": "ios_on_device",
+    "latency_ms": 2680,
+    "model_evidence": {
+      "segmentation": {
+        "source": "meta_model_api",
+        "model": "sam-3.1",
+        "latency_ms": 2678,
+        "failed_concepts": []
+      },
+      "selection": {
+        "source": "deterministic_template",
+        "model": null
+      }
+    },
+    "verified_masks": []
+  },
+  "limits": [
+    "The photo is private and is not included in this repository.",
+    "This verifies cloud analysis of an iPhone photo, not physical glasses capture or audio routing.",
+    "The spoken-response string was returned; audible iPhone/glasses playback was not measured.",
+    "One result does not establish segmentation accuracy or clinical validity.",
+    "No caregiver message or call was triggered."
+  ]
+}

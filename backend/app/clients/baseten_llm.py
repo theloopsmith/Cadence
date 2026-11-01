@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 import asyncio
+import time
 import httpx
 
 from app.clients.circuit_breaker import RequestDeadlineContext, circuit_breakers
@@ -22,7 +23,7 @@ class BasetenLLMClient:
         user_query: str,
         allowed_inanimate_labels: List[str],
         deadline: RequestDeadlineContext,
-    ) -> Optional[Dict[str, str]]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Asks Baseten muse-spark-open-1026 to pick one label from allowed_inanimate_labels.
         Returns {"template_id": str, "chosen_label": str} or None on timeout/breaker.
@@ -35,6 +36,7 @@ class BasetenLLMClient:
         if not settings.baseten_api_key:
             return None
 
+        started = time.monotonic()
         reasoning = {'reasoning_effort': 'low'} if 'muse-spark' in model_id.lower() else {}
         try:
             timeout_sec = deadline.timeout_for_stage(settings.baseten_stage_budget_sec)
@@ -75,7 +77,9 @@ class BasetenLLMClient:
                             if candidate.lower() in UPRIGHT_FIXTURE_LABELS
                             else "REASSURE_OBJECT_ON_SEAT"
                         )
-                        return {"template_id": tpl, "chosen_label": candidate.lower()}
+                        return {"template_id": tpl, "chosen_label": candidate.lower(),
+                                "provider": self.PROVIDER, "model": model_id,
+                                "latency_ms": round((time.monotonic()-started)*1000)}
                 return None
         except Exception:
             circuit_breakers.record_failure(self.PROVIDER, model_id)

@@ -2,6 +2,7 @@
   display:none!important
 }
 .product-tabs{
+  justify-self:center;
   display:flex;
   align-items:center;
   gap:4px;
@@ -711,6 +712,9 @@
   .nav .brand{
     font-size:18px
   }
+  .nav .brand svg{
+    display:none
+  }
   .product-tabs{
     gap:0;
     padding:3px
@@ -723,6 +727,7 @@
     gap:0
   }
   .nav-actions #soundButton{
+    white-space:nowrap;
     font-size:10px;
     min-width:0;
     padding:6px
@@ -788,4 +793,18 @@
     color:#111;
     background:#fff
   }
+}
+
+/* Small phones keep true horizontal centering without overlapping audio. */
+@media(max-width:385px){
+  .nav{
+    height:auto;
+    min-height:52px;
+    padding:9px 16px;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    row-gap:9px
+  }
+  .nav .brand{grid-column:1;grid-row:1}
+  .nav-actions{grid-column:2;grid-row:1}
+  .product-tabs{grid-column:1/-1;grid-row:2}
 }

@@ -1,0 +1,68 @@
+{
+  "checked_at_utc": "2026-11-01T08:32:47.576760+00:00",
+  "origin": "https://cadence-companion.duckdns.org",
+  "endpoint": "/api/v1/reality-check",
+  "evidence_grade": "live real-photo SAM + Muse selection",
+  "image_source": {
+    "filename": "IMG_2173.HEIC",
+    "kind": "user-provided iPhone HEIC; not a DAT glasses capture",
+    "original_sha256": "d25c85abff34c7d0c94e3392bc7c8c46a53ee627acb616863583948a9aef2388",
+    "uploaded_sha256": "87b8a0ef7f0a2af830cfa10a9b2a856491654e996764ac2d101c1d7bd07e3ac5",
+    "uploaded_dimensions": [
+      1200,
+      1600
+    ],
+    "uploaded_bytes": 324761,
+    "preprocessing": "orientation applied, resized, sRGB JPEG; EXIF/location metadata removed; full frame retained",
+    "media_committed": false
+  },
+  "user_query": "Can you identify the lamp by the shelves?",
+  "end_to_end_ms": 2854,
+  "response": {
+    "event_uuid": "real-photo-proof-5d6bca8c-150b-41ee-aeb1-6415bdc40fa2",
+    "sam_verified": true,
+    "chosen_inanimate_label": "lamp",
+    "template_id": "REASSURE_SHADOW_OR_LIGHT",
+    "spoken_response": "I can identify a lamp in this photo. I cannot confirm whether someone else is present.",
+    "tts_source": "ios_on_device",
+    "latency_ms": 1986,
+    "model_evidence": {
+      "segmentation": {
+        "source": "meta_model_api",
+        "model": "sam-3.1",
+        "latency_ms": 1341,
+        "failed_concepts": []
+      },
+      "selection": {
+        "source": "meta_open_weights",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "latency_ms": 642
+      }
+    },
+    "verified_masks": [
+      {
+        "label": "lamp",
+        "object_id": "0",
+        "confidence": 0.8827838897705078,
+        "box": {
+          "x1": 435,
+          "y1": 630,
+          "x2": 493,
+          "y2": 712,
+          "w": 1200,
+          "h": 1600
+        },
+        "area_ratio": 0.0025505208333333335,
+        "grounding_rule": "explicit_requested_object"
+      }
+    ]
+  },
+  "limits": [
+    "The photo is private and is not included in this repository.",
+    "This verifies cloud analysis of an iPhone photo, not physical glasses capture or audio routing.",
+    "The spoken-response string was returned; audible iPhone/glasses playback was not measured.",
+    "One result does not establish segmentation accuracy or clinical validity.",
+    "No caregiver message or call was triggered."
+  ]
+}

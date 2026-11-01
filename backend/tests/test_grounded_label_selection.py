@@ -22,6 +22,10 @@ async def test_selector_requires_one_complete_grounded_label(monkeypatch, answer
     monkeypatch.setattr('app.clients.baseten_llm.httpx.AsyncClient', Mock(return_value=context))
     result = await BasetenLLMClient().choose_reality_check_slot('What is by the door?', ['coat','coat rack','chair'], RequestDeadlineContext())
     assert (result['chosen_label'] if result else None) == expected
+    if result:
+        assert result['model'] == settings.baseten_model
+        assert result['provider'] == 'baseten'
+        assert result['latency_ms'] >= 0
     sent = client.post.call_args.kwargs['json']
     assert sent['model'] == 'meta-models/muse-spark-open-1026'
     assert sent['reasoning_effort'] == 'low'

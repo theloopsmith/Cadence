@@ -147,9 +147,10 @@ h1, h2, h3, p {
   top: 0;
   z-index: 500;
   height: 52px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
+  column-gap: 16px;
   padding: 0 max(24px, 4vw);
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: saturate(180%) blur(20px);
@@ -159,6 +160,7 @@ h1, h2, h3, p {
 }
 
 .brand {
+  justify-self: start;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -187,6 +189,7 @@ h1, h2, h3, p {
 }
 
 .nav-actions {
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 14px;

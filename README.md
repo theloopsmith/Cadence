@@ -20,7 +20,7 @@
 ### Which model does what?
 
 - **Meta Muse Spark Open** (`meta-models/muse-spark-open-1026`, hosted by Baseten): classifies conversational requests into an allowlisted intent; can choose a scene label only from SAM-grounded candidates. The phone answers factual questions from its saved records and owns action confirmations.
-- **Meta SAM 3.1** (`sam-3.1`, Meta Model API): segments named concepts in the user-confirmed photo. Mask filtering and constrained templates keep the description tied to image evidence. A missing detection is not proof that the scene is safe.
+- **Meta SAM 3.1** (`sam-3.1`, Meta Model API): segments named concepts in the user-confirmed photo. Mask filtering and constrained templates keep the description tied to image evidence. Small explicitly requested objects can qualify with stronger confidence and valid pixel boxes; a missing detection is not proof that the scene is safe.
 - **Meta Muse Voice Transcribe** (`muse-voice-transcribe-1.0`, Meta Model API): optional online speech-to-text. Spoken replies use installed Apple voices in the app and browser speech synthesis in the tour; this model does not generate reply audio.
 - **Configured alternate:** Meta Llama 3.3 through Fireworks can interpret requests when the Baseten key is absent. It is not an automatic network retry after a Muse failure. Llama 3.2 vision adapters remain in the repository; the current surroundings path uses SAM plus bounded label selection.
 
@@ -48,7 +48,7 @@ The web architecture tab has interactive **synthetic** spectra and stroke-height
 
 ---
 
-Docs: [architecture diagram](docs/cadence_architecture.drawio) (four pages: system overview, fall safety path, Meta model calls, data and sync) · [readiness review and open items](docs/HACKATHON_READINESS_REVIEW_2026-10-29.md) · [verification log](docs/VERIFICATION_LOG.md) with the evidence behind every claim below.
+Docs: [architecture diagram](docs/cadence_architecture.drawio) (five pages: system overview, fall safety, Meta calls, data/privacy, storage schema) · [current docs and acceptance gates](docs/README.md) · [verification log](docs/VERIFICATION_LOG.md) with the evidence behind every claim below.
 
 Cadence is an audio-first accessibility companion for a paired iPhone and Meta AI glasses, built for the Meta Global AI Developer Hackathon's **Build for Your World** problem statement.
 
@@ -90,7 +90,7 @@ cd .. && ./scripts/test_ios.sh
 ./scripts/run_ios_sim.sh
 ```
 
-Live Meta Model API checks (sanitized traces, no keys or media): [SAM 3.1 over the Responses API](docs/verification/sam-live-2026-10-29.json) and [Muse Voice Transcribe](docs/verification/muse-transcribe-live-2026-10-29.json), both October 29. Re-run the SAM check with `backend/.venv/bin/python scripts/sam_smoke.py [photo.jpg concept ...]`. A single SAM call measured 1–3.6 s; the reality check sends up to five concepts in parallel (about 2.2 s). A [live Muse Spark Open intent trace](docs/verification/muse-intent-live-2026-11-01.json) records Baseten hosting, the exact configured variant, and latency. Real-photo SAM plus Muse label selection remains unverified until a consenting non-sensitive photo is supplied.
+Live Meta Model API checks (sanitized traces, no keys or media): [SAM 3.1 over the Responses API](docs/verification/sam-live-2026-10-29.json) and [Muse Voice Transcribe](docs/verification/muse-transcribe-live-2026-10-29.json), both October 29. Re-run the SAM check with `backend/.venv/bin/python scripts/sam_smoke.py [photo.jpg concept ...]`. A single SAM call measured 1–3.6 s; the reality check sends up to five concepts in parallel (about 2.2 s). A [live Muse Spark Open intent trace](docs/verification/muse-intent-live-2026-11-01.json) records Baseten hosting, the exact configured variant, and latency. A [real-photo SAM + Muse trace](docs/verification/real-photo-meta-2026-11-01.json) now verifies a user-approved iPhone image, decoded lamp box, bounded Muse label selection and timings. It does not verify DAT capture or audible glasses output; the [initial filtered result](docs/verification/real-photo-meta-2026-11-01-initial.json) is retained.
 
 Configure backend provider credentials and caregiver contacts locally. Production never substitutes simulated Twilio success for missing credentials; the API returns a retryable failure. Local development/demo may use visibly simulated transports. Automated contacts are currently configured on the server for a single-wearer deployment; the phone's caregiver number configures its manual dialer and does not change server routing.
 
@@ -100,8 +100,8 @@ The repo is inside iCloud Drive; Swift scratch builds should live outside it to 
 
 Swift owns motion sensing, audio, check-ins, and an offline event queue. FastAPI owns authenticated storage and caregiver orchestration. Provider adapters isolate external inference and transport. Emergency decisions remain deterministic.
 
-- [Architecture diagram](docs/cadence_architecture.drawio): open in draw.io; page 1 is the system overview, page 2 the fall safety path, page 3 the Meta model calls, page 4 data, identity and sync.
-- [Readiness review](docs/HACKATHON_READINESS_REVIEW_2026-10-29.md): current priorities, the October 30 review pass, and what is still open.
+- [Architecture diagram](docs/cadence_architecture.drawio): open in draw.io; page 1 is the system overview, page 2 the fall safety path, page 3 the Meta model calls, page 4 data, identity and sync, and page 5 the generated storage schema.
+- [Docs index](docs/README.md): maintained guides, acceptance gates and evidence boundaries.
 - [Verification log](docs/VERIFICATION_LOG.md): one entry per workstream with the evidence observed and its limits; raw traces in [docs/verification](docs/verification).
 
 The supplied brief requires a public repository, an accessible three-minute video, and clear attribution of work created during the event. Its stated submission deadline is November 4, 2026 at 6 PM Pacific. Signed-out public repository access was verified November 1. Video access, submission completion, contribution timing and final eligibility still require confirmation.

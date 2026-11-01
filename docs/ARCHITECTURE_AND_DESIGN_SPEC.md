@@ -1,50 +1,95 @@
 # Cadence architecture and design contract
 
-## Delivery sequence
+Cadence is a foreground voice companion on iPhone, paired with Meta glasses for available camera/audio capabilities. Immediate sensing, confirmations and safety decisions stay on the phone. Authenticated FastAPI services add bounded Meta inference, durable records and care-team reporting.
 
-Walking cueing is the current acceptance gate. Verify detection, cue start, recovery, calibration provenance, persistence and the labeled demo before adding features. Subsequent gates are fall check-in and delivery, medication/meal records, surroundings checks, and diary/reporting. Home motor tasks are stretch work. Existing implementations stay available, but compilation and simulated tests do not establish physical acceptance.
+This document describes implemented paths. Physical glasses capture/audio acceptance, locked-screen continuity and real caregiver delivery remain separate evidence gates. The public cloud demo simulates caregiver delivery.
 
-## Components and ownership
+## System map
 
-SwiftUI presents Today, Diary and Help, with setup under Settings. CadenceAppModel coordinates those surfaces. MotionFeed selects the active motion source and feeds the local spectral and fall detectors. FoGCalibrationController derives thresholds through FoGCalibrator using labeled recordings. LabeledCaptureStore persists clips locally; the recorder retains a failed save in memory for explicit retry. Phone and glasses data must form separate complete calibration sets because sensor placement changes the signal. Synthetic reference motion is labeled as reference rather than personal validation.
+![High-level architecture](assets/architecture.svg)
 
-WalkingModel owns requested protection, health and the explicit demo. AudioCueEngine owns output priority, interruption handling and route recovery. The voice companion listens while foregrounded and yields to safety and voice measurement. Microphone permission is configured once; everyday interaction uses speech. Meta handoff releases the microphone, and Siri's app-opening command returns to Cadence. Native assistant and Cadence microphone concurrency is not assumed.
+Open [the editable five-page diagram](cadence_architecture.drawio) for the system overview, fall safety path, model calls, data/privacy flow and generated storage schema. The [animated website guide](https://cadence-companion.duckdns.org/walkthrough#how-it-works) explains these boundaries for judges.
 
-Use the checked-in DAT adapter and the SDK resolved by the app project for capability discovery. Show the actual sensing source; fall back to the phone when glasses motion is unavailable. Keep the phone in a consistent pocket placement for phone recordings. Do not infer support from Bluetooth pairing alone. Camera video is ephemeral and must never be archived as a continuous recording.
+## Ownership
 
-FastAPI handles authenticated model requests and reports. Model calls must remain Meta-only per the supplied organizer clarification. OS speech output and on-device recognition remain explicitly identified OS features. SQL-backed event and caregiver recovery services commit durable state before acknowledging it. A model may interpret a bounded intent; medication writes, calling and emergency decisions remain guarded local/service actions.
+- **Glasses adapter:** the pinned Meta DAT SDK supplies supported camera, audio-route, motion and input capabilities. Bluetooth pairing alone does not establish app access. `GlassesSessionManager` displays actual capability/readiness; phone motion is the fallback. Mock-kit inputs remain labeled simulated.
+- **iPhone:** `CadenceAppModel` coordinates foreground `VoiceCompanion`, guarded task flows, local DSP, medication reminders, diary files and account/destination-bound sync. Known spoken questions use saved facts. Models do not create patient facts, place calls or write dose records.
+- **Backend:** scoped writer/reader authentication, image/audio validation, constrained inference, event persistence, a fall-job recovery loop and consistent report snapshots. `backend/app/main.py` remains the route layer; service and client modules own the underlying work.
+- **Care connection:** dashboard/PDF observations and separately tracked alert states. Queued, provider-accepted, delivered and human-acknowledged are different facts. A call opened in the phone dialer is not a verified server acknowledgment.
 
-## Event and storage contract
+The current public deployment is one e2-small VM with Caddy HTTPS, one Uvicorn worker and durable SQLite. A local Mac server remains available for same-Wi-Fi development. Provider keys stay on the server. See [deployment and security](GOOGLE_CLOUD_DEMO.md).
 
-The backend schema in app/db.py is authoritative. fog_events records patient ID, unique event UUID, UTC time, duration, peak freeze index, locomotor/freeze powers, sample rate, arming mode, speech modifier, cue tempo and optional recovery latency. fall_events and caregiver_alerts separate detection, dispatch and human acknowledgment. medication_logs and medication_retractions preserve dose idempotency and Undo. motor_exams records task validity as well as nullable measurements. patient_wipes provides the per-patient erase boundary. login_attempts persists expiring login budgets without submitted passwords.
+## Models and local software
 
-The phone keeps profile-scoped diary files, labeled capture files and a SQLite outbox. Account/server boundaries and erase generations prevent old records from being reassigned. Raw camera and voice input is transient for inference; a deliberately saved medication reference image and explicitly labeled research captures require visible purpose and local storage controls. A save error must never be reported as success.
+**Meta SAM 3.1** (`sam-3.1`) uses the Meta Responses API. Each requested concept is a separate parallel call, under a six-second stage and shared eight-second interactive budget. `sam_output.py` decodes boxes and masks; unanswered concepts produce an unverified result. Missing confidence is distinct from stated low confidence.
 
-## Design variables and behavior
+Ordinary scene evidence requires at least 1.5% frame area and rejects stated confidence below 0.65. A small inanimate object explicitly named by the wearer may qualify with stated confidence at least 0.8 and a valid box with sides of at least 16 pixels. These are prototype heuristics, not calibrated accuracy or safety guarantees. The response records which grounding rule accepted each object. Small unrequested objects retain the conservative gate.
 
-Use San Francisco via dynamic system fonts, semantic grouped backgrounds and card surfaces, 16-point card corners, 12-point control corners, and 20-point action spacing. Existing minimum targets are 44 points; primary wearer controls use 72 or 88 points. A screen has one clear main action, with readable status text and VoiceOver labels. Respect Dynamic Type, reduced motion and light/dark appearance. Color must be accompanied by text or shape. The existing palette has not been established as AAA compliant; contrast must be measured for each foreground/background state before claiming that standard.
+**Meta Muse Spark Open** (`meta-models/muse-spark-open-1026`), hosted by Baseten, classifies a bounded intent or selects one complete label from SAM-grounded candidates. Low reasoning and a 512-token allowance leave room for a final answer. Image-label selection has a three-second wall-clock maximum, clamped by the shared remaining budget. Invalid, unavailable or late output uses deterministic wording/evidence. It does not become an invented label. Request metadata identifies actual model/provider success separately from fallback.
 
-Use plain companion language: a beat helps stepping, a surroundings check describes a view, and task trends are observations. Avoid diagnostic scores, disease severity claims and suggestions to change medication timing or dose. Report missing data and uncertain coverage explicitly. A simulated demonstration must remain labeled and must not be presented as a real incident.
+The configured **Meta Llama 3.3** Fireworks path is an alternate when the Baseten key is absent, not an automatic retry after a Muse failure. Legacy Llama vision adapters remain in the source; the current photo route uses SAM and bounded selection. Public-demo startup pins the reviewed model IDs and rejects enabled research metrics. Development configuration is separate from the submitted demo.
 
-## Walking acceptance
+**Meta Muse Voice Transcribe** (`muse-voice-transcribe-1.0`) provides optional online transcription. Apple's on-device recognizer and installed Premium/Enhanced/Standard voices are OS features. Spoken replies use `AVSpeechSynthesizer`; the browser tour uses browser speech synthesis. No ElevenLabs runtime model is integrated.
 
-Automated tests must cover labeled-data thresholds, turns/sit-to-stand/stillness traps, cue onset, recovery, signal gaps, false-positive rejection, demo cancellation and capture persistence failures. Physical acceptance requires the actual installed iPhone/glasses route, worn-device recordings, a safe simulated trigger, audible cue stop/recovery, reconnect and interruption recovery. Do not ask a wearer to induce a fall or intentionally provoke a freeze. Synthetic-only calibration and unmeasured device latency remain disclosed limitations.
+**Ordinary local processing:** CoreMotion/Accelerate, OpenCV, SQLite and platform audio/haptic/location APIs. FoG detection and handwriting measurement are not LLM calls.
 
-## Native Meta assistant integration investigation — 2026-10-31
+## Measurement and task contracts
 
-This is a proposed integration, not an implemented or device-tested capability. Public sources checked: [Meta AI Connectors](https://dev.meta.ai/products/connectors), [Wearables FAQ](https://developers.meta.com/wearables/faq/), and Meta's [iOS Voice Invocations guide](https://github.com/meta/meta-wearables-dat-ios/blob/main/plugins/mwdat-ios/skills/voice-invocations/SKILL.md).
+- **Walking cues:** Hann-windowed motion FFT; freeze index = power at >3–8 Hz / (power at 0.5–3 Hz + 0.000001). Walking/initiation/upright-turn context, energy, speech adjustment and repeated qualifying windows gate an episode. Local cues are bounded. Thresholds and source placement are experimental.
+- **Handwriting:** OpenCV thresholding, deskew and connected components; compare mean heights in the first/last groups, roughly a third each and at least two components. Change = `(end − start) / start × 100`; negative means smaller. Fewer than four accepted components is unreadable. Research-off mode computes observations without the experimental score/finding. Both readable and unreadable HTTP responses use the same observation projection; iOS represents withheld research values as nil.
+- **Voice/walking exam tasks:** quality and measured/skipped/unavailable states accompany nullable values. A partial or interrupted task cannot reuse earlier measurements. Five-second phonation and ten-second walking windows begin after their spoken start cue; handwriting is dictated in three paced chunks.
+- **Medication/meal diary:** saved prescribed reminder times, factual history lookup, explicit wearer confirmation and timestamps. Dose Undo is a scoped, idempotent retraction. Meal logging saves a time; it does not estimate nutrients or recommend medication timing.
 
-Meta AI Connectors expose a service's API as tools inside Meta AI's conversation, across glasses/app/web. The public onboarding page describes REST endpoints, guided UI or MCP onboarding, and OAuth account linking. Developer preview access is selected in waves; public publishing is a later phase. Access for this project's account has not been verified. The public material does not establish a drop-in Meta AI text-to-speech API, control of exact spoken wording/rate, access to uninterrupted raw phonation audio, camera image forwarding, phone motion capture, or proactive caregiver announcements. Detailed developer documentation and acceptable-use policy redirected to sign-in; compatibility of this particular accessibility/medication use case must be verified during preview onboarding.
+## Fall sequence and recovery
 
-Cadence implications from code inspection:
+```mermaid
+sequenceDiagram
+    participant P as iPhone
+    participant B as Backend + SQLite
+    participant T as Configured transport
+    participant C as Caregiver
+    P->>P: Detect candidate; save locally
+    P->>B: Upload candidate when connected
+    B->>B: Commit candidate and durable job
+    P->>P: Prepare microphone; 30-second check-in
+    alt User cancels or sufficiently confirmed response
+        P->>B: Cancel at matching owner/generation
+    else Distress or unresolved check-in
+        P->>B: Escalation request
+        B->>B: Commit attempt before provider call
+        B->>T: Attempt SMS/call
+        T-->>B: Provider acceptance/status
+        C->>T: DTMF acknowledgment
+        T->>B: Signed callback + matching attempt/SID
+    end
+    Note over B: 45-second server timeout/recovery applies only after candidate upload
+    Note over T,C: Public demo simulates transport; real delivery is unverified
+```
 
-- Start a preview proof of concept with a patient-scoped read-only dose-history tool. Answer factual recorded-dose questions and identify server sync freshness; missing server records must not be interpreted as proof of non-ingestion or absence of an unsynced phone record.
-- Next-dose questions require a new authenticated medication-plan sync/read contract: AppSettings currently persists the medication plan locally; backend medication_logs stores dose events rather than the configured plan.
-- Existing account tokens are not an OAuth authorization-code/account-linking flow. Add account consent, revocation and least-privilege patient-bound scopes after Meta's exact onboarding requirements are available. Never share the static development token or clinician credentials with a connector.
-- Dose writes should follow read-only validation. Preserve event UUID idempotency, authenticated patient binding, erase generations, explicit medication/time readback and confirmation, Undo semantics, and phone/server reconciliation. Do not assume the assistant's verbal confirmation supplies a server-verifiable confirmation protocol.
-- A medication assistance request must not be submitted as a fall event to reuse the caregiver pipeline. Existing callCaregiver opens the phone dialer; this is not an acknowledged server caregiver request. A separate request lifecycle would be needed.
-- Keep native motor capture in the iPhone app until actual connector capabilities prove otherwise. REST tool calls alone do not provide the timed microphone/IMU capture the current check requires.
+Distress from either recognizer wins. Spoken affirmatives remain provisional under the check-in reducer; cloud-only affirmation cannot silently cancel a fall. Button cancellation remains explicit. Safety preempts everyday speech, walking audio and voice measurement. `fall_jobs`, `fall_attempts` and `fall_clear_jobs` support leased, at-least-once recovery; there is no exactly-once external-delivery promise.
 
-A separate, nearer-term option is DAT Voice Invocations. The pinned iOS SDK 1.0.1 exposes VoiceInvocationsStream, LaunchApp, and ResponseHandle.sendSuccess/sendFailure(actionOutput: String?). Cadence does not currently instantiate that stream. Meta's guide requires bundle registration, Voice Invocation approval, and a spoken app name in Wearables Developer Center; it is experimental for development/beta channels. LaunchApp is app activation, not a documented arbitrary feature-command payload or ongoing TTS service. ResponseHandle's optional action output is not proof of arbitrary native voice playback. Register listeners before starting, acknowledge every invocation exactly once, surface permission/channel failures, and clean up listeners on disconnect.
+A phone with no connection retains its outbox and exposes manual help. No server timer can recover a candidate that never reached the server. Never ask a wearer to induce a fall or provoke a freeze for acceptance testing.
 
-Suggested acceptance sequence: confirm connector preview access and native invocation approval; prototype an isolated synthetic read-only API; verify account linking and tenant separation; test one real glasses query with a consenting test account; then decide whether to add write tools. Separately test native app invocation with MockDeviceKit and actual glasses before replacing the current return guidance. Do not depend on unapproved preview access for the hackathon's core demonstration. No application was submitted and no service was published as part of this investigation.
+## Data, privacy and erasure
+
+[Open the generated storage schema](assets/storage-schema.svg). It shows fresh-database tables and actual SQL foreign keys from `db.py` and `fall_durability.py`; it is not a dump of wearer data. `patient_id` on observation tables is a logical ownership key, not a users-table foreign key. Legacy research columns do not imply those fields are exposed in the submitted API.
+
+Phone profile storage contains diary files, task history, selected medication reference images, explicitly labeled captures and the SQLite outbox. JWTs use Keychain with `AfterFirstUnlockThisDeviceOnly`. Failed local writes are visible and do not become success receipts.
+
+The outbox binds rows to an owner, destination, payload revision and data generation. Server inserts check the erase generation inside the write transaction. A wipe increments that boundary; stale writes receive 409 rather than restoring erased records. Local reset and server wipe are separate actions. A server change cannot silently reassign queued history.
+
+Inference image/audio bytes are transient in the app/backend path. The backend saves bounded labels/masks, query/reply text, measurements and event metadata, not continuous video. Those saved observations and caregiver retry ledgers are sensitive records. Scoped authentication, TLS and optional SQLCipher protect their boundaries; absent encryption/backup controls must not be claimed as implemented. Telemetry retention runs at startup/daily; incident retention and backup/restore acceptance remain open.
+
+Reports use a consistent trailing-24-hour snapshot, explicit coverage/freshness, nullable measurements and capped detail arrays with truncation flags. The dashboard uses text nodes and nonce CSP; read-only accounts cannot mutate. Public API docs/schema routes are disabled.
+
+## Native experience and limits
+
+Today, My routine and Settings are the three root tabs. Today contains the voice status, medication and guided actions; Diary is a home-screen action and device details expand when needed. Walking-support failures remain visible. Help is reachable without opening Settings. The graphite/mint palette, large guarded targets, Dynamic Type and semantic labels are defined in `DesignSystem.swift`.
+
+Cadence's microphone route and native Hey Meta are separate. A spoken handoff releases Cadence audio/camera; reopening through Siri returns to the foreground companion. Meta connector preview was applied for, but approval and native voice invocation are not integrated. The existing companion does not depend on them. Background/locked-screen conversational operation is not an acceptance claim.
+
+## Keeping diagrams current
+
+Run `python3 scripts/sync_architecture_docs.py` after changing model defaults, native tabs or storage DDL. It updates draw.io labels from source and regenerates the schema page/SVG without loading secrets or records. `--check` runs in CI. The diagram's four main pages retain editable geometry. Regenerate the README overview art with `scripts/generate_architecture_art.py` if the system's four ownership boundaries change.
+
+The [verification log](VERIFICATION_LOG.md) records dated evidence and its limits. The [docs index](README.md) lists current acceptance gates. Neither compilation nor synthetic tests establish physical-device or clinical acceptance.

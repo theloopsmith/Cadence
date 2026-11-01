@@ -31,6 +31,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-lock.txt
 
+      - name: Architecture and documentation integrity
+        run: |
+          python ../scripts/sync_architecture_docs.py --check
+          python ../scripts/check_docs.py
+
       - name: Pytest
         run: python -m pytest -q
 
