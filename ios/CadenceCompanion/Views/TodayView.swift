@@ -3,13 +3,11 @@ import SwiftUI
 import UIKit
 #endif
 
-/// The home screen: how the day is going, the next dose with one big Taken,
-/// and a protection switch card. In a predicted off period it drops to the
-/// two things that matter and makes them bigger.
+/// Walking protection is the first action. Device diagnostics expand separately;
+/// the help footer is inset into this scroll view so it cannot cover its content.
 struct TodayView: View {
     @ObservedObject var app: CadenceAppModel
     @State private var showDeviceDetails = false
-    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 44
 
     @ObservedObject private var audioRoute = AudioRouteManager.shared
     @ObservedObject private var audio = AudioCueEngine.shared
@@ -24,6 +22,8 @@ struct TodayView: View {
             ScrollView {
                 VStack(spacing: CadenceTheme.tapGap) {
                     homeHeader
+                    protectionCard
+                        .card(padding: 20)
                     VoiceCompanionBar(app: app, compact: true)
                         .card(padding: 20)
 
@@ -56,17 +56,6 @@ struct TodayView: View {
                     if let notice = app.syncNotice {
                         InlineNotice(text: notice, color: CadenceTheme.caution, systemName: "arrow.triangle.2.circlepath")
                     }
-                    if walking.isProtectionRequested && !walking.isProtectionOn {
-                        VStack(alignment: .leading, spacing: 12) {
-                            InlineNotice(text: walking.protectionProblem ?? audio.audioProblem ?? walking.detail,
-                                         color: CadenceTheme.caution, systemName: "exclamationmark.triangle")
-                            GuardedButton(style: .tinted(CadenceTheme.caution), action: {
-                                showDeviceDetails = true
-                                walking.setProtection(enabled: true)
-                            }) { Text("Retry walking support") }
-                            .disabled(audio.isInterrupted)
-                        }
-                    }
                     if let error = doses.saveError { Text(error).foregroundColor(CadenceTheme.caution) }
                     SectionHeader(title: "Your routine")
                     medicationCard
@@ -82,6 +71,7 @@ struct TodayView: View {
                 .padding(.top, 20)
                 .padding(.bottom, 24)
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) { helpBar }
             .background(CadenceTheme.background.ignoresSafeArea())
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
@@ -92,39 +82,43 @@ struct TodayView: View {
     }
 
     private var homeHeader: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(spacing: 8) {
-                Image(systemName: "waveform.path.ecg").foregroundColor(CadenceTheme.accent)
-                Text("Cadence").font(.title3.weight(.semibold))
-                Spacer()
-                Text("TODAY").font(.caption.weight(.medium)).tracking(1.5).foregroundColor(.secondary)
-            }
-            Text(simple ? "One thing\nat a time." : "Your day.\nStill yours.")
-                .font(.system(size: heroSize, weight: .semibold))
-                .tracking(-1.4)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-            Text("Ask out loud. I’ll guide you, one step at a time.")
-                .font(.body).foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 8) {
+            Image(systemName: "waveform.path.ecg").foregroundColor(CadenceTheme.accent)
+            Text("Cadence").font(.title3.weight(.semibold))
+            Spacer()
+            Text("TODAY").font(.caption.weight(.medium)).tracking(1.5).foregroundColor(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 4)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    /// Inset at the scroll view itself, inside NavigationStack. SwiftUI reserves
+    /// its full height so the last expanded row can scroll above it and the tab bar.
+    private var helpBar: some View {
+        GuardedButton(size: .big, style: .tinted(CadenceTheme.danger), action: { app.companion.destination = .help }) {
+            Label("I need help", systemImage: "hand.raised.fill")
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(CadenceTheme.background)
+        .accessibilityHint("Opens help without placing a call")
     }
 
     private var deviceDetails: some View {
         DisclosureGroup(isExpanded: $showDeviceDetails) {
             VStack(alignment: .leading, spacing: CadenceTheme.tapGap) {
-                protectionCard
-                if !isGlassesConnected { glassesCard }
+                glassesCard
+                Text("Audio output: \(audioRoute.activeOutputName)")
+                    .font(.footnote).foregroundColor(.secondary)
+                Text("Microphone: \(audioRoute.activeInputName)")
+                    .font(.footnote).foregroundColor(.secondary)
                 GuardedButton(style: .tinted(CadenceTheme.accent), action: { app.companion.destination = .camera }) {
                     Label("Glasses camera", systemImage: "video")
                 }
             }.padding(.top, 20)
         } label: {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Walking support & glasses").font(.headline).foregroundColor(.primary)
-                Text(walking.headline).font(.subheadline).foregroundColor(.secondary)
+                Text("Glasses & audio").font(.headline).foregroundColor(.primary)
+                Text(glassesSubtitle).font(.subheadline).foregroundColor(.secondary)
             }
             .padding(.vertical, 8)
         }
@@ -137,16 +131,6 @@ struct TodayView: View {
         app.glasses.connectionState == .connected
     }
 
-    private var glassesDisplayName: String {
-        if let name = app.glasses.deviceName, !name.isEmpty {
-            return name
-        }
-        if audioRoute.isGlassesMicActive {
-            return audioRoute.activeInputName.isEmpty ? "Meta Glasses" : audioRoute.activeInputName
-        }
-        return "Meta Gen 3 AI Glasses"
-    }
-
     private var statusColor: Color {
         if walking.isCueing { return CadenceTheme.accent }
         return walking.isProtectionOn ? CadenceTheme.calm : .secondary
@@ -154,88 +138,44 @@ struct TodayView: View {
 
     private var protectionCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center) {
-                StatusBadge(
-                    systemImage: walking.isCueing ? "metronome.fill" : (walking.isProtectionOn ? "shield.fill" : "shield.slash"),
-                    word: walking.headline,
-                    color: statusColor
-                )
-                Spacer()
-                Button {
-                    let next = !walking.isProtectionRequested
-                    app.settings.protectionEnabled = next
-                    walking.setProtection(enabled: next)
-                    Haptics.tap()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: walking.isProtectionRequested ? "checkmark.circle.fill" : "circle")
-                        Text(walking.isProtectionRequested ? "Turn Off" : "Turn On")
-                            .fontWeight(.semibold)
-                    }
-                    .font(.title3)
-                    .foregroundColor(walking.isProtectionOn ? CadenceTheme.calm : .secondary)
-                    .padding(.horizontal, 18)
-                    .frame(minHeight: CadenceTheme.bigTapHeight)
-                    .background(
-                        Capsule().fill(walking.isProtectionOn ? CadenceTheme.calm.opacity(0.14) : Color.secondary.opacity(0.12))
-                    )
-                    .contentShape(Capsule())
-                }
-                .disabled(walking.isDemoRunning)
-                .accessibilityLabel(walking.isProtectionRequested ? "Turn protection off" : "Turn protection on")
-            }
-
-            Text(walking.detail)
-                .font(simple ? .title3 : .body)
-                .foregroundColor(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("Audio output: \(audioRoute.activeOutputName) · Microphone: \(audioRoute.activeInputName)")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-
-            if !audio.isAudioAvailable || (walking.isProtectionRequested && app.motion.health == .healthy && !walking.isProtectionOn) {
-                InlineNotice(text: audio.audioProblem ?? walking.protectionProblem ?? "Audio cues are unavailable.", color: CadenceTheme.caution, systemName: "speaker.slash.fill")
-                GuardedButton(size: .big, style: .tinted(CadenceTheme.caution), action: { walking.retryAudio() }) {
-                    Label("Retry audio", systemImage: "speaker.wave.2.fill")
-                }
-                .disabled(audio.isInterrupted)
-            }
-            if walking.isProtectionRequested, app.motion.health == .stale {
-                GuardedButton(size: .big, style: .tinted(CadenceTheme.caution), action: { walking.setProtection(enabled: true) }) {
-                    Label("Retry protection", systemImage: "arrow.clockwise")
-                }
-            }
-            if walking.isProtectionRequested || walking.isDemoRunning || walking.isCueing {
-                GuardedButton(size: .big, style: .tinted(.secondary), action: {
+            Text("Walking protection")
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            StatusBadge(
+                systemImage: walking.isCueing ? "metronome.fill" : (walking.isProtectionOn ? "shield.fill" : "shield.slash"),
+                word: walking.headline,
+                color: statusColor
+            )
+            GuardedButton(size: .big, style: .filled(CadenceTheme.accent), action: {
+                if walking.isProtectionRequested || walking.isDemoRunning || walking.isCueing {
                     app.settings.protectionEnabled = false
                     walking.stopWalkingAudio()
-                }) {
-                    Label("Stop walking cues", systemImage: "stop.fill")
+                } else {
+                    app.settings.protectionEnabled = true
+                    walking.setProtection(enabled: true)
                 }
-                .accessibilityHint("Stops walking protection and its speech. An active fall alert stays active.")
+            }) {
+                Label(walking.isDemoRunning ? "Stop walking demo" : walking.isProtectionRequested ? "Turn protection off" : "Turn protection on",
+                      systemImage: walking.isProtectionRequested || walking.isDemoRunning ? "stop.fill" : "shield")
             }
+            .accessibilityHint("Controls walking cues. An active fall check-in stays active.")
 
-            if walking.isProtectionOn, !walking.sourceSentence.isEmpty, !simple {
-                Text(walking.sourceSentence)
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
+            Text(walking.detail)
+                .font(.body)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if walking.isProtectionOn, !walking.sourceSentence.isEmpty {
+                Text(walking.sourceSentence).font(.footnote).foregroundColor(.secondary)
             }
-
-            if isGlassesConnected {
-                HStack(spacing: 6) {
-                    Image(systemName: "eyeglasses")
-                        .foregroundColor(CadenceTheme.calm)
-                    Text("\(glassesDisplayName) · \(audioRoute.isGlassesMicActive ? "Glasses Mic" : "Glasses") Active")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            if simple {
-                Text("Things are kept simple for now. Everything else is a tab away.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
+            if walking.isProtectionRequested && !walking.isProtectionOn {
+                InlineNotice(text: walking.protectionProblem ?? audio.audioProblem ?? "Walking protection needs attention.",
+                             color: CadenceTheme.caution, systemName: "exclamationmark.triangle")
+                GuardedButton(size: .big, style: .tinted(CadenceTheme.caution), action: {
+                    walking.retryAudio()
+                    walking.setProtection(enabled: true)
+                }) { Label("Retry protection", systemImage: "arrow.clockwise") }
+                .disabled(audio.isInterrupted)
             }
         }
     }
@@ -262,7 +202,7 @@ struct TodayView: View {
                 size: 36
             )
             VStack(alignment: .leading, spacing: 2) {
-                Text(app.glasses.connectionState == .connected ? (app.glasses.deviceName ?? "Meta Glasses Connected") : "Meta Gen 3 AI Glasses")
+                Text(app.glasses.connectionState == .connected ? (app.glasses.deviceName ?? "Meta Glasses Connected") : "Meta glasses")
                     .font(.headline)
                 Text(glassesSubtitle)
                     .font(.footnote)

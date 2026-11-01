@@ -84,7 +84,7 @@ Reports use a consistent trailing-24-hour snapshot, explicit coverage/freshness,
 
 ## Native experience and limits
 
-Today, My routine and Settings are the three root tabs. Today contains the voice status, medication and guided actions; Diary is a home-screen action and device details expand when needed. Walking-support failures remain visible. Help is reachable without opening Settings. The graphite/mint palette, large guarded targets, Dynamic Type and semantic labels are defined in `DesignSystem.swift`.
+Today, My routine and Settings are the three root tabs. Today puts walking protection on/off first, before voice status, medication and guided actions. Diary is a home-screen action; glasses/audio diagnostics expand separately. The help footer is inset directly into the scroll view inside NavigationStack so it reserves space instead of covering the final controls. Walking-support failures remain visible. The graphite/mint palette, large guarded targets, Dynamic Type and semantic labels are defined in `DesignSystem.swift`.
 
 Cadence's microphone route and native Hey Meta are separate. A spoken handoff releases Cadence audio/camera; reopening through Siri returns to the foreground companion. Meta connector preview was applied for, but approval and native voice invocation are not integrated. The existing companion does not depend on them. Background/locked-screen conversational operation is not an acceptance claim.
 

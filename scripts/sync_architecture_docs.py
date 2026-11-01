@@ -65,7 +65,7 @@ def labels(config):
             'c4': 'iPhone — SwiftUI + Meta DAT adapter',
             'c5': 'Backend — FastAPI + SQLite<br/>Cloud HTTPS or local Mac :8001',
             'c7': '<b>Motion adapter</b><br/>Configured 60 Hz accel/gyro/orientation when available; physical acceptance pending.',
-            'c13': f'<b>Views</b><br/>{" · ".join(tabs)}. Diary opens from Today; help stays reachable. Developer tools are under the Settings toggle, not a tab. Large Dynamic Type targets.',
+            'c13': f'<b>Views</b><br/>{" · ".join(tabs)}. Protection on/off is first. Diary opens from Today; glasses/audio details expand. Help has reserved scroll space. Developer tools stay under the Settings toggle.',
             'c14': '<b>Companion</b><br/>Foreground voice starts by default after OS permission. Context-aware intents, separate confirmations, explicit stop and Hey Meta microphone handoff.',
             'c27': f'<b>Meta Model API</b><br/>{config["meta_sam_model"]} via /responses; {config["meta_stt_model"]} for optional transcription.',
             'c28': f'<b>Baseten / Meta model</b><br/>{config["baseten_model"]}: allowlisted intent or one exact SAM-grounded label.',

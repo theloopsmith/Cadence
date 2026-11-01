@@ -23,13 +23,28 @@ INANIMATE_VOCAB = {
     "shadow",
     "curtain",
     "plant",
+    "table",
+    "desk",
+    "door",
+    "bed",
+    "wall",
+    "window",
+    "cabinet",
+    "shelf",
+    "bookshelf",
+    "television",
+    "tv",
+    "mirror",
+    "box",
 }
 
 # Inanimate labels that stand upright in a room rather than resting on a seat.
 # A coat rack in low light is one of the most common Parkinson's hallucination
 # triggers, so it gets its own reassurance template instead of being described
 # as something "on the seat".
-UPRIGHT_FIXTURE_LABELS = {"coat rack", "lamp", "curtain", "plant", "shadow"}
+UPRIGHT_FIXTURE_LABELS = {
+    "coat rack", "lamp", "curtain", "plant", "shadow", "door", "wall", "window", "mirror", "cabinet", "shelf", "bookshelf"
+}
 CLOSED_REALITY_VOCAB = sorted(LIVING_VOCAB | INANIMATE_VOCAB)
 
 # SAM 3.1 answers one noun phrase per request, so each photo gets a short
@@ -107,7 +122,11 @@ LIVING_DENY_WORDS = {
 }
 
 
-def render_grounded_template(template_id: str, label: Optional[str] = None) -> str:
+def render_grounded_template(
+    template_id: str,
+    label: Optional[str] = None,
+    user_query: Optional[str] = None,
+) -> str:
     if template_id == "CONFIRM_LIVING_SUBJECT" and label:
         return f"I can identify a {label} in this photo. I cannot verify the whole scene."
     if template_id == "REASSURE_SHADOW_OR_LIGHT" and label:
@@ -116,10 +135,13 @@ def render_grounded_template(template_id: str, label: Optional[str] = None) -> s
         return f"I can identify a {label} in this photo. I cannot confirm whether someone else is present."
     if template_id == "UNVERIFIED_LIGHTING_FALLBACK":
         return (
-            "I couldn't get a clear view of the room right now. "
-            "Please turn on a light or ask someone nearby."
+            "I couldn't get a clear view of the room in this light. "
+            "Please turn on a light and try taking another photo."
         )
-    return "I cannot identify any clear objects in this frame. Try another view or ask someone nearby."
+    return (
+        "I cannot identify any clear objects in this frame. "
+        "Try holding the camera steady or taking another photo at a wider angle."
+    )
 
 
 def contains_denied_living_word(sentence: str) -> bool:
@@ -167,7 +189,7 @@ async def run_reality_check_pipeline(
     }
 
     if not sam_res.get("sam_verified", False):
-        spoken = render_grounded_template("UNVERIFIED_LIGHTING_FALLBACK")
+        spoken = render_grounded_template("UNVERIFIED_LIGHTING_FALLBACK", user_query=user_query)
         latency_ms = int((time.monotonic() - t0) * 1000)
         return {
             "model_evidence": evidence,
@@ -207,13 +229,13 @@ async def run_reality_check_pipeline(
         top_living = str(living_masks[0]["label"]).lower()
         template_id = "CONFIRM_LIVING_SUBJECT"
         chosen_label = None
-        spoken = render_grounded_template(template_id, top_living)
+        spoken = render_grounded_template(template_id, top_living, user_query=user_query)
     else:
         allowed_inanimate = [str(m["label"]).lower() for m in inanimate_masks]
         if not allowed_inanimate:
             template_id = "REASSURE_EMPTY_SPACE"
             chosen_label = None
-            spoken = render_grounded_template(template_id)
+            spoken = render_grounded_template(template_id, user_query=user_query)
         else:
             llm_choice = await baseten_client.choose_reality_check_slot(
                 user_query=user_query,
@@ -239,11 +261,11 @@ async def run_reality_check_pipeline(
                     if chosen_label in UPRIGHT_FIXTURE_LABELS
                     else "REASSURE_OBJECT_ON_SEAT"
                 )
-            spoken = render_grounded_template(template_id, chosen_label)
+            spoken = render_grounded_template(template_id, chosen_label, user_query=user_query)
             if contains_denied_living_word(chosen_label):
                 template_id = "REASSURE_EMPTY_SPACE"
                 chosen_label = None
-                spoken = render_grounded_template(template_id)
+                spoken = render_grounded_template(template_id, user_query=user_query)
 
     latency_ms = int((time.monotonic() - t0) * 1000)
 

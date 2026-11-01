@@ -142,8 +142,10 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        // System on-device speech only; Muse is the only cloud ASR provider.
-        request.requiresOnDeviceRecognition = true
+        // Use on-device recognition when available; otherwise fall back smoothly.
+        if let recognizer, recognizer.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = true
+        }
         self.request = request
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
@@ -180,7 +182,16 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
         }
         guard self.session == session, isListening else { return }
         inputHasStarted = true
-        task = recognizer?.recognitionTask(with: request) { [weak self] result, _ in
+        task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
+            if let error {
+                let nsError = error as NSError
+                // Code 216 is cancelled, which is normal when stopping.
+                if nsError.domain != "kAFAssistantErrorDomain" && nsError.code != 216 {
+                    print("[TranscriptListener] Recognition error: \(error)")
+                    self?.fail(session: session, reason: error.localizedDescription)
+                }
+                return
+            }
             guard let self, let result else { return }
             let text = result.bestTranscription.formattedString
             let echo = self.echoGuard.isInEchoWindow(at: Date())

@@ -1,0 +1,68 @@
+{
+  "checked_at_utc": "2026-11-01T08:55:47.684513+00:00",
+  "origin": "https://cadence-companion.duckdns.org",
+  "endpoint": "/api/v1/reality-check",
+  "evidence_grade": "live SAM + Muse analysis of a supplied Meta glasses photo",
+  "image_source": {
+    "filename": "JPEG image-4AA1-9EE8-BE-0.jpeg",
+    "kind": "user-provided exported Meta glasses JPEG; source reported by owner and EXIF Meta AI / Meta Smart Glasses; not a live Cadence DAT capture",
+    "original_sha256": "16232271a8026f332180b5b310f0d161c854f00bf60f690b4325efd72ef9ebc9",
+    "uploaded_sha256": "f00d5e8a043fa9ee9b8a03e6df865c2356db00cdb2cbeead738dcd0b612abcbd",
+    "uploaded_dimensions": [
+      1200,
+      1600
+    ],
+    "uploaded_bytes": 333414,
+    "preprocessing": "orientation applied, resized, sRGB JPEG; EXIF/location metadata removed; full frame retained",
+    "media_committed": false
+  },
+  "user_query": "Can you identify the sofa in this photo?",
+  "end_to_end_ms": 3353,
+  "response": {
+    "event_uuid": "real-photo-proof-101e7f73-446a-46d0-8938-405c13a07014",
+    "sam_verified": true,
+    "chosen_inanimate_label": "sofa",
+    "template_id": "REASSURE_OBJECT_ON_SEAT",
+    "spoken_response": "I can identify a sofa in this photo. I cannot confirm whether someone else is present.",
+    "tts_source": "ios_on_device",
+    "latency_ms": 2376,
+    "model_evidence": {
+      "segmentation": {
+        "source": "meta_model_api",
+        "model": "sam-3.1",
+        "latency_ms": 1843,
+        "failed_concepts": []
+      },
+      "selection": {
+        "source": "meta_open_weights",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "latency_ms": 529
+      }
+    },
+    "verified_masks": [
+      {
+        "label": "sofa",
+        "object_id": "0",
+        "confidence": 0.7387754917144775,
+        "box": {
+          "x1": 612,
+          "y1": 879,
+          "x2": 1199,
+          "y2": 1483,
+          "w": 1200,
+          "h": 1600
+        },
+        "area_ratio": 0.18528125,
+        "grounding_rule": "frame_area"
+      }
+    ]
+  },
+  "limits": [
+    "The photo is private and is not included in this repository.",
+    "This verifies analysis of a supplied glasses JPEG; live capture within Cadence DAT and glasses audio routing are not measured.",
+    "The spoken-response string was returned; audible iPhone/glasses playback was not measured.",
+    "One result does not establish segmentation accuracy or clinical validity.",
+    "No caregiver message or call was triggered."
+  ]
+}

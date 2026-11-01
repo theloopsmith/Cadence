@@ -1,4 +1,6 @@
 import SwiftUI
+import AVFoundation
+import Speech
 
 /// Look-around view: describes what the camera actually sees, calmly and factually.
 /// Uses SAM 3.1 instance lock and Fireworks Llama 3.2 Vision to ground objects
@@ -10,6 +12,7 @@ public struct RealityCheckView: View {
     @State private var voiceFlowID = UUID()
     @State private var question: String = "Is someone standing there, or is it just an object?"
     @State private var isListeningToVoice: Bool = false
+    @State private var voiceErrorMessage: String?
     @State private var showSignIn = false
     @State private var retryPhoto: Data?
     @State private var retryProfileID: String?
@@ -136,38 +139,71 @@ public struct RealityCheckView: View {
             Text("What would you like to check?")
                 .font(.headline)
 
-            // Voice input prompt
-            if isListeningToVoice {
-                HStack(spacing: 12) {
-                    Image(systemName: "waveform")
-                        .foregroundColor(CadenceTheme.accent)
-                        .font(.title2)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Listening… speak what you see or ask")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(question.isEmpty ? "“Is someone standing there?”" : question)
-                            .font(.body.weight(.medium))
-                            .foregroundColor(.primary)
+            // Current question input / preview
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Question:")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    TextField("Ask what you see or check", text: $question)
+                        .font(.body.weight(.medium))
+                        .textFieldStyle(.plain)
+                    if !question.isEmpty {
+                        Button {
+                            question = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    Spacer()
                 }
-                .padding(14)
+                .padding(12)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(CadenceTheme.accent.opacity(0.12))
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.secondary.opacity(0.08))
                 )
+            }
 
-                GuardedButton(size: .big, style: .filled(CadenceTheme.accent), action: {
-                    stopVoiceInput()
-                }) {
-                    Label("Done Speaking", systemImage: "checkmark")
+            if let error = voiceErrorMessage {
+                InlineNotice(text: error, color: CadenceTheme.caution, systemName: "mic.slash.fill")
+            }
+
+            // Voice input action
+            if isListeningToVoice {
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "waveform")
+                            .foregroundColor(CadenceTheme.accent)
+                            .font(.title2)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Listening… speak your question now")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(CadenceTheme.accent)
+                            Text(question.isEmpty ? "“Is someone standing there?”" : question)
+                                .font(.body.weight(.medium))
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                        }
+                        Spacer()
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(CadenceTheme.accent.opacity(0.12))
+                    )
+
+                    GuardedButton(size: .big, style: .filled(CadenceTheme.accent), action: {
+                        stopVoiceInput()
+                    }) {
+                        Label("Done speaking", systemImage: "checkmark.circle.fill")
+                    }
                 }
             } else {
                 GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: {
                     startVoiceInput()
                 }) {
-                    Label("Speak Question with Microphone", systemImage: "mic.fill")
+                    Label("Speak question", systemImage: "mic.fill")
                 }
             }
 
@@ -329,12 +365,42 @@ public struct RealityCheckView: View {
     // MARK: - Logic
 
     private func startVoiceInput() {
-        app.companion.setPaused("Question dictation", true)
-        isListeningToVoice = true
-        question = ""
-        app.transcripts.startListening { text in
-            Task { @MainActor in
-                self.question = text
+        voiceErrorMessage = nil
+        Task { @MainActor in
+            let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+            if micStatus == .notDetermined {
+                _ = await AVCaptureDevice.requestAccess(for: .audio)
+            } else if micStatus == .denied || micStatus == .restricted {
+                voiceErrorMessage = "Microphone access is denied. Enable it in iPhone Settings to speak your question."
+                return
+            }
+
+            let speechStatus = SFSpeechRecognizer.authorizationStatus()
+            if speechStatus == .notDetermined {
+                let granted = await withCheckedContinuation { continuation in
+                    SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
+                }
+                if !granted {
+                    voiceErrorMessage = "Speech recognition is required to transcribe questions. Enable it in Settings."
+                    return
+                }
+            } else if speechStatus == .denied || speechStatus == .restricted {
+                voiceErrorMessage = "Speech recognition is denied. Enable it in iPhone Settings to transcribe questions."
+                return
+            }
+
+            app.companion.setPaused("Question dictation", true)
+            isListeningToVoice = true
+            question = ""
+            Haptics.tap()
+
+            app.transcripts.startListening { text in
+                Task { @MainActor in
+                    if !text.isEmpty {
+                        self.question = text
+                        Haptics.tap()
+                    }
+                }
             }
         }
     }

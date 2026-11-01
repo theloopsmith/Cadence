@@ -54,7 +54,6 @@ public struct CadenceRootView: View {
     private var mainContent: some View {
         TabView(selection: $tab) {
             TodayView(app: app)
-                .safeAreaInset(edge: .bottom) { helpBar }
                 .tag(Tab.today)
                 .tabItem { Label("Today", systemImage: "circle.grid.2x2.fill") }
             MedicationSetupView(app: app, isTab: true)
@@ -122,18 +121,7 @@ public struct CadenceRootView: View {
         .modifier(FallOverlay(coordinator: app.fallAlert))
     }
 
-    /// Sits just above the Today tab bar, in thumb reach. Opens
-    /// Help; never dials on its own, so an accidental tap cannot send an alert.
-    private var helpBar: some View {
-        GuardedButton(size: .big, style: .tinted(CadenceTheme.danger), action: { app.companion.destination = .help }) {
-            Label("I need help", systemImage: "hand.raised.fill")
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
-        .background(CadenceTheme.background.opacity(0.97))
-        .accessibilityHint("Opens the help screen with your caregiver's number")
-    }
+
 }
 
 /// Presents the check-in over everything while one is open.
