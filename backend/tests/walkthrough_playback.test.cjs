@@ -7,7 +7,8 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 function setup() {
-  let now = 0, nextId = 1, selected = -1, requests = 0;
+  let now = 0, nextId = 1, requests = 0;
+  const scrolls = [];
   const timers = new Map(), frames = new Map(), events = new Map();
   class Element {
     constructor() {
@@ -21,6 +22,8 @@ function setup() {
     replaceChildren(...nodes) { this.children = nodes; }
     setAttribute(name, value) { this[name] = value; }
     scrollIntoView() { this.scrolled = true; }
+    showModal() { this.open = true; }
+    close() { this.open = false; }
     querySelector(selector) {
       if (selector === '[data-count]') {
         const find = node => Object.hasOwn(node.dataset, 'count') ? node : node.children.map(find).find(Boolean);
@@ -38,12 +41,15 @@ function setup() {
     const steps = [new Element(),new Element(),new Element()];
     chapter.querySelector = selector => {
       if (selector === '[data-count]') return chapter.querySelector('.demo-task').querySelector(selector);
-      if (!children.has(selector)) children.set(selector,new Element());
+      if (!children.has(selector)) {
+        const child = new Element();
+        if (selector === '.scene') child.getBoundingClientRect = () => ({top:1032 + index*1500 - win.scrollY,height:600});
+        children.set(selector,child);
+      }
       return children.get(selector);
     };
     chapter.querySelectorAll = () => steps;
-    chapter.getBoundingClientRect = () => ({top:60 + (index-selected)*1500,bottom:1560 + (index-selected)*1500,height:1500});
-    chapter.scrollIntoView = () => {selected = index;};
+    chapter.getBoundingClientRect = () => ({top:1000 + index*1500 - win.scrollY,bottom:2500 + index*1500 - win.scrollY,height:1500});
     return chapter;
   });
   const other = new Map();
@@ -54,7 +60,7 @@ function setup() {
     querySelector:selector => {
       if (!other.has(selector)) other.set(selector,new Element());
       const result = other.get(selector);
-      result.getBoundingClientRect = () => ({top:60,bottom:1560,height:1500});
+      result.getBoundingClientRect = () => selector === '.nav' ? {top:0,bottom:52,height:52} : {top:60,bottom:1560,height:1500};
       return result;
     },
     createElement:() => new Element(),
@@ -63,6 +69,8 @@ function setup() {
   const speech = {current:null,getVoices:() => [],cancel(){this.current = null;},speak(utterance){this.current = utterance;}};
   const win = {
     innerHeight:800, speechSynthesis:speech,
+    scrollY:0,
+    scrollTo(options){scrolls.push(options);this.scrollY=options.top;},
     matchMedia:() => ({matches:false,addEventListener(){}}),
     addEventListener:(name,handler) => events.set('window:'+name,handler),
     setTimeout:(callback,delay) => {const id=nextId++;timers.set(id,{at:now+delay,callback});return id;},
@@ -90,11 +98,12 @@ function setup() {
     const callbacks=[...frames.values()];frames.clear();callbacks.forEach(callback=>callback());await flush();
   }
   const motor=chapters[1];
-  return {get,chapters,motor,click,advance,flush,speech,doc,events,
+  return {get,chapters,motor,click,advance,flush,speech,doc,events,scrolls,
     requests:()=>requests,
     step:()=>motor.querySelector('[data-step-count]').textContent,
     async selectMotor(index) {for (let i=0;i<=index;i++) await click(motor.querySelector('[data-next]'));},
-    async soundOn(){await click(get('soundButton'));},
+    async soundOn(){if (get('soundButton')['aria-pressed'] !== 'true') await click(get('soundButton'));},
+    async mute(){if (get('soundButton')['aria-pressed'] === 'true') await click(get('soundButton'));},
     async finishSpeech(){assert.ok(speech.current);speech.current.onend();await flush();}
   };
 }
@@ -170,10 +179,85 @@ test('hiding the page pauses an active countdown without auto-resuming',async()=
 
 test('whole-day playback finishes on the care view without API or audio calls',async()=>{
   const env=setup();
+  await env.mute();
   await env.click(env.get('playDay'));
   await env.advance(300000);
   assert.equal(env.get('journeyPlayer').hidden,true);
   assert.equal(env.get('care').scrolled,true);
   assert.equal(env.requests(),0);
   assert.equal(env.speech.current,null);
+});
+
+test('sound is enabled by default but no speech occurs before a Play gesture',async()=>{
+  const env=setup();
+  assert.equal(env.get('soundButton')['aria-pressed'],'true');
+  assert.equal(env.speech.current,null);
+  await env.click(env.motor.querySelector('[data-play]'));
+  assert.ok(env.speech.current.text.includes('three short tasks'));
+});
+
+test('Play the day navigates to the first scene even with no prior playback',async()=>{
+  const env=setup();
+  await env.mute();
+  await env.click(env.get('playDay'));
+  assert.equal(env.scrolls.length,1);
+  assert.equal(env.scrolls[0].top,964); // scene at 1032, minus 52px nav and 16px breathing room
+});
+
+test('local guided exam start and subsequent steps never request a scroll',async()=>{
+  const env=setup();
+  await env.mute();
+  await env.click(env.chapters[0].querySelector('[data-play]'));
+  await env.click(env.motor.querySelector('[data-play]'));
+  await env.click(env.motor.querySelector('[data-next]'));
+  assert.equal(env.scrolls.length,0);
+});
+
+test('motor visuals advance through voice, growing handwriting, full photo and walk',async()=>{
+  const env=setup();
+  await env.selectMotor(1);
+  assert.ok(env.motor.querySelector('.scene > img').src.endsWith('/motor-voice.jpg'));
+  for (let i=0;i<3;i++) await env.click(env.motor.querySelector('[data-next]'));
+  assert.ok(env.motor.querySelector('.scene > img').src.endsWith('/writing-first.jpg'));
+  const line=env.motor.querySelector('.demo-task').children.find(child=>child.className==='writing-line');
+  assert.equal(line.children.filter(child=>child.className?.includes('is-reading')).length,1);
+  await env.click(env.motor.querySelector('[data-next]'));
+  assert.ok(env.motor.querySelector('.scene > img').src.endsWith('/writing-second.jpg'));
+  await env.click(env.motor.querySelector('[data-next]'));
+  await env.click(env.motor.querySelector('[data-next]'));
+  assert.ok(env.motor.querySelector('.scene > img').src.endsWith('/handwriting-capture.jpg'));
+  await env.click(env.motor.querySelector('[data-next]'));
+  await env.click(env.motor.querySelector('[data-next]'));
+  assert.ok(env.motor.querySelector('.scene > img').src.endsWith('/hall.jpg'));
+});
+
+test('countdown includes a separate seconds unit and photo viewer keeps the complete page',async()=>{
+  const env=setup();
+  await env.selectMotor(2);
+  let task=env.motor.querySelector('.demo-task');
+  const capture=task.children.find(child=>child.className==='capture-preview');
+  const time=capture.children.find(child=>child.className==='capture-time');
+  assert.equal(time.children.map(child=>child.textContent).join(''),'5 seconds');
+  for(let i=0;i<5;i++) await env.click(env.motor.querySelector('[data-next]'));
+  task=env.motor.querySelector('.demo-task');
+  await env.click(task.children.find(child=>child.className==='view-photo'));
+  assert.equal(env.get('photoViewer').open,true);
+  assert.ok(env.get('photoViewerImage').src.endsWith('/handwriting-capture.jpg'));
+  assert.ok(env.get('photoViewerCaption').textContent.includes('The quick brown fox jumps over the lazy dog.'));
+  await env.click(env.get('closePhotoViewer'));
+  assert.equal(env.get('photoViewer').open,false);
+  assert.equal(env.requests(),0);
+});
+
+test('opening architecture pauses a guided task and fences future timer callbacks',async()=>{
+  const env=setup();
+  await env.selectMotor(2);
+  await env.mute();
+  await env.click(env.motor.querySelector('[data-play]'));
+  await env.advance(1000);
+  env.events.get('document:cadence:panelchange')({detail:{panel:'build'}});
+  await env.advance(30000);
+  assert.equal(env.step(),'3 / 11');
+  assert.equal(env.motor.dataset.running,'false');
+  assert.equal(env.requests(),0);
 });

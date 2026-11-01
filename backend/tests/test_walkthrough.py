@@ -23,6 +23,24 @@ def test_demo_alias_route_delivers_walkthrough():
     assert "Cadence on Ray-Ban Meta" in response.text
 
 
+def test_architecture_tab_and_assets_share_the_nonce_policy():
+    import re
+    client = TestClient(app)
+    response = client.get('/walkthrough')
+    assert 'id="buildTab" role="tab"' in response.text
+    assert 'id="buildPanel"' in response.text
+    assert '__CADENCE_HOW_IT_WORKS__' not in response.text
+    assert 'SAM is not the primary handwriting' in response.text
+    nonce = re.search(r"nonce-([^']+)", response.headers['Content-Security-Policy']).group(1)
+    for asset in ('walkthrough.js', 'how-it-works.js'):
+        assert f'nonce="{nonce}" src="/assets/{asset}"' in response.text
+    for asset, kind in [('how-it-works.css','text/css'),('how-it-works.js','javascript')]:
+        result = client.get('/assets/' + asset)
+        assert result.status_code == 200
+        assert kind in result.headers['content-type']
+        assert result.headers['x-content-type-options'] == 'nosniff'
+
+
 def test_walkthrough_javascript_asset():
     client = TestClient(app)
     response = client.get("/assets/walkthrough.js")
@@ -39,7 +57,8 @@ def test_walkthrough_styles_and_allowlisted_images():
     assert styles.status_code == 200
     assert 'text/css' in styles.headers['content-type']
     assert 'prefers-reduced-motion' in styles.text
-    for name in ('wearer', 'table', 'desk', 'hall', 'coatstand', 'safety_floor', 'together'):
+    for name in ('wearer', 'table', 'desk', 'hall', 'coatstand', 'safety_floor', 'together',
+                 'motor-voice', 'writing-first', 'writing-second', 'writing-complete', 'handwriting-capture'):
         response = client.get(f'/assets/walkthrough/{name}.jpg')
         assert response.status_code == 200
         assert response.headers['content-type'] == 'image/jpeg'

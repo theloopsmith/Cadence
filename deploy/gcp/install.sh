@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Run on the VM as root after uploading the code bundle and protected environment.
 set -euo pipefail
-if [[ $# -ne 2 ]]; then echo 'Usage: install.sh BUNDLE HOSTNAME' >&2; exit 2; fi
+if [[ $# -lt 2 || $# -gt 3 ]]; then echo 'Usage: install.sh BUNDLE HOSTNAME [FALLBACK_HOSTNAME]' >&2; exit 2; fi
 bundle=$1
 hostname=$2
 [[ "$hostname" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]+$ ]] || exit 2
+alias_hostname=${3:-}
+[[ -z "$alias_hostname" || "$alias_hostname" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]+$ ]] || exit 2
+site_names=$hostname
+if [[ -n "$alias_hostname" && "$alias_hostname" != "$hostname" ]]; then
+    site_names="$hostname, $alias_hostname"
+fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y python3-venv python3-pip caddy curl
@@ -72,7 +78,7 @@ ReadWritePaths=/var/lib/cadence
 WantedBy=multi-user.target
 UNIT
 cat > /etc/caddy/Caddyfile <<CADDY
-$hostname {
+$site_names {
     encode gzip
     reverse_proxy 127.0.0.1:8000
 }

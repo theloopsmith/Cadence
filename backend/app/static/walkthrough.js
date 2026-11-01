@@ -5,7 +5,11 @@
   const chapters = Array.from(document.querySelectorAll('[data-chapter]'));
   const intro = document.querySelector('.intro');
   const soundButton = $('soundButton');
-  let soundEnabled = false;
+  let soundEnabled = 'speechSynthesis' in window;
+  let narrationUnlocked = false;
+  soundButton.setAttribute('aria-pressed', String(soundEnabled));
+  soundButton.textContent = soundEnabled ? 'Sound on ◉' : 'Audio unavailable';
+  soundButton.disabled = !soundEnabled;
   let activeChapter = null;
   let lastSpoken = '';
   let framePending = false;
@@ -75,7 +79,7 @@
   }
 
   function speak(text, key) {
-    if (!soundEnabled || !('speechSynthesis' in window) || lastSpoken === key || document.hidden) return;
+    if (!soundEnabled || !narrationUnlocked || lastSpoken === key || document.hidden) return;
     silence();
     lastSpoken = key;
     const utterance = new SpeechSynthesisUtterance(text.replace(/[“”]/g, ''));
@@ -91,6 +95,7 @@
     const name = chapter.dataset.chapter;
     if (chapter.dataset.stage === String(stage)) return;
     chapter.dataset.stage = String(stage);
+    if (name === 'motor') updateMotorScene(chapter, {visual:stage === 0 ? 'voiceReady' : stage === 1 ? 'writing' : 'walk', chunk:stage === 1 ? 2 : -1});
     if (story[name].you) chapter.querySelector('.you-said').textContent = story[name].you[stage];
     chapter.querySelector('[data-reply]').textContent = story[name].replies[stage];
     chapter.querySelector('[data-receipt]').textContent = story[name].receipts[stage];
@@ -144,6 +149,7 @@
       return;
     }
     soundEnabled = !soundEnabled;
+    narrationUnlocked = true;
     soundButton.setAttribute('aria-pressed', String(soundEnabled));
     soundButton.textContent = soundEnabled ? 'Sound on ◉' : 'Sound off ◌';
     lastSpoken = '';
@@ -184,8 +190,8 @@
       {group:1,user:'He starts the first part.',reply:'The quick brown fox',receipt:'Writing · Part 1 of 3',visual:'writing',title:'The first part. Then a pause.',detail:'Six seconds to write after the spoken phrase.',chunk:0,duration:6000},
       {group:1,user:'The next part, when he is ready.',reply:'jumps over',receipt:'Writing · Part 2 of 3',visual:'writing',title:'A short phrase. Room to finish.',detail:'Six seconds to write after the spoken phrase.',chunk:1,duration:6000},
       {group:1,user:'And the last few words.',reply:'the lazy dog.',receipt:'Writing · Part 3 of 3',visual:'writing',title:'No rush to keep up.',detail:'Say “repeat” in the app to hear the sentence again.',chunk:2,duration:6000},
-      {group:1,user:'“Take a photo.”',reply:'Look at the whole line through your glasses. Let’s capture a photo for you to review.',receipt:'Handwriting · Glasses photo captured in this example',visual:'photo',title:'His glasses capture the page',detail:'Illustrative photo review · No camera is accessed here.',image:'desk',duration:3500},
-      {group:1,user:'“Use this photo.”',reply:'Photo accepted. Next is a ten-second walk, only if you feel steady and have a clear path.',receipt:'Handwriting photo · Confirmed by Arun',visual:'photoAccepted',title:'He chooses the photo to keep',detail:'Confirmed photo → the handwriting step can continue.',image:'desk',duration:4000},
+      {group:1,user:'“Take a photo.”',reply:'Here is the whole page. Review the writing, then choose whether to use this photo.',receipt:'Handwriting · Glasses photo captured in this example',visual:'photo',title:'Review the complete handwriting',detail:'Illustrative photo · No camera is accessed here.',image:'handwriting-capture',duration:3500},
+      {group:1,user:'“Use this photo.”',reply:'Photo accepted. Next is a ten-second walk, only if you feel steady and have a clear path.',receipt:'Handwriting photo · Confirmed by Arun',visual:'photoAccepted',title:'He chooses the photo to keep',detail:'Confirmed photo → the handwriting step can continue.',image:'handwriting-capture',duration:4000},
       {group:2,user:'“Ready for the walk.”',reply:'Keep your usual walking aid if you use one. Only walk if you feel steady and have a clear path. Begin.',receipt:'Walking · Ten-second illustration',visual:'walk',title:'A short walk, when safe',detail:'Head motion is tracked through your glasses. This is a visual illustration.',count:10,duration:10000},
       {group:2,user:'“What gets saved?”',reply:'Your voice sample, handwriting observations, and walking observations stay together in your diary. You can share the record with your care team.',receipt:'Daily check · Sample summary ready',visual:'summary',title:'Something concrete to look back on',detail:'Illustrative summary · No exam or measurements were performed here.',duration:6500}
     ],
@@ -196,10 +202,10 @@
       {group:2,user:'The moment has a place in his record.',reply:'The walking event is kept in the diary, so it does not have to be recalled later.',receipt:'Walking event · Saved in the sample day',visual:'saved',title:'A small moment, remembered',detail:'Walking event → today’s diary',duration:4500}
     ],
     surroundings: [
-      {group:0,user:'“Help me check what’s by the door.”',reply:'Let’s take a photo with your glasses, then you can choose whether to use it.',receipt:'Surroundings · Waiting for a photo',visual:'camera',title:'Start with what he is looking at',detail:'The glasses provide the camera view in the real app.',image:'hall',duration:4500},
-      {group:0,user:'“Take a photo.”',reply:'Here is the captured photo. Would you like to use it or take another?',receipt:'Glasses photo · Ready to review',visual:'photo',title:'A photo he can review',detail:'Illustrative capture · No browser camera access.',image:'hall',duration:4000},
-      {group:1,user:'“Use this photo.”',reply:'I’ll check the image you chose.',receipt:'Photo · Confirmed by Arun',visual:'photoAccepted',title:'He decides what is used',detail:'Retake, use, or cancel. The choice stays with him.',image:'hall',duration:3500},
-      {group:2,user:'“What does it appear to show?”',reply:'The photo appears to show a coat on a stand near the doorway. An image can miss things.',receipt:'Image description · Ready to hear',visual:'description',title:'A grounded description',detail:'“A coat on a stand near the doorway.”',image:'hall',duration:5000},
+      {group:0,user:'“Help me check what’s by the door.”',reply:'Let’s take a photo with your glasses, then you can choose whether to use it.',receipt:'Surroundings · Waiting for a photo',visual:'camera',title:'Start with what he is looking at',detail:'The glasses provide the camera view in the real app.',image:'coatstand',duration:4500},
+      {group:0,user:'“Take a photo.”',reply:'Here is the captured photo. Would you like to use it or take another?',receipt:'Glasses photo · Ready to review',visual:'photo',title:'A photo he can review',detail:'Illustrative capture · No browser camera access.',image:'coatstand',duration:4000},
+      {group:1,user:'“Use this photo.”',reply:'I’ll check the image you chose.',receipt:'Photo · Confirmed by Arun',visual:'photoAccepted',title:'He decides what is used',detail:'Retake, use, or cancel. The choice stays with him.',image:'coatstand',duration:3500},
+      {group:2,user:'“What does it appear to show?”',reply:'The photo appears to show a coat on a stand near the doorway. An image can miss things.',receipt:'Image description · Ready to hear',visual:'description',title:'A grounded description',detail:'“A coat on a stand near the doorway.”',image:'coatstand',duration:5000},
       {group:2,user:'He can ask again, or carry on.',reply:'The description can stay in the diary. It is not a guarantee that a scene or path is safe.',receipt:'Confirmed image description · In the sample diary',visual:'saved',title:'Help without taking the choice away',detail:'His photo. His confirmation. His next step.',duration:4500}
     ],
     safety: [
@@ -218,6 +224,36 @@
     return node;
   }
 
+  function updateMotorScene(chapter, beat) {
+    if (chapter.id !== 'motor') return;
+    const image = chapter.querySelector('.scene > img');
+    let asset = 'wearer';
+    let alt = 'Arun preparing for the guided motor check.';
+    if (beat.visual === 'voice' || beat.visual === 'voiceReady') {
+      asset = 'motor-voice'; alt = 'Arun sitting comfortably for a sustained voice sample.';
+    } else if (beat.visual === 'writing') {
+      asset = beat.chunk < 0 ? 'desk' : ['writing-first', 'writing-second', 'writing-complete'][beat.chunk];
+      alt = 'Illustrative notebook showing the writing completed so far.';
+    } else if (beat.visual === 'photo' || beat.visual === 'photoAccepted' || beat.visual === 'summary') {
+      asset = beat.visual === 'summary' ? 'writing-complete' : 'handwriting-capture'; alt = 'The notebook with the complete handwritten sentence.';
+    } else if (beat.visual === 'walk') {
+      asset = 'hall'; alt = 'A clear home hallway for the short walking task.';
+    }
+    image.src = '/assets/walkthrough/' + asset + '.jpg';
+    image.alt = alt;
+  }
+
+  function openPhoto(beat) {
+    pausePlayback();
+    const image = $('photoViewerImage');
+    image.src = '/assets/walkthrough/' + beat.image + '.jpg';
+    image.alt = beat.image === 'handwriting-capture' ? 'The complete handwritten sentence on the notebook page.' : 'The full illustrative surroundings photo.';
+    $('photoViewerCaption').textContent = beat.image === 'handwriting-capture'
+      ? 'Illustrative handwriting: The quick brown fox jumps over the lazy dog.'
+      : 'Illustrative photo review. The complete image is shown without cropping.';
+    $('photoViewer').showModal();
+  }
+
   function renderTask(chapter, beat) {
     const task = chapter.querySelector('.demo-task');
     task.hidden = false;
@@ -228,15 +264,27 @@
     if (beat.visual === 'writing') {
       const line = element('div', 'writing-line');
       ['The quick brown fox', 'jumps over', 'the lazy dog.'].forEach((words, index) => {
-        line.appendChild(element('span', index <= beat.chunk ? 'written' : '', words + ' '));
+        const chunk = element('span', 'writing-chunk ' + (index === beat.chunk ? 'is-reading' : index < beat.chunk ? 'written' : 'pending'));
+        let position = 0;
+        words.split(' ').forEach((word) => {
+          const node = element('span', 'writing-word', word + ' ');
+          node.dataset.wordStart = String(position);
+          position += word.length + 1;
+          chunk.appendChild(node);
+        });
+        line.appendChild(chunk);
+        line.appendChild(element('span', '', ' '));
       });
       task.appendChild(line);
     } else if (beat.count) {
       const capture = element('div', 'capture-preview');
+      const time = element('div', 'capture-time');
       const count = element('b', 'capture-count', String(beat.count));
       count.dataset.count = '';
-      capture.appendChild(count);
-      capture.appendChild(element('span', 'capture-unit', beat.visual === 'voice' ? 'SECONDS · STEADY “AH”' : 'SECONDS · USUAL PACE'));
+      time.appendChild(count);
+      time.appendChild(element('span', 'capture-unit', ' seconds'));
+      capture.appendChild(time);
+      capture.appendChild(element('span', 'capture-label', beat.visual === 'voice' ? 'STEADY “AH”' : 'YOUR USUAL PACE'));
       const wave = element('div', beat.visual === 'voice' ? 'sample-wave' : 'sample-steps');
       for (let i = 0; i < 9; i++) wave.appendChild(element('i'));
       capture.appendChild(wave);
@@ -245,10 +293,14 @@
       const preview = element('div', 'photo-preview');
       const img = element('img');
       img.src = '/assets/walkthrough/' + beat.image + '.jpg';
-      img.alt = beat.image === 'desk' ? 'Illustrative captured handwriting page.' : 'Illustrative captured hallway photo.';
+      img.alt = beat.image === 'handwriting-capture' ? 'Complete sentence: The quick brown fox jumps over the lazy dog.' : 'Illustrative captured surroundings photo.';
       preview.appendChild(img);
       preview.appendChild(element('span', 'photo-state', beat.visual === 'photoAccepted' ? '✓ Photo confirmed' : beat.visual === 'description' ? 'Image description' : 'Photo preview'));
       task.appendChild(preview);
+      const view = element('button', 'view-photo', 'View full photo ↗');
+      view.type = 'button';
+      view.addEventListener('click', () => openPhoto(beat));
+      task.appendChild(view);
     } else if (beat.visual === 'summary' || beat.visual === 'overview') {
       const list = element('div', 'exam-summary');
       ['Voice sample', 'Handwriting photo', 'Walking observations'].forEach((name) => {
@@ -304,10 +356,12 @@
       delete playback.chapter.dataset.controlled;
       delete playback.chapter.dataset.running;
       delete playback.chapter.dataset.stage;
+      delete playback.chapter.dataset.visual;
       playback.chapter.querySelector('.demo-task').hidden = true;
       playback.chapter.querySelector('.beat-progress i').style.transform = 'scaleX(0)';
     }
     playback = null;
+    narrationUnlocked = false;
     updatePlaybackControls();
     scheduleFrame();
   }
@@ -326,7 +380,14 @@
     playbackFrame = window.requestAnimationFrame(() => tickPlayback(revision));
   }
 
-  async function showBeat(chapter, index, auto, allDay = false) {
+  function navigateToScene(chapter) {
+    const scene = chapter.querySelector('.scene');
+    const header = document.querySelector('.nav').getBoundingClientRect();
+    const top = Math.max(0, window.scrollY + scene.getBoundingClientRect().top - header.bottom - 16);
+    window.scrollTo({top, behavior:reducedMotion.matches ? 'auto' : 'smooth'});
+  }
+
+  async function showBeat(chapter, index, auto, allDay = false, navigate = false) {
     const oldChapter = playback && playback.chapter;
     ++playbackRevision;
     clearPlaybackClocks();
@@ -334,6 +395,7 @@
       delete oldChapter.dataset.controlled;
       delete oldChapter.dataset.running;
       delete oldChapter.dataset.stage;
+      delete oldChapter.dataset.visual;
       oldChapter.querySelector('.demo-task').hidden = true;
     }
     const revision = playbackRevision;
@@ -342,6 +404,8 @@
     chapter.dataset.controlled = 'true';
     chapter.dataset.running = 'false';
     chapter.dataset.stage = String(beat.group);
+    chapter.dataset.visual = beat.visual;
+    updateMotorScene(chapter, beat);
     chapter.querySelector('.you-said').textContent = beat.user;
     chapter.querySelector('[data-reply]').textContent = beat.reply;
     chapter.querySelector('[data-receipt]').textContent = beat.receipt;
@@ -349,10 +413,8 @@
     chapter.querySelector('.beat-progress i').style.transform = 'scaleX(0)';
     renderTask(chapter, beat);
     updatePlaybackControls();
-    // Only scroll smoothly if navigating to a different chapter; never jump on in-chapter step clicks
-    if (oldChapter && oldChapter !== chapter) {
-      chapter.scrollIntoView({behavior:reducedMotion.matches ? 'auto' : 'smooth', block:'start'});
-    }
+    // Navigation is explicit: local exam controls never change the scroll position.
+    if (navigate) navigateToScene(chapter);
     if (!auto) return;
     // Dictation pauses and capture timers begin only after OS speech ends.
     await narrateGuided(beat.reply, chapter.id + ':guided:' + index, beat.visual === 'writing' ? 0.78 : 0.92);
@@ -379,7 +441,7 @@
     updatePlaybackControls();
     if (auto && allDay) {
       const next = chapters[chapters.indexOf(chapter) + 1];
-      if (next) void showBeat(next, 0, true, true);
+      if (next) void showBeat(next, 0, true, true, true);
       else {
         stopPlayback();
         $('care').scrollIntoView({behavior:reducedMotion.matches ? 'auto' : 'smooth', block:'start'});
@@ -388,7 +450,8 @@
   }
 
   function narrateGuided(text, key, rate) {
-    if (!soundEnabled || !('speechSynthesis' in window) || document.hidden) return Promise.resolve();
+    if (!soundEnabled || !narrationUnlocked || document.hidden) return Promise.resolve();
+    const revision = playbackRevision;
     silence();
     lastSpoken = key;
     return new Promise((resolve) => {
@@ -410,6 +473,15 @@
       if (voice) utterance.voice = voice;
       utterance.onend = finish;
       utterance.onerror = finish;
+      utterance.onboundary = (event) => {
+        if (event.name !== 'word' || !playback || finished || revision !== playbackRevision) return;
+        const words = playback.chapter.querySelectorAll('.writing-chunk.is-reading .writing-word');
+        words.forEach((word, index) => {
+          const start = Number(word.dataset.wordStart);
+          const end = index + 1 < words.length ? Number(words[index + 1].dataset.wordStart) : Infinity;
+          word.classList.toggle('spoken-word', event.charIndex >= start && event.charIndex < end);
+        });
+      };
       timeout = window.setTimeout(() => { window.speechSynthesis.cancel(); finish(); }, 45000);
       window.speechSynthesis.speak(utterance);
     });
@@ -417,6 +489,7 @@
 
   chapters.forEach((chapter) => {
     chapter.querySelector('[data-play]').addEventListener('click', () => {
+      narrationUnlocked = true;
       if (playback && playback.chapter === chapter && playback.playing) pausePlayback();
       else {
         const index = playback && playback.chapter === chapter && !playback.finished ? playback.index : 0;
@@ -431,10 +504,11 @@
       if (playback && playback.chapter === chapter) void showBeat(chapter, Math.max(0, playback.index - 1), false, false);
     });
   });
-  $('playDay').addEventListener('click', () => { void showBeat(chapters[0], 0, true, true); });
-  $('replayDay').addEventListener('click', () => { void showBeat(chapters[0], 0, true, true); });
+  $('playDay').addEventListener('click', () => { narrationUnlocked = true; void showBeat(chapters[0], 0, true, true, true); });
+  $('replayDay').addEventListener('click', () => { narrationUnlocked = true; void showBeat(chapters[0], 0, true, true, true); });
   $('journeyPause').addEventListener('click', () => {
     if (!playback) return;
+    narrationUnlocked = true;
     if (playback.playing) pausePlayback();
     else void showBeat(playback.chapter, playback.finished ? 0 : playback.index, true, playback.allDay);
   });
@@ -445,6 +519,7 @@
   $('journeyNext').addEventListener('click', () => {
     if (playback) advanceBeat(playback.playing);
   });
+  $('closePhotoViewer').addEventListener('click', () => $('photoViewer').close());
   window.addEventListener('wheel', pausePlayback, {passive:true});
   window.addEventListener('touchstart', (event) => {
     if (!event.target.closest('button')) pausePlayback();
@@ -453,6 +528,12 @@
     if (['PageDown','PageUp','Home','End','ArrowDown','ArrowUp','Escape'].includes(event.key)) pausePlayback();
   });
   window.addEventListener('pagehide', stopPlayback);
+  document.addEventListener('cadence:panelchange', (event) => {
+    if (event.detail.panel !== 'build') return;
+    pausePlayback();
+    silence();
+    if ($('photoViewer').open) $('photoViewer').close();
+  });
 
   // Optional live proof is an explicit, separately authenticated action.
   // Tokens are kept in memory, not URLs, localStorage or persistent browser storage.

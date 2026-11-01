@@ -1549,3 +1549,92 @@ footer .brand {
     opacity: 1 !important;
   }
 }
+
+/* Guided playback keeps the showcase geometry stable and its content readable. */
+.chapter { overflow-anchor: none; }
+.chapter[data-controlled="true"] .scene {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 60px 20px 20px;
+}
+.chapter[data-controlled="true"] .scene-top {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  right: 20px;
+  padding: 0;
+}
+.chapter[data-controlled="true"] .scene > img {
+  transform: none;
+  transition: none;
+}
+.chapter[data-controlled="true"] .demo-task {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  justify-self: center;
+  align-self: start;
+  width: min(420px, 100%);
+  padding: 16px 20px;
+}
+.chapter[data-controlled="true"] .transcript {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  align-self: end;
+  width: 100%;
+  margin: 0;
+  padding: 14px 18px;
+}
+.chapter[data-controlled="true"] .transcript-label { margin-top: 10px; }
+.chapter[data-visual="photo"] .scene > img,
+.chapter[data-visual="photoAccepted"] .scene > img,
+.chapter[data-visual="description"] .scene > img { object-fit: contain; opacity: .3; }
+.chapter[data-visual="photo"] .demo-task,
+.chapter[data-visual="photoAccepted"] .demo-task,
+.chapter[data-visual="description"] .demo-task { width: 100%; }
+.capture-preview { margin-top: 12px; }
+.capture-time { display: flex; align-items: baseline; column-gap: 14px; }
+.capture-count { font-size: 54px; line-height: 1.1; letter-spacing: -.04em; font-weight: 500; font-variant-numeric: tabular-nums; }
+.capture-unit { font-size: 15px; color: var(--text-secondary); letter-spacing: normal; }
+.capture-label { display: block; margin-top: 5px; font-size: 9px; letter-spacing: .1em; color: var(--text-secondary); }
+.sample-wave, .sample-steps { display: flex; gap: 5px; align-items: center; height: 22px; margin-top: 12px; }
+.sample-wave i { width: 3px; height: 10px; border-radius: 3px; background: var(--accent-mint); }
+.sample-wave i:nth-child(2n) { height: 17px; }
+.sample-wave i:nth-child(3n) { height: 22px; }
+.sample-steps i { width: 8px; height: 12px; border-radius: 50%; border: 1px solid var(--accent-mint); }
+.writing-line { font-family: Georgia, serif; font-size: 22px; line-height: 1.9; margin-top: 14px; letter-spacing: normal; }
+.writing-chunk { padding: 3px 5px; border-radius: 5px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.writing-chunk.pending { color: #a6a6ad; }
+.writing-chunk.written { color: var(--text-primary); }
+.writing-chunk.is-reading { color: #071b0c; background: #a9e7b7; }
+.writing-word.spoken-word { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+.photo-preview { position: relative; height: clamp(130px, 22vh, 210px); width: 100%; margin-top: 10px; background: #080809; border-radius: 9px; overflow: hidden; }
+.photo-preview img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; transform: none; }
+.photo-state { position: absolute; right: 8px; bottom: 8px; font-size: 9px; padding: 4px 8px; border-radius: 20px; background: #101014e6; color: var(--text-primary); }
+.view-photo { display: inline-block; margin-top: 8px; padding: 4px 0; font-size: 12px; color: var(--accent-mint); text-decoration: underline; text-underline-offset: 3px; }
+.exam-summary { display: grid; gap: 8px; margin-top: 12px; font-size: 12px; }
+#photoViewer { width: min(1200px, calc(100vw - 32px)); max-width: none; max-height: calc(100svh - 32px); padding: 18px; border: 1px solid var(--border-highlight); border-radius: 16px; background: #101013; color: var(--text-primary); }
+#photoViewer::backdrop { background: #000d; }
+#photoViewerImage { display: block; width: 100%; max-height: calc(100svh - 145px); object-fit: contain; margin-top: 12px; }
+#closePhotoViewer { display: block; margin-left: auto; padding: 5px 10px; }
+#photoViewerCaption { margin: 12px 0 0; font-size: 13px; line-height: 1.5; color: #d1d1d6; }
+@media (max-width: 900px) {
+  .chapter[data-controlled="true"] .scene { min-height: 560px; height: auto; max-height: none; aspect-ratio: auto; padding: 52px 12px 12px; }
+  .chapter[data-controlled="true"] .demo-task { padding: 14px 16px; }
+  .chapter[data-controlled="true"] .transcript { padding: 13px 15px; }
+  .chapter[data-controlled="true"] .scene-top { top: 15px; left: 16px; right: 16px; }
+  .writing-line { font-size: 20px; }
+  .photo-preview { height: 180px; }
+  .capture-count { font-size: 46px; }
+}
+/* Sticky showcases must start in normal flow, rather than vertically centering
+   inside a tall flex parent. Otherwise controls appear to jump on playback. */
+.chapter { display: block; }
+.chapter-sticky { margin-block: 0; }
+html, body { overflow-anchor: none; }

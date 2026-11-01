@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="420" viewBox="0 0 1080 420" role="img" aria-labelledby="title desc">
+<title id="title">Cadence architecture</title><desc id="desc">Glasses provide camera and audio to an iPhone. The iPhone runs local DSP, confirmations and offline queues. A protected backend performs bounded Meta inference and stores records and alert state. A care dashboard displays a daily summary and tracks separate acknowledgment.</desc>
+<rect width="1080" height="420" fill="#0c0e0f"/>
+<g font-family="-apple-system,Helvetica,Arial,sans-serif">
+<text x="40" y="72" font-size="36" fill="#f5f5f7">Cadence. From a moment to follow-through.</text>
+<text x="42" y="112" font-size="14" fill="#999fa5">Swift on iPhone / FastAPI / SQLite / Meta models</text>
+<rect x="40" y="155" width="220" height="165" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="60" y="190" font-size="11" fill="#99b7a3">01</text>
+<text x="60" y="231" font-size="20" fill="#edf0ef">Meta glasses</text>
+<text x="60" y="265" dy="0" font-size="13" fill="#a6adb0">Camera + routed audio</text>
+<text x="60" y="265" dy="23" font-size="13" fill="#a6adb0">The wearer’s point of view</text>
+<path d="M267 237h25m-6-5 6 5-6 5" stroke="#778f80" fill="none"/>
+<rect x="300" y="155" width="220" height="165" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="320" y="190" font-size="11" fill="#99b7a3">02</text>
+<text x="320" y="231" font-size="20" fill="#edf0ef">iPhone app</text>
+<text x="320" y="265" dy="0" font-size="13" fill="#a6adb0">Local DSP + confirmations</text>
+<text x="320" y="265" dy="23" font-size="13" fill="#a6adb0">Account-bound offline queue</text>
+<path d="M527 237h25m-6-5 6 5-6 5" stroke="#778f80" fill="none"/>
+<rect x="560" y="155" width="220" height="165" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="580" y="190" font-size="11" fill="#99b7a3">03</text>
+<text x="580" y="231" font-size="20" fill="#edf0ef">Protected backend</text>
+<text x="580" y="265" dy="0" font-size="13" fill="#a6adb0">Meta inference when needed</text>
+<text x="580" y="265" dy="23" font-size="13" fill="#a6adb0">Durable records + alert state</text>
+<path d="M787 237h25m-6-5 6 5-6 5" stroke="#778f80" fill="none"/>
+<rect x="820" y="155" width="220" height="165" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="840" y="190" font-size="11" fill="#99b7a3">04</text>
+<text x="840" y="231" font-size="20" fill="#edf0ef">Care connection</text>
+<text x="840" y="265" dy="0" font-size="13" fill="#a6adb0">Read-only daily summary</text>
+<text x="840" y="265" dy="23" font-size="13" fill="#a6adb0">Separate acknowledgment</text>
+<text x="42" y="380" font-size="13" fill="#b4bfc0">Local cues stay on the phone. Models interpret bounded requests. Confirmed records persist.</text>
+<text x="42" y="406" font-size="11" fill="#777f82">Conceptual flow · Inference is optional · Not a clinical validation</text></g></svg>

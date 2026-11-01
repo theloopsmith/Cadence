@@ -35,7 +35,11 @@ if ! "${cloud[@]}" compute addresses describe cadence-demo --region "$region" >/
     "${cloud[@]}" compute addresses create cadence-demo --region "$region" --network-tier=STANDARD
 fi
 ip=$("${cloud[@]}" compute addresses describe cadence-demo --region "$region" --format='value(address)')
-hostname=${2:-$ip.sslip.io}
+hostname=${2:-}
+if [[ -z "$hostname" && -f "$root/.local/gcp-demo/hostname" ]]; then
+    hostname=$(cat "$root/.local/gcp-demo/hostname")
+fi
+hostname=${hostname:-$ip.sslip.io}
 "$root/backend/.venv/bin/python" "$root/scripts/prepare_cloud_demo.py" "$hostname"
 python3 "$root/scripts/build_cloud_bundle.py" "$root/.local/gcp-demo/source.tar.gz"
 if ! "${cloud[@]}" compute instances describe "$vm" --zone "$zone" >/dev/null 2>&1; then
@@ -61,5 +65,6 @@ for attempt in {1..12}; do
 done
 [[ "$ssh_ready" == true ]] || { echo 'IAP/SSH is not ready; no credentials uploaded.' >&2; exit 1; }
 "${cloud[@]}" compute scp "${common[@]}" "$root/.local/gcp-demo/source.tar.gz" "$root/.local/gcp-demo/backend.env" "$root/.local/gcp-demo/accounts.env" "$vm:~/"
-"${cloud[@]}" compute ssh "${common[@]}" "$vm" --command="sudo install -d -m 750 /etc/cadence && sudo install -m 600 backend.env /etc/cadence/backend.env && sudo install -m 600 accounts.env /etc/cadence/accounts.env && rm backend.env accounts.env && tar -xzf source.tar.gz deploy/gcp/install.sh && sudo bash deploy/gcp/install.sh source.tar.gz '$hostname'"
+"${cloud[@]}" compute ssh "${common[@]}" "$vm" --command="sudo install -d -m 750 /etc/cadence && sudo install -m 600 backend.env /etc/cadence/backend.env && sudo install -m 600 accounts.env /etc/cadence/accounts.env && rm backend.env accounts.env && tar -xzf source.tar.gz deploy/gcp/install.sh && sudo bash deploy/gcp/install.sh source.tar.gz '$hostname' '$ip.sslip.io'"
+printf '%s\n' "$hostname" > "$root/.local/gcp-demo/hostname"
 printf 'Deployment started. Verify https://%s/health and https://%s/dashboard\n' "$hostname" "$hostname"

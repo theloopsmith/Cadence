@@ -42,7 +42,7 @@ jobs:
         run: node --test tests/dashboard_exam_validity.test.cjs
 
       - name: Guided walkthrough timing and cancellation (silent, no network)
-        run: node --test tests/walkthrough_playback.test.cjs
+        run: node --test tests/walkthrough_playback.test.cjs tests/how_it_works.test.cjs
 
       - name: Dashboard fixture from the real app
         run: python tests/make_dashboard_fixture.py /tmp/dashboard-shell.json

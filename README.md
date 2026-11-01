@@ -1,5 +1,53 @@
 # Cadence — Daily Living & Accessibility Companion
 
+[![CI](https://github.com/theloopsmith/Cadence/actions/workflows/ci.yml/badge.svg)](https://github.com/theloopsmith/Cadence/actions/workflows/ci.yml)
+
+**Your day. Still yours.** An iPhone companion for everyday life with Parkinson’s, paired with Meta glasses for camera and audio.
+
+[Experience a day with Cadence](https://cadence-companion.duckdns.org/walkthrough) · [Animated “How it works”](https://cadence-companion.duckdns.org/walkthrough#how-it-works) · [Care dashboard](https://cadence-companion.duckdns.org/dashboard) (sign-in required)
+
+![Cadence architecture: glasses, iPhone app, protected backend and care connection](docs/assets/architecture-flow.gif)
+
+[Static architecture diagram](docs/assets/architecture.svg) · [Detailed architecture](docs/ARCHITECTURE_AND_DESIGN_SPEC.md)
+
+## How it works
+
+1. **Glasses capture the moment.** The wearer’s camera view and active audio route connect to the iPhone. The app, not an in-lens HUD or the built-in Hey Meta assistant, owns the Cadence conversation.
+2. **The iPhone handles immediate assistance.** Swift runs motion processing, guided tasks, installed Apple speech output, confirmations, and an account-bound offline queue. Phone motion is the fallback when glasses motion is unavailable.
+3. **The backend adds bounded inference and persistence.** Authenticated FastAPI routes use Meta models when needed, save events in SQLite, and recover unfinished alert work. Models do not directly execute user actions or invent patient facts.
+4. **The care connection keeps the evidence.** A read-only dashboard presents saved observations. Queued work, provider acceptance, delivery status, and a human acknowledgment are separate facts.
+
+### Which model does what?
+
+- **Meta Muse Spark Open** (`meta-models/muse-spark-open-1026`, hosted by Baseten): classifies conversational requests into an allowlisted intent; can choose a scene label only from SAM-grounded candidates. The phone answers factual questions from its saved records and owns action confirmations.
+- **Meta SAM 3.1** (`sam-3.1`, Meta Model API): segments named concepts in the user-confirmed photo. Mask filtering and constrained templates keep the description tied to image evidence. A missing detection is not proof that the scene is safe.
+- **Meta Muse Voice Transcribe** (`muse-voice-transcribe-1.0`, Meta Model API): optional online speech-to-text. Spoken replies use installed Apple voices in the app and browser speech synthesis in the tour; this model does not generate reply audio.
+- **Configured alternate:** Meta Llama 3.3 through Fireworks can interpret requests when the Baseten key is absent. It is not an automatic network retry after a Muse failure. Llama 3.2 vision adapters remain in the repository; the current surroundings path uses SAM plus bounded label selection.
+
+Hosting and model authorship are distinct. CoreMotion/Accelerate, OpenCV, Apple OS features and SQLite are ordinary software/platform features, not additional external model calls. No ElevenLabs model is used. IDs are configurable; the above are the current defaults.
+
+### The math, at a glance
+
+**Walking support / FoG.** A Hann-windowed FFT splits available motion into step-band power (0.5–3 Hz) and higher-band power (>3–8 Hz):
+
+`Freeze index = higher-band power / (step-band power + 0.000001)`
+
+The ratio alone does not trigger a cue. Walking/initiation/turn context, an energy floor, speech adjustment and three qualifying 0.5-second hops gate an episode. Cues are bounded and run locally. These experimental thresholds are not diagnostic measures. [Detector source](ios/CadenceCompanion/DSP/FoGDetector.swift).
+
+**Handwriting.** OpenCV thresholds and deskews the photo, finds connected ink components, orders them left to right, and compares the first and last groups (roughly a third each, at least two components):
+
+`Height change (%) = (ending average − starting average) / starting average × 100`
+
+For example, 40 px → 32 px gives −20%. Fewer than four accepted components is unreadable, not a perfect result. Perspective and joined writing affect the measurement. SAM is not the primary handwriting engine, and research scores are hidden by default. [Handwriting source](backend/app/services/handwriting.py).
+
+**Voice.** A five-second sustained vowel supplies RMS amplitude, `dBFS = 20 × log10(RMS)`, and variability as the standard deviation of level samples. Quality gates distinguish a usable sample from silence or an unavailable measurement. [Voice source](ios/CadenceCompanion/DSP/VoiceMonitor.swift).
+
+**Other features.** Possible falls use deterministic impact/jerk/orientation rules and a check-in/escalation state machine. Medication uses saved schedules, explicit confirmation and timestamps; it does not recommend a dose or infer ingestion. The guided walking task records local movement observations. Skipped/unavailable tasks remain distinct from measured tasks.
+
+The web architecture tab has interactive **synthetic** spectra and stroke-height examples. Its diagrams do not capture sensors or call models. The wearer tour is illustrative; its separate authenticated judge panel makes a real Meta intent request and saves labeled synthetic records. Physical-device/glasses acceptance and real caregiver delivery are tracked separately in the verification log.
+
+---
+
 Docs: [architecture diagram](docs/cadence_architecture.drawio) (four pages: system overview, fall safety path, Meta model calls, data and sync) · [readiness review and open items](docs/HACKATHON_READINESS_REVIEW_2026-10-29.md) · [verification log](docs/VERIFICATION_LOG.md) with the evidence behind every claim below.
 
 Cadence is an audio-first accessibility companion for a paired iPhone and Meta AI glasses, built for the Meta Global AI Developer Hackathon's **Build for Your World** problem statement.

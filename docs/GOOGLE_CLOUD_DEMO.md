@@ -36,7 +36,7 @@ From the repository root:
 export CLOUDSDK_CONFIG="$PWD/.local/gcloud"
 export CLOUDSDK_PYTHON="$PWD/backend/.venv/bin/python"
 export CADENCE_GCLOUD_BIN=/private/tmp/cadence-gcloud-tools/google-cloud-sdk/bin/gcloud
-./deploy/gcp/deploy.sh ultra-concord-513321-q3
+./deploy/gcp/deploy.sh ultra-concord-513321-q3 cadence-companion.duckdns.org
 ```
 
 The script verifies sign-in, project access and linked billing before enabling Compute and IAP APIs. It creates the VM/network/address if absent, uploads code and private environment files over IAP, installs pinned dependencies, creates scoped accounts, and starts the service. A newly enabled API can take several minutes to propagate; if Google reports `SERVICE_DISABLED` immediately after successful activation, wait and rerun. Re-running preserves the database and locally saved signing key/passwords. Keep the ignored deployment files backed up privately; losing them complicates subsequent deployments.
@@ -69,3 +69,5 @@ The initial pass checks TLS, authentication, role enforcement and a live Meta cl
 Use `gcloud compute ssh cadence-demo --project ultra-concord-513321-q3 --zone us-central1-a --tunnel-through-iap` and inspect `sudo systemctl status cadence` or `sudo journalctl -u cadence`. Do not print the environment file or credentials into shared logs.
 
 For cleanup after judging, inspect the project resources in Cloud Console. VM deletion protection must be turned off explicitly. The boot disk is retained by design; delete the retained disk, reserved address, firewall rules and dedicated network when no longer needed. Stopping the VM alone can leave storage/address charges consuming credit.
+
+After a successful deployment the selected primary hostname is saved in ignored `.local/gcp-demo/hostname`. Later deployments without a hostname argument reuse it. Caddy also serves the reserved IP’s sslip.io hostname as a fallback, so deploying frontend changes does not silently replace the friendly address.

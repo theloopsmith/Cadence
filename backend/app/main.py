@@ -169,7 +169,8 @@ async def get_smart_glasses_walkthrough_shell() -> HTMLResponse:
         "font-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'"
     )
     return HTMLResponse(
-        content=html_path.read_text(encoding="utf-8").replace('__CADENCE_SCRIPT_NONCE__', nonce),
+        content=html_path.read_text(encoding="utf-8").replace('__CADENCE_HOW_IT_WORKS__',
+            (STATIC_DIR/'how-it-works.html').read_text(encoding='utf-8')).replace('__CADENCE_SCRIPT_NONCE__', nonce),
         headers={'Content-Security-Policy': policy, 'X-Content-Type-Options': 'nosniff',
                  'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store'},
     )
@@ -187,9 +188,23 @@ async def get_walkthrough_styles():
         media_type='text/css', headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
 
 
+@app.get('/assets/how-it-works.css')
+async def get_build_styles():
+    return Response(content=(STATIC_DIR/'how-it-works.css').read_text(encoding='utf-8'),
+        media_type='text/css', headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
+
+
+@app.get('/assets/how-it-works.js')
+async def get_build_script():
+    return Response(content=(STATIC_DIR/'how-it-works.js').read_text(encoding='utf-8'),
+        media_type='text/javascript', headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
+
+
 @app.get('/assets/walkthrough/{asset}')
 async def get_walkthrough_image(asset: str):
-    if asset not in {'wearer.jpg', 'table.jpg', 'desk.jpg', 'hall.jpg', 'coatstand.jpg', 'safety_floor.jpg', 'together.jpg'}:
+    if asset not in {'wearer.jpg', 'table.jpg', 'desk.jpg', 'hall.jpg', 'coatstand.jpg', 'safety_floor.jpg', 'together.jpg',
+                     'motor-voice.jpg', 'writing-first.jpg', 'writing-second.jpg', 'writing-complete.jpg',
+                     'handwriting-capture.jpg'}:
         raise HTTPException(status_code=404, detail='Image not found')
     return FileResponse(STATIC_DIR/'walkthrough'/asset, media_type='image/jpeg',
         headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=3600'})
