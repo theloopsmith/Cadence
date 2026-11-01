@@ -295,10 +295,20 @@ final class VoiceCompanionTests: XCTestCase {
                                    debounceSeconds: 0.02, promptDelaySeconds: 0.001)
         defer { voice.stop() }
         voice.start()
-        try await Task.sleep(nanoseconds: 20_000_000)
+        // A loaded CI runner can schedule the listening and debounce tasks
+        // after a short fixed sleep. Wait for the states this test needs.
+        let readyDeadline = ProcessInfo.processInfo.systemUptime + 3
+        while !listener.isReady, ProcessInfo.processInfo.systemUptime < readyDeadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(listener.isReady)
         listener.hear("I took my medication")
         listener.hear("I haven't taken my medication")
-        try await Task.sleep(nanoseconds: 60_000_000)
+        XCTAssertEqual(voice.action, .unknown, "A partial transcript must not act synchronously")
+        let actionDeadline = ProcessInfo.processInfo.systemUptime + 3
+        while voice.action == .unknown, ProcessInfo.processInfo.systemUptime < actionDeadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
         XCTAssertEqual(voice.action, .cancel)
         XCTAssertEqual(voice.lastHeard, "I haven't taken my medication")
     }
