@@ -49,7 +49,11 @@
       if (res.status === 401 || res.status === 403) {
         showAuthModal(body.detail || "Sign-in required or read-only account. Sign in as demo-wearer.");
       }
-      throw new Error(body.detail || body.message || "Request failed with HTTP " + res.status);
+      let errorMsg = body.detail || body.message || ("Request failed with HTTP " + res.status);
+      if (body.problems && Array.isArray(body.problems)) {
+        errorMsg += " (" + body.problems.map(p => p.field + ": " + p.message).join(", ") + ")";
+      }
+      throw new Error(errorMsg);
     }
     return body;
   }
@@ -224,10 +228,14 @@
       const data = await apiCall("/api/v1/events/fog", "POST", {
         event_uuid: "sim-fog-" + Date.now(),
         timestamp_utc: new Date().toISOString(),
-        freeze_index: 3.42,
-        freeze_duration_s: 5.0,
-        cue_started: true,
-        cue_bpm: 100
+        duration_sec: 5.0,
+        peak_freeze_index: 3.42,
+        locomotor_band_power: 0.08,
+        freeze_band_power: 0.27,
+        sampled_hz: 50.0,
+        arming_mode: "walking",
+        cue_bpm: 100,
+        recovery_latency_sec: 2.5
       });
 
       triggerBtn.disabled = true;
@@ -331,6 +339,8 @@
         longitude: -122.4194,
         horizontal_accuracy_m: 5.0,
         status: "confirmed_waiting_dispatch"
+      }).catch(err => {
+        if (!err.message.includes("503") && !err.message.includes("unavailable")) throw err;
       });
 
       triggerBtn.disabled = true;
