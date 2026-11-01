@@ -153,6 +153,35 @@ async def get_dashboard_script():
         media_type='text/javascript', headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
 
 
+@app.get("/walkthrough", response_class=HTMLResponse)
+@app.get("/demo", response_class=HTMLResponse)
+async def get_smart_glasses_walkthrough_shell() -> HTMLResponse:
+    """
+    Interactive Smart Glasses Walkthrough shell route (200 OK).
+    Presents an Apple-style interactive experience demonstrating Ray-Ban Meta
+    smart glasses sensor inputs with live Meta SAM 3.1, Llama 3.2, and Muse Spark pipelines.
+    """
+    html_path = STATIC_DIR / "walkthrough.html"
+    nonce = secrets.token_urlsafe(24)
+    policy = (
+        "default-src 'none'; "
+        f"script-src 'nonce-{nonce}'; script-src-attr 'none'; "
+        "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
+        "font-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'"
+    )
+    return HTMLResponse(
+        content=html_path.read_text(encoding="utf-8").replace('__CADENCE_SCRIPT_NONCE__', nonce),
+        headers={'Content-Security-Policy': policy, 'X-Content-Type-Options': 'nosniff',
+                 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store'},
+    )
+
+
+@app.get('/assets/walkthrough.js')
+async def get_walkthrough_script():
+    return Response(content=(STATIC_DIR/'walkthrough.js').read_text(encoding='utf-8'),
+        media_type='text/javascript', headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
+
+
 # ==================== SPEECH (Muse Voice Transcribe) ====================
 MAX_CLIP_SECONDS = 30
 MAX_IMAGE_DECODED_BYTES = 6 * 1024 * 1024   # 6 MB binary image
