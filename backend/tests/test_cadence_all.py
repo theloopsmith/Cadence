@@ -27,7 +27,7 @@ DEVICE_HEADERS = {"Authorization": f"Bearer {settings.cadence_device_token}"}
 CLINICIAN_HEADERS = {"Authorization": f"Bearer {settings.cadence_clinician_token}"}
 
 
-def test_worked_examples_motor_exam_and_diary():
+def test_worked_examples_motor_exam_and_diary(research_mode):
     """
     Verifies all 4 worked numerical examples from Appendices B & C:
       1. S_voice = 78.0 (L_dBFS = -28.0, sigma_dB,phonation = 3.5)
@@ -36,7 +36,7 @@ def test_worked_examples_motor_exam_and_diary():
       4. S(t_k) = 30.0 (n_fog = 1, FI = 2.5, 140m post-dose) -> WEARING_OFF
     """
     # Normal handwriting (-3.0% shrinkage -> 100.0)
-    normal_writing = compute_decay_from_heights([100.0, 100.0, 100.0, 97.0, 97.0, 97.0])
+    normal_writing = compute_decay_from_heights([100.0, 100.0, 100.0, 97.0, 97.0, 97.0], include_research_metrics=True)
     assert normal_writing["opencv_cc_decay_pct"] == -3.0
     assert normal_writing["handwriting_score"] == 100.0
 
@@ -142,7 +142,7 @@ def test_plate_normalized_protein_lookup():
     ) is True
 
 
-def test_end_to_end_api_pipelines_and_rbac():
+def test_end_to_end_api_pipelines_and_rbac(research_mode):
     device_headers = dict(DEVICE_HEADERS)
     with TestClient(app) as client:
         # 1. Public health & dashboard HTML shell

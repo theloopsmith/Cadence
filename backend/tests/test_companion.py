@@ -57,6 +57,8 @@ async def test_muse_open_uses_low_reasoning_with_room_for_a_final_answer(monkeyp
     result = await companion.interpret('Could we check my movement?', [])
     assert result['intent'] == 'motor'
     assert result['source'] == 'meta_open_weights'
+    assert result['provider'] == 'baseten'
+    assert result['latency_ms'] >= 0
     sent = client.post.call_args.kwargs['json']
     assert sent['reasoning_effort'] == 'low'
     assert sent['max_tokens'] >= 512

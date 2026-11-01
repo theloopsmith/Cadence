@@ -111,7 +111,7 @@ final class CadenceAPIClientTests: XCTestCase {
         XCTAssertNotNil(body["image_base64"])
         XCTAssertTrue(result.measured)
         XCTAssertEqual(result.opencvDecayPct, -27.8)
-        XCTAssertTrue(result.micrographiaDetected)
+        XCTAssertEqual(result.micrographiaDetected, true)
     }
 
     /// An unreadable photo comes back unmeasured, and the client must say so
@@ -133,6 +133,26 @@ final class CadenceAPIClientTests: XCTestCase {
         let result = try await makeClient(transport).analyzeHandwriting(jpeg: Data([0x00]))
         XCTAssertFalse(result.measured)
         XCTAssertNil(result.opencvDecayPct)
+    }
+
+    func testDefaultModeHandwritingDecodesWithoutResearchFindings() async throws {
+        for measured in [true, false] {
+            let transport = RecordingJSONTransport()
+            let response: [String: Any] = [
+                "event_uuid": "default-writing", "measured": measured,
+                "opencv_cc_decay_pct": measured ? -20.0 : NSNull(),
+                "sam_3_1_decay_pct": NSNull(),
+                "spoken_response": measured
+                    ? "Letters at the end of the line were about 20% smaller than at the start."
+                    : "I couldn't read enough of that line to measure it. Try again with the whole sentence in frame."
+            ]
+            transport.responses = [try JSONSerialization.data(withJSONObject: response)]
+            let result = try await makeClient(transport).analyzeHandwriting(jpeg: Data([0xFF]))
+            XCTAssertEqual(result.measured, measured)
+            XCTAssertNil(result.micrographiaDetected, "Withheld is not a negative finding")
+            XCTAssertNil(result.handwritingScore)
+            XCTAssertEqual(result.opencvDecayPct, measured ? -20 : nil)
+        }
     }
 
     func testMealLogSendsOnlyATimestamp() async throws {

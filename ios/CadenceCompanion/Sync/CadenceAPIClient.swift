@@ -100,7 +100,8 @@ public struct HandwritingResult: Decodable {
     public let opencvDecayPct: Double?
     public let sam31DecayPct: Double?
     public let handwritingScore: Double?
-    public let micrographiaDetected: Bool
+    /// Withheld in the accessibility-only response; nil must not mean false.
+    public let micrographiaDetected: Bool?
     public let spokenResponse: String
 
     enum CodingKeys: String, CodingKey {

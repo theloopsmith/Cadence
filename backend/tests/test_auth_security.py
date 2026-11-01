@@ -308,7 +308,7 @@ def test_seeding_is_refused_when_demo_mode_is_off(server, monkeypatch):
         ("/api/v1/handwriting/analyze", {"event_uuid": "hw-sim-1", "simulated_letter_heights_px": [40, 40, 30, 20]}),
     ],
 )
-def test_simulated_inputs_are_refused_outside_demo_mode(server, monkeypatch, path, body):
+def test_simulated_inputs_are_refused_outside_demo_mode(server, monkeypatch, path, body, research_mode):
     monkeypatch.setattr(settings, "demo_mode", False)
     token = _login(server, "phone-1", "device pass phrase long enough").json()["access_token"]
     res = server.post(path, headers=_bearer(token), json=body)
@@ -348,3 +348,19 @@ def test_public_demo_requires_accounts_secret_and_simulated_caregiver(monkeypatc
     monkeypatch.setattr(settings, 'twilio_auth_token', 'a-real-token')
     with pytest.raises(RuntimeError, match='Twilio credentials'):
         auth.validate_security_settings()
+
+
+@pytest.mark.parametrize("field,value", [
+    ("enable_research_metrics", True),
+    ("baseten_model", "non-meta-model"),
+    ("meta_sam_model", "unreviewed-segmenter"),
+    ("meta_stt_model", "third-party-transcriber"),
+    ("fireworks_llm_model", "third-party-llm"),
+    ("fireworks_vlm_model", "third-party-vision"),
+])
+def test_public_submission_refuses_scope_or_model_overrides(monkeypatch, field, value):
+    from app.auth import validate_security_settings
+    monkeypatch.setattr(settings, "cadence_env", "public_demo")
+    monkeypatch.setattr(settings, field, value)
+    with pytest.raises(RuntimeError, match="Public demo"):
+        validate_security_settings()

@@ -19,7 +19,7 @@ Target project: `ultra-concord-513321-q3`. This deploys a synthetic/demo environ
 - SQLite in `/var/lib/cadence/data/demo.sqlite` on a 20 GB standard persistent boot disk. Boot disk auto-deletion is disabled and VM deletion protection is enabled. This is persistent storage, not a backup policy.
 - Static IPv4 address and automatic HTTPS via Caddy. The default hostname uses the address under `sslip.io`; an owned hostname can be supplied instead. Certificate issuance and DNS must be verified before sharing.
 - Dedicated VPC, only public TCP 80/443, SSH reachable through Google's IAP source range. No Google service account is attached to the VM.
-- `public_demo` startup requires a persistent signing secret, disabled static development tokens, enabled simulated transports, and no Twilio credentials.
+- `public_demo` startup requires a persistent signing secret, disabled static development tokens, enabled simulated transports, no Twilio credentials, disabled research metrics, and the reviewed Meta model IDs. Interactive API docs/schema are unavailable on the public demo.
 - `demo-wearer` is the iPhone writer account; `demo-reviewer` is the read-only dashboard account. Both bind to `hackathon-demo`. Passwords and the signing key are generated locally in ignored `.local/gcp-demo/` files; no values are logged or committed.
 
 ## Local preparation

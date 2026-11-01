@@ -82,7 +82,7 @@ def test_build_24h_diary_timeline_and_on_off_exam_delta():
     assert tl["exam_on_vs_off_delta"]["composite_improvement_pts"] == 46.3
 
 
-def test_demo_seed_and_neurologist_report_endpoint():
+def test_demo_seed_and_neurologist_report_endpoint(research_mode):
     from fastapi.testclient import TestClient
     from app.main import app
 

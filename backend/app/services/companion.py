@@ -4,6 +4,7 @@ The phone owns confirmations, grounding, and safety preemption. Neither raw
 conversation nor audio is stored by this service.
 """
 import json
+import time
 import httpx
 from app.config import settings
 from app.clients.circuit_breaker import circuit_breakers
@@ -29,6 +30,7 @@ async def interpret(text: str, history: list[str]) -> dict:
     # Muse Spark Open always reasons; a 40-token answer budget can be consumed
     # before it emits any final answer. Low reasoning is intended for extraction.
     reasoning = {'reasoning_effort': 'low'} if 'muse-spark' in model.lower() else {}
+    started = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=6) as client:
             response = await client.post(
@@ -66,7 +68,8 @@ async def interpret(text: str, history: list[str]) -> dict:
             if intent not in INTENTS:
                 return fallback
             circuit_breakers.record_success(provider, model)
-            return {'intent': intent, 'source': 'meta_open_weights', 'model': model}
+            return {'intent': intent, 'source': 'meta_open_weights', 'model': model,
+                    'provider': provider, 'latency_ms': round((time.perf_counter()-started)*1000)}
     except Exception:
         circuit_breakers.record_failure(provider, model)
         return fallback

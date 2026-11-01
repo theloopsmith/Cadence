@@ -220,6 +220,21 @@ def decode_token(token: str) -> Optional[Dict[str, str]]:
 def validate_security_settings() -> None:
     """Refuse to run a production server with development defaults."""
     if settings.cadence_env.strip().lower() == "public_demo":
+        if settings.enable_research_metrics:
+            raise RuntimeError("Public demo must keep ENABLE_RESEARCH_METRICS=false.")
+        # Freeze the submission's runtime model identities. Hosting companies
+        # are not model authors, and an arbitrary environment override must not
+        # silently turn this into a non-Meta build.
+        meta_models = {
+            "meta_sam_model": "sam-3.1",
+            "meta_stt_model": "muse-voice-transcribe-1.0",
+            "baseten_model": "meta-models/muse-spark-open-1026",
+            "fireworks_llm_model": "accounts/fireworks/models/llama-v3p3-70b-instruct",
+            "fireworks_vlm_model": "accounts/fireworks/models/llama-v3p2-11b-vision-instruct",
+        }
+        for field, model in meta_models.items():
+            if getattr(settings, field) != model:
+                raise RuntimeError(f"Public demo requires its reviewed Meta model for {field}.")
         if len(settings.jwt_secret) < _MIN_SECRET_LENGTH:
             raise RuntimeError("Public demo requires a durable JWT_SECRET of at least 32 characters.")
         if settings.static_tokens_enabled:

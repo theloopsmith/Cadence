@@ -60,7 +60,7 @@ from app.services.diary_engine import (
     classify_diary_bucket,
 )
 from app.services.fall_escalation import fall_escalation_manager
-from app.services.handwriting import analyze_handwriting_opencv
+from app.services.handwriting import analyze_handwriting_opencv, handwriting_response
 from app.services.motor_exam import MotorExamInput, score_home_motor_exam
 from app.services.exam_validity import measured_exam
 from app.services.report_snapshot import report_snapshot
@@ -93,6 +93,9 @@ app = FastAPI(
     title="Cadence Accessibility Companion API",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=None if settings.is_production or settings.cadence_env == "public_demo" else "/docs",
+    redoc_url=None if settings.is_production or settings.cadence_env == "public_demo" else "/redoc",
+    openapi_url=None if settings.is_production or settings.cadence_env == "public_demo" else "/openapi.json",
 )
 install_error_handlers(app)
 
@@ -643,17 +646,18 @@ async def analyze_handwriting_endpoint(
         image_bytes=img_bytes,
         simulated_letter_heights_px=payload.simulated_letter_heights_px,
         simulated_sam_decay_pct=payload.simulated_sam_decay_pct,
+        include_research_metrics=settings.enable_research_metrics,
     )
 
     if not res["measured"]:
-        return {
+        return handwriting_response({
             "event_uuid": payload.event_uuid,
             **res,
             "spoken_response": (
                 "I couldn't read enough of that line to measure it. "
                 "Try again with the whole sentence in frame."
             ),
-        }
+        }, include_research_metrics=settings.enable_research_metrics)
 
     await execute_patient_write(auth,
         """
@@ -682,12 +686,10 @@ async def analyze_handwriting_endpoint(
 
     if not settings.enable_research_metrics:
         # Withheld, not "false": the default mode reports the measurement, not a finding.
-        res.pop("handwriting_score", None)
-        res.pop("micrographia_detected", None)
         shrink = res["opencv_cc_decay_pct"]
         spoken = (
             f"Letters at the end of the line were about {abs(shrink):.0f}% "
-            f"{'smaller' if shrink > 0 else 'larger'} than at the start."
+            f"{'smaller' if shrink < 0 else 'larger'} than at the start."
             if abs(shrink) >= 5 else "Letter size stayed about the same across the line."
         )
     elif res["micrographia_detected"]:
@@ -698,7 +700,8 @@ async def analyze_handwriting_endpoint(
         )
     else:
         spoken = "Your handwriting stroke height looks steady."
-    return {"event_uuid": payload.event_uuid, **res, "spoken_response": spoken}
+    return handwriting_response({"event_uuid": payload.event_uuid, **res, "spoken_response": spoken},
+                                include_research_metrics=settings.enable_research_metrics)
 
 
 @app.post("/api/v1/events/voice")

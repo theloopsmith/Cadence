@@ -98,3 +98,14 @@ def test_default_task_completion_and_history_do_not_return_health_scores(http):
     assert len(exams) == 1
     assert 'composite_motor_score' not in exams[0]
     assert 'medication_state_label' not in exams[0]
+
+
+def test_default_unconfigured_caregiver_dispatch_is_retryable(http, monkeypatch):
+    monkeypatch.setattr(settings, "demo_mode", False)
+    # Provider credentials are cleared by the suite fixture. Exercise the real
+    # unconfigured client, not a mocked dispatch result or simulated success.
+    response = http.post("/api/v1/events/fall", headers=headers(), json=fall(uuid="unconfigured-default").model_dump())
+    assert response.status_code == 503
+    row = fetch_one_sync("SELECT status,caregiver_sms_sid,caregiver_call_sid FROM fall_events WHERE event_uuid=?", ("unconfigured-default",))
+    assert row["status"] == "confirmed_waiting_dispatch"
+    assert not row["caregiver_sms_sid"] and not row["caregiver_call_sid"]

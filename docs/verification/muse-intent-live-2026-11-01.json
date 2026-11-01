@@ -1,0 +1,28 @@
+{
+  "verified_at_utc": "2026-11-01T08:07:33.561174+00:00",
+  "origin": "https://cadence-companion.duckdns.org",
+  "evidence_grade": "live provider, synthetic non-personal text input",
+  "endpoint": "/api/v1/companion/interpret",
+  "input": {
+    "text": "Help me describe a photo from my glasses.",
+    "history": []
+  },
+  "response": {
+    "intent": "surroundings",
+    "source": "meta_open_weights",
+    "model": "meta-models/muse-spark-open-1026",
+    "provider": "baseten",
+    "latency_ms": 2135
+  },
+  "end_to_end_ms": 2396,
+  "scope_checks": {
+    "interactive_docs": "404",
+    "schema": "404"
+  },
+  "limits": [
+    "No photo was uploaded.",
+    "Does not verify SAM scene grounding or physical glasses audio.",
+    "No records or caregiver contacts were created.",
+    "Model ID is the backend-reported configured request ID, not an independent audit of provider internals."
+  ]
+}

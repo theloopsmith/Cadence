@@ -32,7 +32,7 @@ def _log_dose(client: TestClient, event_uuid: str, timestamp: str) -> None:
     assert response.status_code == 200
 
 
-def test_meal_uses_the_dose_already_taken_not_one_logged_later(client):
+def test_meal_uses_the_dose_already_taken_not_one_logged_later(client, research_mode):
     """
     Steak twenty minutes after the morning dose is inside the protein window.
     An evening dose logged afterward is the newest row, and the meal was
@@ -57,7 +57,7 @@ def test_meal_uses_the_dose_already_taken_not_one_logged_later(client):
     assert meal.json()["conflict_detected"] is True
 
 
-def test_exam_uses_the_dose_already_taken_not_one_logged_later(client):
+def test_exam_uses_the_dose_already_taken_not_one_logged_later(client, research_mode):
     """
     A strong exam 75 minutes after the morning dose is ON. Judging it against
     the evening dose made the elapsed time negative, so the report stored

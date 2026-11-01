@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional
+import asyncio
 import httpx
 
 from app.clients.circuit_breaker import RequestDeadlineContext, circuit_breakers
@@ -11,7 +12,7 @@ class BasetenLLMClient:
     Baseten 2M-TPM client ($100 Credits) running meta-models/muse-spark-open-1026.
     Used for:
       1. Selecting a template_id + 1 inanimate label strictly from L_sam in Reality Check.
-      2. Writing the plain day summary for the report.
+      The day summary is deterministic local formatting, without a model call.
     """
 
     PROVIDER = "baseten"
@@ -34,16 +35,18 @@ class BasetenLLMClient:
         if not settings.baseten_api_key:
             return None
 
+        reasoning = {'reasoning_effort': 'low'} if 'muse-spark' in model_id.lower() else {}
         try:
             timeout_sec = deadline.timeout_for_stage(settings.baseten_stage_budget_sec)
-            async with httpx.AsyncClient(timeout=timeout_sec) as client:
+            async with asyncio.timeout(timeout_sec), httpx.AsyncClient(timeout=timeout_sec) as client:
                 resp = await client.post(
                     f"{settings.baseten_api_base_url.rstrip('/')}/chat/completions",
                     headers={"Authorization": f"Bearer {settings.baseten_api_key}"},
                     json={
                         "model": model_id,
                         "temperature": 0.0,
-                        "max_tokens": 40,
+                        "max_tokens": 512 if reasoning else 40,
+                        **reasoning,
                         "messages": [
                             {
                                 "role": "system",
@@ -62,7 +65,7 @@ class BasetenLLMClient:
                 )
                 circuit_breakers.record_success(self.PROVIDER, model_id)
                 for candidate in allowed_inanimate_labels:
-                    if candidate.lower() in content:
+                    if candidate.lower() == content.strip("\"' \t\r\n"):
                         from app.services.reality_check import (
                             UPRIGHT_FIXTURE_LABELS,
                         )

@@ -13,11 +13,13 @@ def test_method_invariant_handwriting_opencv_score():
         image_bytes=None,
         simulated_letter_heights_px=[100.0, 100.0, 100.0, 65.0, 65.0, 65.0],
         simulated_sam_decay_pct=-42.0,
+        include_research_metrics=True,
     )
     r_without_sam = analyze_handwriting_opencv(
         image_bytes=None,
         simulated_letter_heights_px=[100.0, 100.0, 100.0, 65.0, 65.0, 65.0],
         simulated_sam_decay_pct=None,
+        include_research_metrics=True,
     )
     assert r_with_sam["opencv_cc_decay_pct"] == -35.0
     assert r_with_sam["handwriting_score"] == 52.0
@@ -74,3 +76,45 @@ def test_an_unreadable_line_is_not_stored_or_called_steady(client):
         fetch_all("SELECT event_uuid FROM handwriting_logs WHERE event_uuid = ?", ("write-unreadable-001",))
     )
     assert rows == []
+
+
+@pytest.mark.parametrize("heights,measured,description", [
+    ([40,40,40,32,32,32], True, "20% smaller"),
+    ([40,40,40,48,48,48], True, "20% larger"),
+    ([40,18], False, "couldn't read enough"),
+])
+def test_default_handwriting_contract_withholds_research_fields(client, monkeypatch, heights, measured, description):
+    monkeypatch.setattr(settings, "enable_research_metrics", False)
+    response = client.post("/api/v1/handwriting/analyze", headers={"Authorization": f"Bearer {settings.cadence_device_token}"},
+        json={"event_uuid":"default-contract", "simulated_letter_heights_px":heights})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["measured"] is measured
+    assert description in body["spoken_response"]
+    assert "handwriting_score" not in body
+    assert "micrographia_detected" not in body
+    assert body["opencv_cc_decay_pct"] == (None if not measured else -20 if heights[-1] == 32 else 20)
+
+
+def test_default_measurement_does_not_compute_a_research_finding():
+    from app.services.handwriting import compute_decay_from_heights, handwriting_response
+    measured = compute_decay_from_heights([40,40,40,20,20,20])
+    assert measured["opencv_cc_decay_pct"] == -50
+    assert measured["handwriting_score"] is None
+    public = handwriting_response({**measured,"future_private_finding":"hidden"})
+    assert "micrographia_detected" not in public
+    assert "future_private_finding" not in public
+
+
+def test_default_real_image_input_is_allowed_without_demo_fields(client, monkeypatch):
+    import base64
+    import cv2
+    import numpy as np
+    monkeypatch.setattr(settings, "demo_mode", False)
+    ok, image = cv2.imencode(".png", np.full((64,64),255,dtype=np.uint8))
+    assert ok
+    response = client.post("/api/v1/handwriting/analyze", headers={"Authorization": f"Bearer {settings.cadence_device_token}"},
+        json={"event_uuid":"blank-image-contract", "image_base64":base64.b64encode(image).decode()})
+    assert response.status_code == 200
+    assert response.json()["measured"] is False
+    assert "micrographia_detected" not in response.json()

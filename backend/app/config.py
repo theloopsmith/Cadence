@@ -79,7 +79,8 @@ class Settings(BaseSettings):
     # Measured 2026-10-29: a single live SAM 3.1 call takes 2.5-3.6 s.
     interactive_request_budget_sec: float = 8.0
     sam_stage_budget_sec: float = 6.0
-    baseten_stage_budget_sec: float = 1.2
+    # Room for Muse reasoning; always clamped by the shared eight-second deadline.
+    baseten_stage_budget_sec: float = 3.0
 
     # Twilio Escalation & Caregiver Contacts
     twilio_account_sid: str = ""

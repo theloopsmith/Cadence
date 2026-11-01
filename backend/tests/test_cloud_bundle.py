@@ -42,6 +42,7 @@ def test_demo_secrets_are_scoped_private_and_stable(tmp_path, monkeypatch, capsy
     assert first['TWILIO_AUTH_TOKEN'] == ''
     assert first['CADENCE_ENV'] == 'public_demo'
     assert first['ALLOW_STATIC_TOKENS'] == 'false'
+    assert first['ENABLE_RESEARCH_METRICS'] == 'false'
     assert len(first['JWT_SECRET']) >= 32
     assert env.stat().st_mode & 0o777 == 0o600
     assert accounts.stat().st_mode & 0o777 == 0o600
@@ -50,3 +51,12 @@ def test_demo_secrets_are_scoped_private_and_stable(tmp_path, monkeypatch, capsy
     assert accounts.read_text() == credentials
     output = capsys.readouterr().out
     assert 'fake-meta-key' not in output and first['JWT_SECRET'] not in output
+
+
+def test_public_demo_does_not_publish_api_schema_or_interactive_docs():
+    import os
+    import subprocess
+    import sys
+    root = Path(__file__).resolve().parents[2]
+    subprocess.run([sys.executable, "-c", "from app.main import app; assert not {'/docs','/redoc','/openapi.json'} & {route.path for route in app.routes}"],
+        cwd=root / "backend", env={**os.environ,"CADENCE_ENV":"public_demo"}, check=True, capture_output=True)

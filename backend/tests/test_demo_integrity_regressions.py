@@ -127,7 +127,7 @@ def test_object_resting_on_a_seat_still_uses_the_seat_template():
 # --------------------------------------------------------------------------
 # Defect 3 & 4: demo timeline truncated, no fall, protein conflict invisible
 # --------------------------------------------------------------------------
-def test_demo_seed_covers_the_full_day_and_every_pipeline():
+def test_demo_seed_covers_the_full_day_and_every_pipeline(research_mode):
     with TestClient(app) as client:
         wiped = client.delete("/api/v1/patient/data", headers=DEVICE_HEADERS)
         headers = {**DEVICE_HEADERS, "X-Cadence-Data-Generation": str(wiped.json()["data_generation"])}
