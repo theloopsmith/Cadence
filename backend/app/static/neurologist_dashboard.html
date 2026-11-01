@@ -6,241 +6,555 @@
   <title>Cadence — Daily Summary for the Care Team</title>
   <style>
     :root {
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --ink: #0f172a;
-      --muted: #475569;
-      --border: #e2e8f0;
-      --on: #16a34a;
-      --wearing-off: #d97706;
-      --off: #dc2626;
-      --nodose: #64748b;
-      --brand: #2563eb;
+      --bg: #09090b;
+      --surface: #121215;
+      --card: #18181c;
+      --card-hover: #1f1f24;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.16);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-tertiary: #64748b;
+      --accent: #10b981;
+      --accent-bg: rgba(16, 185, 129, 0.12);
+      --accent-border: rgba(16, 185, 129, 0.28);
+      --blue: #38bdf8;
+      --blue-bg: rgba(56, 189, 248, 0.12);
+      --amber: #f59e0b;
+      --amber-bg: rgba(245, 158, 11, 0.12);
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
+
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; color-scheme: dark; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: var(--font);
       background: var(--bg);
-      color: var(--ink);
-      padding: 24px;
+      color: var(--text-primary);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 80px;
     }
-    .container { max-width: 1160px; margin: 0 auto; }
-    header {
+
+    /* Sticky Navbar */
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(9, 9, 11, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+    }
+    .top-nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 16px;
       flex-wrap: wrap;
-      gap: 12px;
-      background: #0f172a;
-      color: #fff;
-      padding: 20px 24px;
-      border-radius: 12px;
-      margin-bottom: 20px;
     }
-    header h1 { margin: 0; font-size: 20px; }
-    header p { margin: 4px 0 0; font-size: 13px; color: #cbd5e1; }
-    .btn {
-      background: var(--brand);
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
       color: #fff;
-      border: none;
-      padding: 9px 14px;
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: -0.5px;
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.3);
+    }
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .patient-pill {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
       border-radius: 8px;
       font-weight: 600;
       font-size: 13px;
       cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      font-family: inherit;
     }
-    .btn:hover { opacity: 0.92; }
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: var(--border-hover);
+      transform: translateY(-1px);
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+      border-color: var(--accent);
+      font-weight: 700;
+      box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+    }
+    .btn-primary:hover {
+      background: #34d399;
+      color: #000;
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+    }
+    .btn-danger {
+      background: var(--danger-bg);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.22);
+      color: #fff;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 20px;
+    }
+
+    /* Sub-header / Clinical banner */
+    .dashboard-header {
+      margin-bottom: 24px;
+    }
+    .dashboard-eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      margin: 0 0 6px 0;
+    }
+    .dashboard-title {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      margin: 0 0 6px 0;
+    }
+    .dashboard-subtitle {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin: 0;
+      max-width: 760px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .metric-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    /* Simulator Panel */
+    .sim-panel {
+      background: linear-gradient(180deg, rgba(18, 18, 22, 0.8) 0%, rgba(24, 24, 28, 0.95) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-left: 4px solid var(--blue);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .sim-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
     .btn-sim {
-      background: #f1f5f9;
-      color: #0f172a;
-      border: 1px solid #cbd5e1;
-      padding: 9px 12px;
-      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      padding: 12px 14px;
+      border-radius: 10px;
       font-weight: 600;
       font-size: 13px;
       cursor: pointer;
       text-align: left;
+      transition: all 0.15s ease;
+      font-family: inherit;
     }
-    .btn-sim:hover { background: #e2e8f0; }
+    .btn-sim:hover {
+      background: rgba(56, 189, 248, 0.08);
+      border-color: rgba(56, 189, 248, 0.35);
+      transform: translateY(-1px);
+    }
+
+    #glassesAudioBanner {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--blue);
+      background: var(--blue-bg);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 4px 12px;
+      border-radius: 9999px;
+    }
+
+    /* KPI Grid */
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 16px;
       margin-bottom: 20px;
     }
-    .sim-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 10px;
-      margin-top: 10px;
-    }
-    .card {
+    .kpi-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px 20px;
+      border-radius: 14px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
     }
-    .metric-label { font-size: 12px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-    .metric-value { font-size: 28px; font-weight: 800; margin-top: 6px; }
-    .badge {
-      display: inline-block;
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 700;
-      color: #fff;
+    .metric-value {
+      font-size: 36px;
+      font-weight: 800;
+      margin-top: 8px;
+      letter-spacing: -0.02em;
     }
-    .badge-ON { background: var(--on); }
-    .badge-WEARING_OFF { background: var(--wearing-off); }
-    .badge-OFF { background: var(--off); }
-    .badge-NO_DOSE { background: var(--nodose); }
+
+    /* Timeline Ribbon */
     .timeline-ribbon {
       display: flex;
       gap: 6px;
       overflow-x: auto;
-      padding: 8px 0;
+      padding: 12px 4px;
+      scrollbar-width: thin;
     }
     .bucket-pill {
-      min-width: 78px;
-      padding: 8px;
+      min-width: 82px;
+      padding: 10px 8px;
       border-radius: 8px;
       color: #fff;
       font-size: 11px;
       font-weight: 700;
       text-align: center;
+      flex-shrink: 0;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: transform 0.12s ease;
     }
-    .bucket-ON { background: var(--on); }
-    .bucket-WEARING_OFF { background: var(--wearing-off); }
-    .bucket-OFF { background: var(--off); }
-    .bucket-NO_DOSE, .bucket-UNKNOWN { background: var(--nodose); }
-    .bucket-LOGGED { background: var(--brand); }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-    th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+    .bucket-pill:hover { transform: scale(1.04); }
+    .bucket-ON { background: #059669; border-color: #10b981; }
+    .bucket-WEARING_OFF { background: #b45309; border-color: #f59e0b; }
+    .bucket-OFF { background: #b91c1c; border-color: #ef4444; }
+    .bucket-NO_DOSE, .bucket-UNKNOWN { background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); }
+    .bucket-LOGGED { background: #0369a1; border-color: #38bdf8; }
+
+    /* Tables */
+    .table-responsive {
+      overflow-x: auto;
+      margin-top: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--text-secondary);
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    /* Narrative Box */
+    .narrative-box {
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text-primary);
+      margin: 8px 0 0;
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 10px;
+      border-left: 3px solid var(--accent);
+    }
+
+    /* Sign-in Modal */
     #authModal {
-      position: fixed; inset: 0; background: rgba(15,23,42,0.65);
-      display: none; align-items: center; justify-content: center;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 16px;
     }
     .modal-box {
-      background: #fff; padding: 24px; border-radius: 12px; width: 420px; max-width: 92vw;
+      background: #141418;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 28px;
+      border-radius: 16px;
+      width: 440px;
+      max-width: 100%;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
+    }
+    .modal-box h3 {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0 0 8px;
+      color: var(--text-primary);
     }
     .modal-box input {
-      width: 100%; padding: 10px; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px;
+      width: 100%;
+      padding: 12px 14px;
+      margin: 10px 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #09090b;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
     }
+    .modal-box input:focus {
+      outline: 2px solid var(--accent);
+      border-color: var(--accent);
+    }
+
     @media print {
-      .no-print { display: none !important; }
-      body { padding: 0; background: #fff; }
+      .no-print, .top-nav { display: none !important; }
+      body {
+        background: #fff;
+        color: #000;
+        padding: 0;
+      }
+      .card, .sim-panel {
+        background: #fff;
+        color: #000;
+        border: 1px solid #ccc;
+        box-shadow: none;
+      }
+      .metric-value { color: #000 !important; }
+      th, td { border-bottom: 1px solid #ccc; color: #000; }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div>
-        <h1>CADENCE — Daily Summary for the Care Team</h1>
-        <p>Logged events and raw task measurements from the Cadence companion. Cadence is not a medical device and does not assess health.</p>
-      </div>
-      <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap;">
-        <a href="/walkthrough" class="btn" style="background:#2563eb; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">🕶️ Glasses Walkthrough</a>
-        <button class="btn" style="background:#16a34a;" id="seedDemoButton">⚡ Seed Sample Routine</button>
-        <button class="btn" style="background:#dc2626;" id="wipeButton">Reset Diary Data</button>
-        <button class="btn" id="printButton">Export / Print PDF</button>
-      </div>
-    </header>
 
-    <!-- Interactive 7-Pipeline Simulator (Hidden on PDF Print) -->
-    <div class="card no-print" style="margin-bottom: 20px; border-left: 4px solid var(--brand);">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-        <div class="metric-label" style="color:var(--brand);">Interactive Meta Gen 3 AI Glasses Pipeline Simulator (Live API Triggers)</div>
-        <span id="glassesAudioBanner" style="font-size:13px; font-weight:600; color:#0f172a; background:#dbeafe; padding:4px 10px; border-radius:6px;">
-          🔊 Glasses Open-Ear Audio: Ready
-        </span>
+  <!-- Clean Top Navigation -->
+  <nav class="top-nav no-print">
+    <div class="top-nav-inner">
+      <div class="brand-wrap">
+        <div class="brand-logo">C</div>
+        <div>
+          <h1 class="brand-title">Cadence <span class="patient-pill">Care Team Portal</span></h1>
+        </div>
       </div>
-      <div class="sim-grid">
-        <button class="btn-sim" id="fogButton">1. 🦶 Walking Pause (plays the 100 BPM beat)</button>
-        <button class="btn-sim" id="mealButton">2. 🥩 Log Levodopa + Steak Meal (protein near a dose)</button>
-        <button class="btn-sim" id="realityButton">3. 👁️ Look Around ("Is someone by the coat rack?")</button>
-        <button class="btn-sim" id="writingButton">4. ✍️ Handwriting Check (letter size across a line)</button>
-        <button class="btn-sim" id="examButton">5. 🩺 Run 3-Step Motor Check (Voice + Writing + Walk)</button>
-        <button class="btn-sim" id="fallButton">6. 🚨 Trigger 3-Stage Fall Alert + Caregiver All-Clear Cancel</button>
+      <div class="nav-actions">
+        <a href="/walkthrough" class="btn">🕶️ Glasses Walkthrough</a>
+        <button class="btn" id="seedDemoButton">⚡ Seed Routine</button>
+        <button class="btn btn-danger" id="wipeButton">Reset Diary</button>
+        <button class="btn btn-primary" id="printButton">Export / Print PDF</button>
       </div>
     </div>
+  </nav>
 
-    <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label">Summary of the Last 24 Hours</div>
-      <p id="reportMetadata" style="font-size:13px; color:var(--muted);">Report interval and coverage have not loaded.</p>
-      <p id="narrativeText" style="margin: 8px 0 0; font-size: 15px; line-height: 1.5;">
-        Click "Seed Sample Routine" above to fill in a sample day, or use the buttons to log individual events.
+  <div class="container">
+    <div class="dashboard-header">
+      <p class="dashboard-eyebrow">Neurology &amp; Movement Disorders View</p>
+      <h2 class="dashboard-title">Daily Clinical Summary</h2>
+      <p class="dashboard-subtitle">
+        Objective motor telemetry, medication timeline, and incident logs recorded from Cadence. Non-diagnostic observational record for neurologist review.
       </p>
     </div>
 
-    <div class="grid">
-      <div class="card">
-        <div class="metric-label">Doses Logged</div>
-        <div class="metric-value" id="doseCount" style="color: var(--on);">—</div>
+    <!-- Live Meta AI & Wearable Pipeline Simulator -->
+    <div class="sim-panel no-print">
+      <div class="card-header">
+        <div>
+          <span class="metric-label" style="color: var(--blue);">Interactive Pipeline Simulator</span>
+          <p style="font-size: 12px; color: var(--text-secondary); margin: 2px 0 0;">
+            Live API triggers simulating Meta glasses events and cloud inference
+          </p>
+        </div>
+        <span id="glassesAudioBanner">
+          🔊 Glasses Audio: Ready
+        </span>
       </div>
-      <div class="card">
-        <div class="metric-label">Walking Pauses Logged</div>
-        <div class="metric-value" id="beatCount" style="color: var(--wearing-off);">—</div>
-      </div>
-      <div class="card">
-        <div class="metric-label">Fall alerts recorded</div>
-        <div class="metric-value" id="fallCount" style="color: var(--off);">—</div>
-      </div>
-      <div class="card">
-        <div class="metric-label">Impacts Answered as Okay</div>
-        <div class="metric-value" id="incidentsCount">—</div>
+      <div class="sim-grid">
+        <button class="btn-sim" id="fogButton">1. 🦶 Walking Pause (100 BPM Cue)</button>
+        <button class="btn-sim" id="mealButton">2. 🥩 Levodopa + High-Protein Meal</button>
+        <button class="btn-sim" id="realityButton">3. 👁️ Look Around (SAM Grounding)</button>
+        <button class="btn-sim" id="writingButton">4. ✍️ Handwriting Micrographia</button>
+        <button class="btn-sim" id="examButton">5. 🩺 3-Step Guided Motor Check</button>
+        <button class="btn-sim" id="fallButton">6. 🚨 Fall Detection &amp; Caregiver Alert</button>
       </div>
     </div>
 
-    <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label">Caregiver alert evidence</div>
-      <p id="contactEvidence">Delivery evidence has not loaded.</p>
+    <!-- 24-Hour Executive Summary -->
+    <div class="card">
+      <div class="card-header">
+        <div class="metric-label">24-Hour Overview &amp; Narrative</div>
+        <span id="reportMetadata" style="font-size: 12px; color: var(--text-secondary);">Loading interval…</span>
+      </div>
+      <p id="narrativeText" class="narrative-box">
+        Click "Seed Routine" above to load a representative patient day, or use the interactive pipeline buttons to log individual clinical events.
+      </p>
     </div>
-    <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label" style="margin-bottom: 8px;">Half-Hour Timeline (gray = no observations, blue = other logs, amber = a walking pause, red = a fall alert or several pauses). Continuous monitoring coverage is unknown.</div>
+
+    <!-- 4 Clinical KPIs -->
+    <div class="grid">
+      <div class="kpi-card">
+        <div class="metric-label">Doses Logged</div>
+        <div class="metric-value" id="doseCount" style="color: var(--accent);">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="metric-label">Walking Pauses (FoG)</div>
+        <div class="metric-value" id="beatCount" style="color: var(--amber);">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="metric-label">Unresolved Fall Alerts</div>
+        <div class="metric-value" id="fallCount" style="color: var(--danger);">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="metric-label">Impacts Answered Okay</div>
+        <div class="metric-value" id="incidentsCount" style="color: var(--blue);">—</div>
+      </div>
+    </div>
+
+    <!-- Caregiver Delivery Status -->
+    <div class="card">
+      <div class="metric-label" style="margin-bottom: 6px;">Caregiver Escalation Status</div>
+      <p id="contactEvidence" style="font-size: 13px; color: var(--text-secondary); margin: 0;">
+        Delivery evidence has not loaded.
+      </p>
+    </div>
+
+    <!-- 24-Hour Half-Hour Timeline Ribbon -->
+    <div class="card">
+      <div class="metric-label" style="margin-bottom: 6px;">24-Hour Event Ribbon</div>
+      <p style="font-size: 12px; color: var(--text-secondary); margin: 0 0 10px;">
+        Gray: no logs · Blue: general diary · Amber: walking pauses · Red: safety alerts
+      </p>
       <div id="timelineRibbon" class="timeline-ribbon"></div>
     </div>
 
-    <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label" style="margin-bottom: 12px;">3-Step Motor Checks (raw measurements)</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Timestamp (UTC)</th>
-            <th>Voice (“Ahhh”, dB)</th>
-            <th>Voice steadiness (dB spread)</th>
-            <th>Letter size across the line</th>
-            <th>Steps a minute</th>
-            <th>Walking pauses</th>
-            <th>Minutes since dose</th>
-          </tr>
-        </thead>
-        <tbody id="examTableBody">
-          <tr><td colspan="7">No exam rows loaded yet. Click "⚡ Seed Sample Routine" above!</td></tr>
-        </tbody>
-      </table>
+    <!-- 3-Step Guided Motor Check Raw Measurements Table -->
+    <div class="card">
+      <div class="card-header">
+        <div class="metric-label">3-Step Motor Checks (Objective Observations)</div>
+      </div>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp (UTC)</th>
+              <th>Voice (“Ahhh”, dB)</th>
+              <th>Voice Steadiness (dB Spread)</th>
+              <th>Handwriting Decay (Micrographia)</th>
+              <th>Cadence (SPM)</th>
+              <th>Walking Pauses</th>
+              <th>Post-Dose Timing</th>
+            </tr>
+          </thead>
+          <tbody id="examTableBody">
+            <tr><td colspan="7" style="color: var(--text-secondary);">No exam rows loaded yet. Click "⚡ Seed Routine" to populate.</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label" style="margin-bottom: 10px;">Change Since the Previous Motor Check</div>
-      <div id="examDelta" style="font-size:13px; color:var(--muted);">Two motor checks are needed to show a change.</div>
+    <!-- Motor Exam Delta Comparison -->
+    <div class="card">
+      <div class="metric-label" style="margin-bottom: 8px;">Change Since Previous Motor Check</div>
+      <div id="examDelta" style="font-size: 13px; color: var(--text-secondary);">
+        Two motor checks are needed to compute serial change.
+      </div>
     </div>
 
-    <div class="card" style="margin-bottom: 20px;">
-      <div class="metric-label" style="margin-bottom: 10px;">Fall Check-Ins &amp; Caregiver Contact</div>
-      <div id="fallList" style="font-size:13px; color:var(--muted);">No fall events recorded.</div>
+    <!-- Fall Check-Ins & Incident Reports -->
+    <div class="card">
+      <div class="metric-label" style="margin-bottom: 8px;">Fall Check-Ins &amp; Caregiver Transports</div>
+      <div id="fallList" style="font-size: 13px; color: var(--text-secondary);">
+        No fall events recorded.
+      </div>
     </div>
 
+    <!-- 2-Column Split: Surroundings & Medication Logs -->
     <div class="grid">
       <div class="card">
-        <div class="metric-label" style="margin-bottom: 10px;">Recent Look-Around Checks</div>
-        <div id="realityList" style="font-size:13px; color:var(--muted);">None recorded yet.</div>
+        <div class="metric-label" style="margin-bottom: 8px;">Look-Around Spatial Grounding Checks</div>
+        <div id="realityList" style="font-size: 13px; color: var(--text-secondary);">
+          None recorded yet.
+        </div>
       </div>
       <div class="card">
-        <div class="metric-label" style="margin-bottom: 10px;">Doses and Meals</div>
-        <div id="medList" style="font-size:13px; color:var(--muted);">None recorded yet.</div>
+        <div class="metric-label" style="margin-bottom: 8px;">Medication Doses &amp; Meals</div>
+        <div id="medList" style="font-size: 13px; color: var(--text-secondary);">
+          None recorded yet.
+        </div>
       </div>
     </div>
   </div>
@@ -248,19 +562,19 @@
   <!-- In-Page Modal Only (Token stored in sessionStorage, NEVER in URL query string) -->
   <div id="authModal" class="no-print">
     <div class="modal-box">
-      <h3 style="margin-top:0;">Sign in</h3>
-      <p style="font-size:13px; color:var(--muted);">
-        Use the account your care team set up. Your session ends when you close this tab.
+      <h3>Sign in to Care Portal</h3>
+      <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 16px;">
+        Use your clinician account. Session token is stored in sessionStorage and cleared on close.
       </p>
       <input type="text" id="usernameInput" placeholder="Username" autocomplete="username" />
       <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password" />
-      <p id="loginError" style="font-size:13px; color:#b91c1c; min-height:18px; margin:4px 0;"></p>
-      <button class="btn" style="width:100%;" id="signInButton">Sign in</button>
-      <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); text-align: center;">
-        <button class="btn" style="width:100%; background: #0d9488;" id="oneClickJudgeBtn" type="button">
+      <p id="loginError" style="font-size: 12px; color: #f87171; min-height: 18px; margin: 4px 0;"></p>
+      <button class="btn btn-primary" style="width: 100%;" id="signInButton">Sign in</button>
+      <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); text-align: center;">
+        <button class="btn" style="width: 100%; background: #0d9488; color: #fff; font-weight: 700; border-color: #14b8a6;" id="oneClickJudgeBtn" type="button">
           ⚡ 1-Click Judge Sign-In (demo-reviewer)
         </button>
-        <p style="font-size: 11px; color: var(--muted); margin: 6px 0 0;">
+        <p style="font-size: 11px; color: var(--text-secondary); margin: 8px 0 0;">
           Judge credentials: <code>demo-reviewer</code> / <code>cadence-demo-2026</code>
         </p>
       </div>
