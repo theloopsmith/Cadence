@@ -4,8 +4,10 @@ Target project: `ultra-concord-513321-q3`. This deploys a synthetic/demo environ
 
 ## Live demo (verified 2026-10-31)
 
-- iPhone server origin: `https://35.209.6.236.sslip.io`
-- Caregiver/reviewer dashboard: <https://35.209.6.236.sslip.io/dashboard>
+- Public domain: `https://cadence-companion.duckdns.org`
+- Interactive Smart Glasses Walkthrough: <https://cadence-companion.duckdns.org/walkthrough> (alias: `/demo`)
+- Caregiver/reviewer dashboard: <https://cadence-companion.duckdns.org/dashboard>
+- Phone server origin: `https://cadence-companion.duckdns.org` (fallback IP origin: `https://35.209.6.236.sslip.io`)
 - Phone username: `demo-wearer`; dashboard username: `demo-reviewer`. Their separate passwords are in private, ignored `.local/gcp-demo/accounts.env`. Never embed them in a submission, public README or app build. Share judge access privately.
 - In the iPhone app, open Settings, expand the developer options, and use Account and local history to enter the HTTPS origin and phone account. A new server/account is a separate profile: preserve/export existing local records before any deliberate local reset. Do not bypass the account-bound queue guard or repoint another wearer's pending records.
 - For a fresh demo build, Xcode's `CADENCE_SERVER_URL` build setting can provide this origin through the existing Info.plist setting. Existing saved server preferences take precedence; no phone's profile was changed during deployment.

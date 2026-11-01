@@ -28,8 +28,24 @@ def test_walkthrough_javascript_asset():
     response = client.get("/assets/walkthrough.js")
     assert response.status_code == 200
     assert "javascript" in response.headers["content-type"]
-    assert "STORAGE_KEY" in response.text
+    assert "localStorage.setItem" not in response.text
+    assert "sessionStorage.setItem" not in response.text
     assert "apiCall" in response.text
+
+
+def test_walkthrough_styles_and_allowlisted_images():
+    client = TestClient(app)
+    styles = client.get('/assets/walkthrough.css')
+    assert styles.status_code == 200
+    assert 'text/css' in styles.headers['content-type']
+    assert 'prefers-reduced-motion' in styles.text
+    for name in ('wearer', 'table', 'desk', 'hall', 'together'):
+        response = client.get(f'/assets/walkthrough/{name}.jpg')
+        assert response.status_code == 200
+        assert response.headers['content-type'] == 'image/jpeg'
+        assert response.content.startswith(b'\xff\xd8')
+        assert response.headers['x-content-type-options'] == 'nosniff'
+    assert client.get('/assets/walkthrough/backend.env').status_code == 404
 
 
 def test_dashboard_links_to_walkthrough():

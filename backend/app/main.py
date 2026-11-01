@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from app.clients.circuit_breaker import RequestDeadlineContext
 from app.clients.meta_models import check_in_keywords, dose_keywords, meta_client
@@ -157,9 +157,8 @@ async def get_dashboard_script():
 @app.get("/demo", response_class=HTMLResponse)
 async def get_smart_glasses_walkthrough_shell() -> HTMLResponse:
     """
-    Interactive Smart Glasses Walkthrough shell route (200 OK).
-    Presents an Apple-style interactive experience demonstrating Ray-Ban Meta
-    smart glasses sensor inputs with live Meta SAM 3.1, Llama 3.2, and Muse Spark pipelines.
+    Public, illustrative wearer story. Live backend checks are separately
+    authenticated; scrolling the tour never generates patient events.
     """
     html_path = STATIC_DIR / "walkthrough.html"
     nonce = secrets.token_urlsafe(24)
@@ -180,6 +179,20 @@ async def get_smart_glasses_walkthrough_shell() -> HTMLResponse:
 async def get_walkthrough_script():
     return Response(content=(STATIC_DIR/'walkthrough.js').read_text(encoding='utf-8'),
         media_type='text/javascript', headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
+
+
+@app.get('/assets/walkthrough.css')
+async def get_walkthrough_styles():
+    return Response(content=(STATIC_DIR/'walkthrough.css').read_text(encoding='utf-8'),
+        media_type='text/css', headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store'})
+
+
+@app.get('/assets/walkthrough/{asset}')
+async def get_walkthrough_image(asset: str):
+    if asset not in {'wearer.jpg', 'table.jpg', 'desk.jpg', 'hall.jpg', 'together.jpg'}:
+        raise HTTPException(status_code=404, detail='Image not found')
+    return FileResponse(STATIC_DIR/'walkthrough'/asset, media_type='image/jpeg',
+        headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=3600'})
 
 
 # ==================== SPEECH (Muse Voice Transcribe) ====================
