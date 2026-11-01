@@ -362,6 +362,11 @@ function element(tag, text, className) {
         printButton: () => window.print(), fogButton: simFoG, mealButton: simDoseAndSteak,
         realityButton: simRealityCheck, writingButton: simMicrographia,
         examButton: simHomeMotorExam, fallButton: simFallAndCancel, signInButton: signIn,
+        oneClickJudgeBtn: () => {
+          document.getElementById("usernameInput").value = "demo-reviewer";
+          document.getElementById("passwordInput").value = "cadence-demo-2026";
+          return signIn();
+        },
       };
       for (const [id, handler] of Object.entries(actions)) document.getElementById(id).addEventListener("click", () => {
         Promise.resolve().then(handler).catch(error => { document.getElementById("narrativeText").textContent = error.message; });

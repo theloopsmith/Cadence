@@ -4,7 +4,9 @@
 
 **Your day. Still yours.** An iPhone companion for everyday life with Parkinson’s, paired with Meta glasses for camera and audio.
 
-[Experience a day with Cadence](https://cadence-companion.duckdns.org/walkthrough) · [Animated “How it works”](https://cadence-companion.duckdns.org/walkthrough#how-it-works) · [Care dashboard](https://cadence-companion.duckdns.org/dashboard) (sign-in required)
+[Experience a day with Cadence](https://cadence-companion.duckdns.org/walkthrough) · [Animated “How it works”](https://cadence-companion.duckdns.org/walkthrough#how-it-works) · [Care dashboard](https://cadence-companion.duckdns.org/dashboard)
+
+> **Judges Demo Access**: Click **⚡ 1-Click Judge Sign-In** on the [care dashboard](https://cadence-companion.duckdns.org/dashboard) or use credentials `demo-reviewer` / `cadence-demo-2026`. To run live Meta inference on the backend, expand the judges' section on the [walkthrough](https://cadence-companion.duckdns.org/walkthrough) (`demo-wearer` / `cadence-demo-2026`).
 
 ![Cadence architecture: glasses, iPhone app, protected backend and care connection](docs/assets/architecture-flow.gif)
 

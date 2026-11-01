@@ -604,6 +604,15 @@
     runButton.textContent = busy && token ? 'Running…' : 'Run demo sequence ↗';
   }
 
+  const oneClickLiveBtn = $('oneClickLiveBtn');
+  if (oneClickLiveBtn) {
+    oneClickLiveBtn.addEventListener('click', () => {
+      $('usernameInput').value = 'demo-wearer';
+      $('passwordInput').value = 'cadence-demo-2026';
+      loginForm.dispatchEvent(new Event('submit', {cancelable: true}));
+    });
+  }
+
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (busy) return;

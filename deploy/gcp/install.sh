@@ -47,6 +47,9 @@ for username, role, password_key in (
     if existing:
         if existing['role'] != role or existing['patient_id'] != 'hackathon-demo':
             raise RuntimeError('Existing demo account has a different binding; refusing replacement.')
+        from app.auth import hash_password
+        from app.db import execute_write_sync
+        execute_write_sync('UPDATE users SET password_hash = ? WHERE username = ?', (hash_password(os.environ[password_key]), username))
     else:
         create_user_sync(username, os.environ[password_key], role, 'hackathon-demo')
 PYTHON
