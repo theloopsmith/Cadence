@@ -189,7 +189,7 @@ async def get_walkthrough_styles():
 
 @app.get('/assets/walkthrough/{asset}')
 async def get_walkthrough_image(asset: str):
-    if asset not in {'wearer.jpg', 'table.jpg', 'desk.jpg', 'hall.jpg', 'together.jpg'}:
+    if asset not in {'wearer.jpg', 'table.jpg', 'desk.jpg', 'hall.jpg', 'coatstand.jpg', 'safety_floor.jpg', 'together.jpg'}:
         raise HTTPException(status_code=404, detail='Image not found')
     return FileResponse(STATIC_DIR/'walkthrough'/asset, media_type='image/jpeg',
         headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=3600'})

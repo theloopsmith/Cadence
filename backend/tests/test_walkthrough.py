@@ -39,7 +39,7 @@ def test_walkthrough_styles_and_allowlisted_images():
     assert styles.status_code == 200
     assert 'text/css' in styles.headers['content-type']
     assert 'prefers-reduced-motion' in styles.text
-    for name in ('wearer', 'table', 'desk', 'hall', 'together'):
+    for name in ('wearer', 'table', 'desk', 'hall', 'coatstand', 'safety_floor', 'together'):
         response = client.get(f'/assets/walkthrough/{name}.jpg')
         assert response.status_code == 200
         assert response.headers['content-type'] == 'image/jpeg'
