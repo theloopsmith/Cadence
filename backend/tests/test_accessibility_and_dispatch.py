@@ -75,7 +75,7 @@ def test_default_report_omits_interpreted_states(http):
 
 def test_empty_scene_never_claims_safety_or_absence():
     text = render_grounded_template('REASSURE_EMPTY_SPACE')
-    assert 'cannot identify' in text.lower()
+    assert 'cannot verify the whole scene' in text.lower()
     for forbidden in ['safe', 'no one', 'clear and']:
         assert forbidden not in text.lower()
 

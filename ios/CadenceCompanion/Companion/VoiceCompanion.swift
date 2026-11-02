@@ -427,7 +427,7 @@ public final class VoiceCompanion: ObservableObject {
         case .medication: destination = .medication; say(execute?(.medication) ?? "Tell me if you'd like your next dose time, or want to record a dose you've taken.")
         case .camera: destination = .camera; say("Opening your glasses camera. Say capture when you're ready.")
         case .diary: destination = .diary; say(execute?(.diary) ?? "Here's your diary.")
-        case .meal: destination = .meal; say("Opening your meal diary. Tell me when you're ready to record the meal time.")
+        case .meal: destination = .meal; say("Opening your meal diary. Would you like an optional photo? Say take a photo, or ready to record the meal time without one.")
         case .settings:
             if context == .surroundings { publish(.settings) } else { destination = .settings }
             say("Opening settings. Your care partner can help with setup and sign-in here.")

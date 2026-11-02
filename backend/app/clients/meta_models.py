@@ -75,9 +75,16 @@ class MetaModelClient:
             asyncio.ensure_future(self._segment_one(label, image_url, timeout_sec)): label
             for label in labels
         }
-        done, pending = await asyncio.wait(tasks, timeout=timeout_sec)
+        try:
+            done, pending = await asyncio.wait(tasks, timeout=timeout_sec)
+        except BaseException:
+            for task in tasks: task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         for task in pending:
             task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         masks: List[Dict[str, Any]] = []
         failed: List[str] = []

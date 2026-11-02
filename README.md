@@ -13,7 +13,7 @@
 ## What it does
 
 - **Guided motor check:** a voice sample, a slowly dictated handwritten sentence and an optional short walk. Skipped or unavailable tasks stay distinct from measurements.
-- **Medication routine:** reminders of a saved prescribed schedule, factual history questions, and dose logging after explicit confirmation. Meal logging saves a timestamp only.
+- **Medication routine:** reminders of a saved prescribed schedule, factual history questions, and dose logging after explicit confirmation. Meal logging shares a timestamp; optional reviewed photos and notes stay on the phone.
 - **Walking support:** local motion processing triggers bounded rhythmic cues. Walking protection on/off is the first action on Today.
 - **Surroundings:** review a glasses photo, confirm its use, then hear a bounded description grounded in detected objects.
 - **Care connection:** possible-fall check-ins, an account-bound offline queue, and a read-only diary/dashboard that separates queued alerts, provider acceptance and human acknowledgment.
@@ -39,7 +39,7 @@ Swift owns sensing, speech, confirmations and local records. FastAPI owns bounde
 **Runtime models:**
 
 - **SAM 3.1** (`sam-3.1`, Meta Model API): named-concept segmentation for confirmed photos.
-- **Muse Spark Open** (`meta-models/muse-spark-open-1026`, Baseten): allowlisted intent interpretation and selection from SAM-grounded labels.
+- **Muse Spark Open** (`meta-models/muse-spark-open-1026`, Baseten): allowlisted intent interpretation and image search terms and selection from SAM-grounded labels.
 - **Muse Voice Transcribe** (`muse-voice-transcribe-1.0`, Meta Model API): optional online speech-to-text.
 
 Installed Apple voices speak replies; Apple on-device recognition, CoreMotion/Accelerate, OpenCV and SQLite are platform/software components. All external runtime model calls use Meta models. A configured Fireworks/Meta Llama 3.3 alternate remains available when the Baseten key is absent. Models cannot invent diary facts or directly execute actions.

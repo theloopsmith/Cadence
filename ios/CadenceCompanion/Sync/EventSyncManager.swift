@@ -418,6 +418,13 @@ public final class EventSyncManager {
         }
     }
 
+    public func hasRecordedEvent(_ uuid: String) -> Bool {
+        dbQueue.sync {
+            guard let owner = currentOwner else { return false }
+            return recordedGeneration(uuid: uuid, owner: owner, destination: currentURL) != nil
+        }
+    }
+
     public func isEventSynced(_ uuid: String) -> Bool {
         dbQueue.sync {
             var stmt: OpaquePointer?; defer { sqlite3_finalize(stmt) }

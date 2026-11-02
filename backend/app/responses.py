@@ -130,11 +130,14 @@ class ModelStageEvidence(WireResponse):
 
 
 class RealityModelEvidence(WireResponse):
+    proposal: ModelStageEvidence | None = None
     segmentation: ModelStageEvidence
     selection: ModelStageEvidence
 
 
 class RealityCheckResponse(WireResponse):
+    analysis_status: Literal["identified", "partial", "no_supported_match", "unavailable"] = "identified"
+    searched_concepts: list[str] = Field(default_factory=list)
     event_uuid: str
     sam_verified: bool
     verified_masks: list[dict[str, Any]]

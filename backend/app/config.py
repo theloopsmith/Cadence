@@ -93,9 +93,10 @@ class Settings(BaseSettings):
 
     # One interactive request (photo in, sentence out) may use this much wall clock.
     # Measured 2026-10-29: a single live SAM 3.1 call takes 2.5-3.6 s.
-    interactive_request_budget_sec: float = 8.0
+    interactive_request_budget_sec: float = 12.0
     sam_stage_budget_sec: float = 6.0
-    # Room for Muse reasoning; always clamped by the shared eight-second deadline.
+    scene_proposal_budget_sec: float = 7.0
+    # Room for Muse reasoning; always clamped by the shared request deadline.
     baseten_stage_budget_sec: float = 3.0
 
     # Twilio Escalation & Caregiver Contacts

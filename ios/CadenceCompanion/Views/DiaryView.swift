@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// A timeline of the day with icons and plain facts. No charts to read,
 /// no interpretation.
@@ -9,6 +12,9 @@ struct DiaryView: View {
     @State private var events: [DiaryEvent] = []
     @State private var facts: [String] = []
     @State private var showingReport = false
+    #if canImport(UIKit)
+    @State private var mealImages: [String: UIImage] = [:]
+    #endif
 
     private var isToday: Bool { Calendar.current.isDateInToday(day) }
 
@@ -155,6 +161,13 @@ struct DiaryView: View {
                         .foregroundColor(.secondary)
                         .monospacedDigit()
                 }
+                #if canImport(UIKit)
+                if event.kind == .mealLogged, event.hasMealPhoto == true,
+                   let image = mealImages[event.id] {
+                    Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180)
+                        .clipShape(RoundedRectangle(cornerRadius: 10)).accessibilityLabel("Meal reference photo saved on this phone")
+                }
+                #endif
                 if !event.factualDetail.isEmpty {
                     Text(event.factualDetail)
                         .font(.subheadline)
@@ -184,5 +197,12 @@ struct DiaryView: View {
     private func reload() {
         events = (try? app.diary.events(on: day)) ?? []
         facts = (try? app.diary.plainFacts(for: day)) ?? []
+        #if canImport(UIKit)
+        let store = MealPhotoStore(diary: app.diary)
+        mealImages = Dictionary(uniqueKeysWithValues: events.compactMap { event in
+            guard event.kind == .mealLogged, event.hasMealPhoto == true, let data = store.load(id: event.id), let image = UIImage(data: data) else { return nil }
+            return (event.id, image)
+        })
+        #endif
     }
 }

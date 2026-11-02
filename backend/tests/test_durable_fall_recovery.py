@@ -315,3 +315,15 @@ def test_verifier_preflight_requires_a_sender_that_can_both_call_and_text():
     result=module.provider_preflight(client,'recipient','sender')
     assert result['trial_recipient_ready']
     assert not result['owned_sender_sms_voice_ready']
+
+
+def test_cancel_never_reports_another_incidents_clear_count(db, monkeypatch):
+    from app.services import fall_durability
+    async def unrelated_sweep(*args): return 42
+    monkeypatch.setattr(fall_durability,'send_pending_clears',unrelated_sweep)
+    async def run():
+        manager = FallEscalationManager()
+        await manager.ingest_fall_event('owner', event(status='candidate_check_in_pending'), False)
+        result = await manager.cancel_dispatched_fall('owner','durable-event')
+        assert result['all_clear_sms_sent'] == 0
+    asyncio.run(run())

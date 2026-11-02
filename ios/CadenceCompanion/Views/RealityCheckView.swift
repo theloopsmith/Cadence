@@ -3,16 +3,19 @@ import AVFoundation
 import Speech
 
 /// Look-around view: describes what the camera actually sees, calmly and factually.
-/// Uses SAM 3.1 instance lock and Fireworks Llama 3.2 Vision to ground objects
-/// (e.g. differentiating a coat on a chair or coat rack in low light from an intruder).
+/// Muse proposes bounded search labels for general requests; SAM grounds them.
+/// Unavailable inference is distinct from a completed search with no supported match.
 public struct RealityCheckView: View {
     @ObservedObject var app: CadenceAppModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var voiceFlowID = UUID()
-    @State private var question: String = "Is someone standing there, or is it just an object?"
+    @State private var didLoadQuestion = false
+    @State private var question: String = "What objects can you identify in this photo?"
     @State private var isListeningToVoice: Bool = false
     @State private var voiceErrorMessage: String?
+    @State private var dictationID = UUID()
+    @State private var dictationTask: Task<Void, Never>?
     @State private var showSignIn = false
     @State private var retryPhoto: Data?
     @State private var retryProfileID: String?
@@ -28,7 +31,7 @@ public struct RealityCheckView: View {
     @State private var photoSource: String?
 
     private let sampleQuestions = [
-        "Is someone standing there, or is it just an object?",
+        "What objects can you identify in this photo?",
         "Is that a person on the chair or just clothes?",
         "Is there an animal or pet in the room?",
         "Check the room and tell me what is there.",
@@ -44,6 +47,7 @@ public struct RealityCheckView: View {
                 VStack(spacing: 20) {
                     headerCard
                     questionCard
+                    confirmedPhotoCard
                     actionsCard
                     if isChecking {
                         loadingCard
@@ -72,7 +76,14 @@ public struct RealityCheckView: View {
             }
             .onAppear {
                 app.companion.enterFlow(id: voiceFlowID, destination: .surroundings, step: isChecking ? .analyzing : .surroundings)
-                if app.companion.isEnabled, !app.companion.lastHeard.isEmpty { question = app.companion.lastHeard }
+                if !didLoadQuestion {
+                    didLoadQuestion = true
+                    if app.companion.isEnabled, !app.companion.lastHeard.isEmpty { question = app.companion.lastHeard }
+                }
+            }
+            .onChange(of: app.settings.profile.id) { _ in
+                requestID = UUID(); requestTask?.cancel(); isChecking = false
+                retryPhoto = nil; retryProfileID = nil; checkResult = nil
             }
             .onChange(of: isChecking) { active in app.companion.updateFlow(id: voiceFlowID, step: active ? .analyzing : .surroundings) }
             .onChange(of: app.companion.actionID) { _ in
@@ -80,7 +91,7 @@ public struct RealityCheckView: View {
                 switch app.companion.action {
                 case .capture: automaticVoiceCapture = true; showGlassesCamera = true
                 case .start, .retry:
-                    if let retryPhoto { runRealityCheck(jpeg: retryPhoto) }
+                    if let retryPhoto, retryProfileID == app.settings.profile.id { runRealityCheck(jpeg: retryPhoto) }
                     else { automaticVoiceCapture = true; showGlassesCamera = true }
                 case .settings: showSignIn = true
                 case .cancel, .finish: dismiss()
@@ -94,6 +105,7 @@ public struct RealityCheckView: View {
                 requestTask?.cancel()
                 app.glasses.cancelPhotoCapture()
                 stopVoiceInput()
+                retryPhoto = nil
             }
             .sheet(isPresented: $showSignIn) { SettingsView(app: app) }
             .sheet(isPresented: $showGlassesCamera, onDismiss: {
@@ -150,7 +162,7 @@ public struct RealityCheckView: View {
                         .textFieldStyle(.plain)
                     if !question.isEmpty {
                         Button {
-                            question = ""
+                            stopVoiceInput(); question = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.secondary)
@@ -245,7 +257,7 @@ public struct RealityCheckView: View {
 
     private var actionsCard: some View {
         VStack(spacing: 12) {
-            GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: { showGlassesCamera = true }) {
+            GuardedButton(size: .giant, style: .filled(CadenceTheme.accent), action: { captureWithGlasses() }) {
                 Label("Open glasses camera", systemImage: "eyeglasses")
             }
             Text("The camera screen connects Cadence to your glasses and shows live video before you capture.")
@@ -261,6 +273,25 @@ public struct RealityCheckView: View {
         }
         .disabled(isChecking)
         .card()
+    }
+
+    @ViewBuilder private var confirmedPhotoCard: some View {
+        if let data = retryPhoto, retryProfileID == app.settings.profile.id {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Your confirmed photo").font(.headline)
+                #if os(iOS)
+                if let image = UIImage(data: data) {
+                    Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                #endif
+                Text("You can change the question and check this same photo again. Naming an object helps focus the search.")
+                    .font(.footnote).foregroundColor(.secondary)
+                GuardedButton(style: .filled(CadenceTheme.accent), action: { runRealityCheck(jpeg: data) }) {
+                    Text(checkResult == nil ? "Retry this photo" : "Check photo with this question")
+                }.disabled(isChecking)
+            }.card()
+        }
     }
 
     // MARK: - Loading
@@ -287,8 +318,8 @@ public struct RealityCheckView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 StatusPill(
-                    text: result.detectedLabels.isEmpty ? "No clear objects" : "Photo observations",
-                    color: result.livingSubjectPresent ? CadenceTheme.caution : CadenceTheme.calm,
+                    text: result.statusTitle,
+                    color: result.samVerified && !result.detectedLabels.isEmpty ? CadenceTheme.calm : CadenceTheme.caution,
                     filled: true
                 )
                 Spacer()
@@ -302,6 +333,12 @@ public struct RealityCheckView: View {
                 .foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let warning = app.diaryWarning {
+                Text("Photo checked; local diary needs attention. " + warning).font(.footnote).foregroundColor(CadenceTheme.caution)
+            }
+            if let concepts = result.searchedConcepts, !concepts.isEmpty {
+                Text("Searched for: " + concepts.joined(separator: ", ")).font(.footnote).foregroundColor(.secondary)
+            }
             if !result.detectedLabels.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Objects identified:")
@@ -365,8 +402,10 @@ public struct RealityCheckView: View {
     // MARK: - Logic
 
     private func startVoiceInput() {
+        stopVoiceInput()
         voiceErrorMessage = nil
-        Task { @MainActor in
+        let id = UUID(); dictationID = id
+        dictationTask = Task { @MainActor in
             let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
             if micStatus == .notDetermined {
                 _ = await AVCaptureDevice.requestAccess(for: .audio)
@@ -375,6 +414,7 @@ public struct RealityCheckView: View {
                 return
             }
 
+            guard !Task.isCancelled, dictationID == id else { return }
             let speechStatus = SFSpeechRecognizer.authorizationStatus()
             if speechStatus == .notDetermined {
                 let granted = await withCheckedContinuation { continuation in
@@ -389,6 +429,7 @@ public struct RealityCheckView: View {
                 return
             }
 
+            guard !Task.isCancelled, dictationID == id else { return }
             app.companion.setPaused("Question dictation", true)
             isListeningToVoice = true
             question = ""
@@ -396,7 +437,7 @@ public struct RealityCheckView: View {
 
             app.transcripts.startListening { text in
                 Task { @MainActor in
-                    if !text.isEmpty {
+                    if dictationID == id, isListeningToVoice, !text.isEmpty {
                         self.question = text
                         Haptics.tap()
                     }
@@ -406,6 +447,7 @@ public struct RealityCheckView: View {
     }
 
     private func stopVoiceInput() {
+        dictationID = UUID(); dictationTask?.cancel(); dictationTask = nil
         if isListeningToVoice {
             isListeningToVoice = false
             app.transcripts.stopListening()
@@ -425,6 +467,7 @@ public struct RealityCheckView: View {
     }
 
     private func runRealityCheck(jpeg: Data) {
+        guard !isChecking, !app.settings.restartRequired else { return }
         stopVoiceInput()
         retryPhoto = jpeg
         retryProfileID = app.settings.profile.id
@@ -439,19 +482,20 @@ public struct RealityCheckView: View {
         let id = UUID(); requestID = id
         let client = app.settings.api
         let profileID = app.settings.profile.id
+        let submittedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "What objects can you identify in this photo?" : question
         requestTask?.cancel()
         requestTask = Task { @MainActor in
+            defer { if requestID == id { isChecking = false } }
             do {
-                let result = try await client.realityCheck(question: question, jpeg: jpeg)
+                let result = try await client.realityCheck(question: submittedQuestion, jpeg: jpeg)
                 guard !Task.isCancelled, requestID == id, !app.settings.restartRequired,
                       app.settings.profile.id == profileID, app.settings.deviceToken == client.bearerToken,
                       app.settings.api.baseURL == client.baseURL else { return }
                 isChecking = false
                 checkResult = result
-                retryPhoto = nil
                 app.recordDiary(.environmentCheck, detail: result.spokenResponse)
                 AudioCueEngine.shared.speakPrompt(result.spokenResponse, priority: 2)
-                Haptics.success()
+                if !result.detectedLabels.isEmpty { Haptics.success() }
             } catch {
                 guard !Task.isCancelled, requestID == id, !app.settings.restartRequired,
                       app.settings.profile.id == profileID, app.settings.deviceToken == client.bearerToken,

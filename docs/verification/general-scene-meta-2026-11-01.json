@@ -1,0 +1,102 @@
+{
+  "checked_at_utc": "2026-11-02T01:27:34.982988+00:00",
+  "evidence_grade": "live source-pipeline check of general question on owner-approved exported glasses image",
+  "user_query": "What objects can you identify in this photo?",
+  "image_sha256": "f00d5e8a043fa9ee9b8a03e6df865c2356db00cdb2cbeead738dcd0b612abcbd",
+  "image_bytes": 333414,
+  "wall_ms": 8721,
+  "response": {
+    "analysis_status": "identified",
+    "searched_concepts": [
+      "person",
+      "dog",
+      "cat",
+      "sofa",
+      "pillow",
+      "shelf"
+    ],
+    "model_evidence": {
+      "proposal": {
+        "source": "meta_open_weights",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "latency_ms": 5157
+      },
+      "segmentation": {
+        "source": "meta_model_api",
+        "model": "sam-3.1",
+        "latency_ms": 5141,
+        "failed_concepts": []
+      },
+      "selection": {
+        "source": "meta_open_weights",
+        "provider": "baseten",
+        "model": "meta-models/muse-spark-open-1026",
+        "latency_ms": 1388
+      }
+    },
+    "sam_verified": true,
+    "verified_masks": [
+      {
+        "label": "pillow",
+        "object_id": "0",
+        "confidence": 0.9139785170555115,
+        "box": {
+          "x1": 997,
+          "y1": 1050,
+          "x2": 1199,
+          "y2": 1293,
+          "w": 1200,
+          "h": 1600
+        },
+        "area_px": 49532,
+        "area_ratio": 0.025797916666666667,
+        "grounding_rule": "frame_area"
+      },
+      {
+        "label": "pillow",
+        "object_id": "1",
+        "confidence": 0.8987342119216919,
+        "box": {
+          "x1": 967,
+          "y1": 933,
+          "x2": 1154,
+          "y2": 1094,
+          "w": 1200,
+          "h": 1600
+        },
+        "area_px": 30456,
+        "area_ratio": 0.0158625,
+        "grounding_rule": "frame_area"
+      },
+      {
+        "label": "sofa",
+        "object_id": "0",
+        "confidence": 0.7387754917144775,
+        "box": {
+          "x1": 612,
+          "y1": 879,
+          "x2": 1199,
+          "y2": 1483,
+          "w": 1200,
+          "h": 1600
+        },
+        "area_px": 355740,
+        "area_ratio": 0.18528125,
+        "grounding_rule": "frame_area"
+      }
+    ],
+    "living_subject_present": false,
+    "chosen_inanimate_label": "pillow",
+    "template_id": "REASSURE_OBJECT_ON_SEAT",
+    "spoken_response": "I can identify a pillow in this photo. I cannot confirm whether someone else is present.",
+    "tts_source": "ios_on_device",
+    "latency_ms": 8720
+  },
+  "limits": [
+    "Private image omitted; derivative was previously stripped of metadata.",
+    "This invokes the current pipeline directly; not an HTTP or physical-device acceptance check.",
+    "Vision proposes labels only; SAM must ground them.",
+    "No caregiver contact or database write."
+  ]
+}

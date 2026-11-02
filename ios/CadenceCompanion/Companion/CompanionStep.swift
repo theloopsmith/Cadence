@@ -3,7 +3,7 @@ import Foundation
 /// The current task owns short answers; recognition errors must not navigate home.
 public enum CompanionStep: Equatable {
     case general, motorIntro, motorVoiceReady, motorRecording, handwriting, walkReady, walking, completed
-    case surroundings, cameraPreview, photoReview, analyzing, medication, meal, settings
+    case surroundings, cameraPreview, photoReview, analyzing, medication, medicationSetup, meal, mealSaved, settings
 
     public var guidance: String {
         switch self {
@@ -18,8 +18,10 @@ public enum CompanionStep: Equatable {
         case .cameraPreview: return "Your glasses camera is open. Say take a photo when you're ready."
         case .photoReview: return "I still have your photo. Say use this photo, use it, or retake."
         case .analyzing: return "I'm still checking the photo or saving this step. You can wait, or say cancel to leave."
+        case .medicationSetup: return "Your routine has unsaved changes. Say save routine to keep them, or discard changes to go back."
         case .medication: return "We're reviewing your saved medication routine. Tell me if you've taken your medication, or ask for your next dose time."
-        case .meal: return "We're recording a meal time. Say ready to save it, or done to leave."
+        case .meal: return "Take an optional meal photo, or say ready to log the meal time without a photo. Say done to leave."
+        case .mealSaved: return "Your meal is saved. Say another meal to make a new entry, or done to close."
         case .settings: return "Settings are open. Finish setup or sign-in on the phone, then say done to return."
         case .general: return "Tell me which part you want help with, or say cancel to leave this screen."
         }
@@ -28,6 +30,11 @@ public enum CompanionStep: Equatable {
     public func resolve(_ text: String) -> CompanionIntent? {
         let t = CompanionIntent.normalized(text)
         switch self {
+        case .medicationSetup:
+            if ["save", "save routine", "save medications", "save changes", "done"].contains(t) { return .finish }
+            if ["discard", "discard changes"].contains(t) { return .cancel }
+        case .mealSaved:
+            if ["another meal", "log another meal", "new meal"].contains(t) { return .retry }
         case .photoReview:
             if ["yes", "yes please", "use it", "use that", "use the picture", "use this picture", "save it", "looks good", "that's good", "that one", "okay", "ok"].contains(t) { return .usePhoto }
             if ["no", "no thanks", "another one"].contains(t) { return .retake }

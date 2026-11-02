@@ -30,7 +30,7 @@ def config_defaults():
     tree = ast.parse((ROOT / 'backend/app/config.py').read_text())
     settings = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Settings')
     wanted = {'meta_sam_model','meta_stt_model','baseten_model','sam_stage_budget_sec',
-              'baseten_stage_budget_sec','interactive_request_budget_sec','fall_check_in_sec','inference_requests_per_minute'}
+              'baseten_stage_budget_sec','interactive_request_budget_sec','fall_check_in_sec','inference_requests_per_minute','scene_proposal_budget_sec'}
     def default(node):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'Field':
             node = next(keyword.value for keyword in node.keywords if keyword.arg == 'default')
@@ -72,6 +72,7 @@ def labels(config):
             'c7': '<b>Motion adapter</b><br/>Configured 60 Hz accel/gyro/orientation when available; physical acceptance pending.',
             'c13': f'<b>Views</b><br/>{" · ".join(tabs)}. Protection on/off is first. Diary opens from Today; glasses/audio details expand. Help has reserved scroll space. Developer tools stay under the Settings toggle.',
             'c14': '<b>Companion</b><br/>Foreground voice starts by default after OS permission. Context-aware intents, separate confirmations, explicit stop and Hey Meta microphone handoff.',
+            'c18': '<b>Medication and diary</b><br/>MedicationPlanEditor owns a stable draft and explicit saved summary. DoseLogModel/retractions and reminders follow the saved plan. MealLogModel persists local photo/note receipts and queues timestamps. DiaryStore/TaskMetrics → PDF.',
             'c27': f'<b>Meta Model API</b><br/>{config["meta_sam_model"]} via /responses; {config["meta_stt_model"]} for optional transcription.',
             'c28': f'<b>Baseten / Meta model</b><br/>{config["baseten_model"]}: allowlisted intent or one exact SAM-grounded label.',
             'c22': '<b>Routes (app/main.py)</b><br/>Auth / scoped events / doses and retractions / meal timestamps / photo and handwriting / transcription / companion intent / exam completion and history / reports / signed Twilio callbacks / website.',
@@ -88,7 +89,8 @@ def labels(config):
             'c31': 'Still unverified: physical glasses routing, locked-screen continuity and real caregiver delivery. A queued job or provider SID is not human acknowledgment.',
         },
         '3 Meta model calls': {
-            'c2': '<b>Meta model calls — bounded inputs, explicit provenance</b><br/>Public startup pins reviewed model IDs and disables research metrics. The phone speaks fixed wording with installed Apple voices.',
+            'c2': '<b>Meta model calls — bounded inputs, explicit provenance</b><br/>Public startup pins reviewed model IDs and disables research metrics. Muse proposes search terms; SAM must verify. Service failure and no supported match are distinct; the phone speaks bounded wording.',
+            'c4': '<b>POST /reality-check</b><br/>General question: Muse image search terms + living-subject SAM probes run concurrently; SAM then verifies object terms. Named objects skip discovery. At most 6 concepts; no absence/safety claims.',
             'c5': f'<b>{config["meta_sam_model"]}</b><br/>Meta /responses, one named concept per call. Parallel concepts; {config["sam_stage_budget_sec"]:g} s stage, {config["interactive_request_budget_sec"]:g} s shared budget. No free-form scene invention.',
             'c6': '<b>Decode and ground</b><br/>Boxes/masks; missing confidence is not zero. Normal area gate 1.5%. Explicitly requested small objects need confidence ≥0.8 and valid ≥16 px box sides.',
             'c7': f'<b>Exact grounded label → template</b><br/>Muse may choose one complete verified label. Low reasoning, 512 tokens; ≤{config["baseten_stage_budget_sec"]:g} s clamped by remaining budget. Invalid/late output uses deterministic evidence, never an invented label.',
@@ -98,9 +100,10 @@ def labels(config):
             'c30': '<b>Evidence and limits</b><br/>Sanitized traces: verification/. Real iPhone/exported glasses photo analysis is distinct from live DAT capture/audio. Deterministic fallback is identified. No raw photo in Git. Per-request HTTP clients remain an open lifecycle improvement.',
         },
         '4 Data and sync': {
+            'c3': '<b>Phone profile</b><br/>Documents/CadenceDevice/&lt;uuid&gt;/: diary and task files; pill photos; meal photos/notes (local only); labelled captures; SQLite outbox. Meal receipts stamp the original owner, destination and erase generation. JWT in Keychain.',
             'c5': '<b>Auth and deployment</b><br/>scrypt login budgets; scoped JWTs; account inference quota 30/min + separate check-in transcription quota 60/min (process-local). Static tokens have no built-in values. Public demo: durable secret, static tokens off, simulated transport only, research off and pinned Meta IDs. Caddy HTTPS + one Uvicorn worker.',
             'c9': '<b>Care-team dashboard</b><br/>Nonce CSP + textContent; scoped readers cannot write. Source column distinguishes simulated/device-reported/unverified checks; paired task provenance in typed API responses. Public schema disabled; generation fences writes.',
-            'c21': 'Privacy boundaries: inference media is transient. Chosen medication reference photos stay local. Logs/metrics persist by owner. Local reset does not erase server rows; server wipe does not erase phone files. Server caregiver routing is deployment-wide.',
+            'c21': 'Privacy boundaries: inference media is transient. Medication reference photos, meal photos and notes stay local. Logs/metrics persist by owner. Local reset does not erase server rows; server wipe does not erase phone files. Server caregiver routing is deployment-wide.',
             'c22': 'CI: locked backend dependencies, pytest, generated-diagram freshness, dashboard renderer + browser security, tour/math tests, silent Swift tests, and DAT app compilation with the macOS runner’s supported Xcode.',
         },
     }
@@ -208,7 +211,7 @@ def render_system(config, table_count):
     card(410,668,350,218,'BASETEN / META OPEN WEIGHTS','Constrained interpretation')
     text(432,768,'Muse Spark Open',18,'#edf2ef','600')
     text(432,800,config['baseten_model'],12)
-    lines(432,838,['Allowlisted intent or a verified object label'],14)
+    lines(432,838,['Intent / image search terms / verified label','SAM independently verifies image proposals'],14)
     card(788,668,460,218,'REPORTING / CARE CONNECTION','Evidence before claims')
     lines(810,768,['Read-only dashboard + phone PDF','Queued ≠ provider accepted ≠ acknowledged'],16)
     lines(810,830,['Public demo: caregiver transport simulated','Configured deployments: Twilio + signed callbacks'],14)

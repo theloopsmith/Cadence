@@ -1,0 +1,102 @@
+{
+  "checked_at_utc": "2026-11-02T01:45:25.751191+00:00",
+  "origin": "https://cadence-companion.duckdns.org",
+  "endpoint": "/api/v1/reality-check",
+  "evidence_grade": "live authenticated HTTP check on owner-approved exported glasses image",
+  "query": "What objects can you identify in this photo?",
+  "image_sha256": "f00d5e8a043fa9ee9b8a03e6df865c2356db00cdb2cbeead738dcd0b612abcbd",
+  "wall_ms": 10418,
+  "response": {
+    "analysis_status": "identified",
+    "searched_concepts": [
+      "person",
+      "dog",
+      "cat",
+      "sofa",
+      "pillow",
+      "blanket"
+    ],
+    "event_uuid": "scene-regression-proof-0272aa49-a57a-4ace-8dd3-8eddd5794e12",
+    "sam_verified": true,
+    "verified_masks": [
+      {
+        "label": "pillow",
+        "object_id": "0",
+        "confidence": 0.9139785170555115,
+        "box": {
+          "x1": 997,
+          "y1": 1050,
+          "x2": 1199,
+          "y2": 1293,
+          "w": 1200,
+          "h": 1600
+        },
+        "area_px": 49532,
+        "area_ratio": 0.025797916666666667,
+        "grounding_rule": "frame_area"
+      },
+      {
+        "label": "pillow",
+        "object_id": "1",
+        "confidence": 0.8987342119216919,
+        "box": {
+          "x1": 967,
+          "y1": 933,
+          "x2": 1154,
+          "y2": 1094,
+          "w": 1200,
+          "h": 1600
+        },
+        "area_px": 30456,
+        "area_ratio": 0.0158625,
+        "grounding_rule": "frame_area"
+      },
+      {
+        "label": "sofa",
+        "object_id": "0",
+        "confidence": 0.7419355511665344,
+        "box": {
+          "x1": 612,
+          "y1": 879,
+          "x2": 1199,
+          "y2": 1483,
+          "w": 1200,
+          "h": 1600
+        },
+        "area_px": 355740,
+        "area_ratio": 0.18528125,
+        "grounding_rule": "frame_area"
+      }
+    ],
+    "living_subject_present": false,
+    "chosen_inanimate_label": "pillow",
+    "template_id": "REASSURE_OBJECT_ON_SEAT",
+    "spoken_response": "I can identify pillow and sofa in this photo. I cannot verify the whole scene.",
+    "tts_source": "ios_on_device",
+    "latency_ms": 9661,
+    "model_evidence": {
+      "proposal": {
+        "source": "meta_open_weights",
+        "model": "meta-models/muse-spark-open-1026",
+        "provider": "baseten",
+        "latency_ms": 4436
+      },
+      "segmentation": {
+        "source": "meta_model_api",
+        "model": "sam-3.1",
+        "latency_ms": 3364,
+        "failed_concepts": []
+      },
+      "selection": {
+        "source": "deterministic_template",
+        "model": null
+      }
+    }
+  },
+  "limits": [
+    "Private metadata-stripped photo omitted.",
+    "No physical DAT capture or audible output was measured.",
+    "Only the isolated sandbox observation was saved; no caregiver contact.",
+    "One image is not an accuracy benchmark."
+  ]
+}

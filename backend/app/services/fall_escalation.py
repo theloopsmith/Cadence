@@ -413,14 +413,14 @@ class FallEscalationManager:
         task = self._active_tasks.pop(event_uuid, None)
         if task: task.cancel()
         await durable.cancel(patient_id, event_uuid, data_generation=data_generation)
-        all_clear_sent = await durable.send_pending_clears(twilio_client)
-        if all_clear_sent == 0:
-            clear_row = await fetch_one(
-                "SELECT COUNT(*) AS cnt FROM caregiver_alerts WHERE fall_event_uuid = ? AND channel = 'all_clear_sms' AND patient_id = ?",
-                (event_uuid, patient_id),
-            )
-            if clear_row:
-                all_clear_sent = int(clear_row["cnt"])
+        await durable.send_pending_clears(twilio_client)
+        # The sweep can finish other incidents too, or another worker can hold
+        # this incident's lease. Report only this owner's persisted evidence.
+        clear_row = await fetch_one(
+            "SELECT COUNT(*) AS cnt FROM caregiver_alerts WHERE fall_event_uuid = ? AND channel = 'all_clear_sms' AND patient_id = ?",
+            (event_uuid, patient_id),
+        )
+        all_clear_sent = int(clear_row["cnt"]) if clear_row else 0
         return {
             "event_uuid": event_uuid,
             "delivery_status": "canceled_by_user",

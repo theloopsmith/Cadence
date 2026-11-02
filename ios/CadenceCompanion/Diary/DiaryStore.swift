@@ -45,12 +45,20 @@ public enum DiaryEventKind: String, Codable, CaseIterable {
     }
 }
 
+public struct MealSharingContext: Codable, Equatable {
+    public let owner: String
+    public let destination: String
+    public let generation: Int
+}
+
 public struct DiaryEvent: Codable, Identifiable, Equatable {
     public var id: String
     public var kind: DiaryEventKind
     public var at: Date
     public var detail: String
     public var incidentID: String?
+    public var hasMealPhoto: Bool?
+    public var mealSharing: MealSharingContext?
 
     public init(id: String = UUID().uuidString, kind: DiaryEventKind, at: Date, detail: String, incidentID: String? = nil) {
         self.id = id

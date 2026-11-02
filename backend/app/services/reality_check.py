@@ -1,4 +1,5 @@
 import time
+import asyncio
 import math
 import re
 from typing import Any, Dict, List, Optional
@@ -35,7 +36,8 @@ INANIMATE_VOCAB = {
     "television",
     "tv",
     "mirror",
-    "box",
+    "box", "cup", "mug", "bottle", "plate", "bowl", "book", "notebook", "phone",
+    "laptop", "computer", "monitor", "keyboard", "sink", "counter", "pen",
 }
 
 # Inanimate labels that stand upright in a room rather than resting on a seat.
@@ -50,7 +52,7 @@ CLOSED_REALITY_VOCAB = sorted(LIVING_VOCAB | INANIMATE_VOCAB)
 # SAM 3.1 answers one noun phrase per request, so each photo gets a short
 # list: the living things we always ask about, then whatever the wearer named.
 ALWAYS_ASK_LIVING = ["person", "dog", "cat"]
-DEFAULT_INANIMATE = ["chair", "coat"]
+DEFAULT_INANIMATE = ["chair", "table", "sofa"]
 MAX_CONCEPTS_PER_PHOTO = 6
 
 
@@ -59,10 +61,10 @@ def named_inanimate_labels(user_query: str) -> List[str]:
             if re.search(r"(?<!\w)" + re.escape(label) + r"s?(?!\w)", user_query.lower())]
 
 
-def reality_check_concepts(user_query: str) -> List[str]:
+def reality_check_concepts(user_query: str, proposed: Optional[List[str]] = None) -> List[str]:
     """The concepts to segment for one question, living ones first."""
     concepts = list(ALWAYS_ASK_LIVING)
-    for label in named_inanimate_labels(user_query) + DEFAULT_INANIMATE:
+    for label in named_inanimate_labels(user_query) + [v for v in (proposed or []) if v in INANIMATE_VOCAB] + DEFAULT_INANIMATE:
         if label not in concepts and len(concepts) < MAX_CONCEPTS_PER_PHOTO:
             concepts.append(label)
     return concepts
@@ -135,12 +137,12 @@ def render_grounded_template(
         return f"I can identify a {label} in this photo. I cannot confirm whether someone else is present."
     if template_id == "UNVERIFIED_LIGHTING_FALLBACK":
         return (
-            "I couldn't get a clear view of the room in this light. "
-            "Please turn on a light and try taking another photo."
+            "I couldn't complete the photo check. The image service may be unavailable. "
+            "Please retry this photo or check the server connection."
         )
     return (
-        "I cannot identify any clear objects in this frame. "
-        "Try holding the camera steady or taking another photo at a wider angle."
+        "I couldn't verify the objects I searched for in this photo. "
+        "Ask about a specific object, or choose another photo. I cannot verify the whole scene."
     )
 
 
@@ -171,14 +173,41 @@ async def run_reality_check_pipeline(
     ctx = deadline or RequestDeadlineContext()
     t0 = time.monotonic()
 
-    sam_res = await meta_client.segment_sam_3_1(
-        image_bytes=image_bytes,
-        candidate_labels=reality_check_concepts(user_query),
-        deadline=ctx,
-        simulated_masks=simulated_sam_masks,
-    )
+    proposal = None
+    # Search for living subjects while vision proposes object terms. Waiting for
+    # vision first would spend most of the shared deadline before SAM could run.
+    if image_bytes and simulated_sam_masks is None and not named_inanimate_labels(user_query):
+        from app.config import settings
+        if settings.baseten_api_key:
+            discovery = asyncio.create_task(baseten_client.propose_scene_labels(image_bytes, sorted(INANIMATE_VOCAB), ctx))
+            try:
+                initial = await meta_client.segment_sam_3_1(image_bytes=image_bytes,
+                    candidate_labels=ALWAYS_ASK_LIVING,
+                    deadline=RequestDeadlineContext(total_budget_sec=min(3.2, max(0, ctx.remaining_sec()-.5))))
+                proposal = await discovery
+            finally:
+                if not discovery.done():
+                    discovery.cancel()
+                    await asyncio.gather(discovery, return_exceptions=True)
+            concepts = reality_check_concepts(user_query, proposal.get("labels") if proposal else None)
+            objects = [label for label in concepts if label not in ALWAYS_ASK_LIVING]
+            found = await meta_client.segment_sam_3_1(image_bytes=image_bytes, candidate_labels=objects,
+                deadline=RequestDeadlineContext(total_budget_sec=max(0, ctx.remaining_sec()-.5)))
+            sam_res = {"sam_verified": bool(initial.get("sam_verified") and found.get("sam_verified")),
+                       "masks": initial.get("masks",[]) + found.get("masks",[]),
+                       "failed_labels": initial.get("failed_labels",[]) + found.get("failed_labels",[]),
+                       "model": found.get("model") or initial.get("model"),
+                       "latency_ms": initial.get("latency_ms",0) + found.get("latency_ms",0)}
+        else:
+            concepts = reality_check_concepts(user_query)
+            sam_res = await meta_client.segment_sam_3_1(image_bytes=image_bytes, candidate_labels=concepts, deadline=ctx)
+    else:
+        concepts = reality_check_concepts(user_query)
+        sam_res = await meta_client.segment_sam_3_1(image_bytes=image_bytes, candidate_labels=concepts,
+            simulated_masks=simulated_sam_masks, deadline=ctx)
 
     evidence = {
+        "proposal": {k:v for k,v in proposal.items() if k != "labels"} if proposal else {"source":"deterministic_search_terms", "model":None},
         "segmentation": {
             "source": "simulated" if sam_res.get("model") == "simulated" else "meta_model_api" if sam_res.get("model") else "unavailable",
             "model": sam_res.get("model"),
@@ -188,10 +217,12 @@ async def run_reality_check_pipeline(
         "selection": {"source":"deterministic_template", "model":None},
     }
 
-    if not sam_res.get("sam_verified", False):
+    if not sam_res.get("sam_verified", False) and not sam_res.get("masks"):
         spoken = render_grounded_template("UNVERIFIED_LIGHTING_FALLBACK", user_query=user_query)
         latency_ms = int((time.monotonic() - t0) * 1000)
         return {
+            "analysis_status": "unavailable",
+            "searched_concepts": concepts,
             "model_evidence": evidence,
             "sam_verified": False,
             "verified_masks": [],
@@ -240,7 +271,7 @@ async def run_reality_check_pipeline(
             llm_choice = await baseten_client.choose_reality_check_slot(
                 user_query=user_query,
                 allowed_inanimate_labels=allowed_inanimate,
-                deadline=ctx,
+                deadline=RequestDeadlineContext(total_budget_sec=max(0, ctx.remaining_sec()-.3)),
             )
             if (
                 llm_choice
@@ -267,11 +298,20 @@ async def run_reality_check_pipeline(
                 chosen_label = None
                 spoken = render_grounded_template(template_id, user_query=user_query)
 
+    if inanimate_masks and not living_masks and not named_inanimate_labels(user_query):
+        labels = list(dict.fromkeys(([chosen_label] if chosen_label else []) + [str(mask['label']) for mask in inanimate_masks]))[:3]
+        words = labels[0] if len(labels) == 1 else ', '.join(labels[:-1]) + ' and ' + labels[-1]
+        spoken = "I can identify " + words + " in this photo. I cannot verify the whole scene."
+    if not verified_masks and not sam_res.get("sam_verified"):
+        template_id = "UNVERIFIED_LIGHTING_FALLBACK"
+        spoken = render_grounded_template(template_id)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
     return {
+        "analysis_status": ("partial" if not sam_res.get("sam_verified") else "identified") if verified_masks else ("no_supported_match" if sam_res.get("sam_verified") else "unavailable"),
+        "searched_concepts": concepts,
         "model_evidence": evidence,
-        "sam_verified": True,
+        "sam_verified": bool(sam_res.get("sam_verified")),
         "verified_masks": verified_masks,
         "living_subject_present": bool(living_masks),
         "chosen_inanimate_label": chosen_label,

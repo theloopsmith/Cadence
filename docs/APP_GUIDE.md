@@ -46,7 +46,7 @@ Cadence prefers the best installed Apple Premium, Enhanced, then Standard voice,
 
 ## Medication routine
 
-Use **Today → Edit routine** or **Settings → Medications**. Add each medication and its existing prescribed reminder times, then choose **Save medications**. Cancel discards draft changes. A reference photo follows capture → review → use, and stays local.
+Use **Today → Edit routine** or **Settings → Medications**. Add each medication and its existing prescribed reminder times, then choose **Save routine**. The page returns to a saved-routine summary with a visible receipt. Discard changes leaves the saved plan intact. Camera presentation does not reload your draft. Say “save routine” or “discard changes” while editing. A reference photo follows capture → review → use, and stays local.
 
 Today's selector chooses the medication used by Taken/Undo. By voice, say “I took [saved medication name].” With multiple medications, a generic request asks for the full saved name and then a separate confirmation. Ambiguous names are not guessed. Recording is not proof of ingestion and never changes a prescribed dose.
 
@@ -61,3 +61,10 @@ Local reset and server wipe are separate actions. Pending records remain bound t
 Developer controls are hidden under **Settings → Advanced → Show developer tools**. They include diagnostics, labeled replays, calibration, safety tests, camera checks, diary fixtures and the offline queue. Do not induce a fall or provoke a freeze to test the prototype.
 
 See [architecture and contracts](ARCHITECTURE_AND_DESIGN_SPEC.md) and [current verification evidence](VERIFICATION_LOG.md) for implementation and acceptance boundaries.
+
+
+## Surroundings and meal follow-through
+
+For surroundings, general questions use Muse image proposals followed by SAM verification; specific named objects skip proposal. The server allows 12 seconds and the iPhone's photo request allows 20 seconds including upload/network time. Service unavailability, no supported match and partial evidence have distinct statuses. The confirmed photo stays available while the screen is open: clarify the question and choose **Check photo with this question** without recapturing. No result certifies the whole scene as safe.
+
+Meal diary asks whether you want an optional glasses/iPhone photo. Review/use the photo, choose the meal time, add an optional note and save, or choose **Log meal without photo**. A receipt confirms the local save and separately describes queued sharing. Only the timestamp goes to the backend; photos and notes stay in the profile's diary and appear in the local timeline. The entry works offline. Failed local writes do not claim success; failed sharing can be retried without duplicating the entry. A 30-day diary reconciliation repairs interrupted journal-to-queue writes only at the original account, destination and erase generation. After saving, say “another meal” or “done.” There is no food/nutrient recognition or medication-timing advice.

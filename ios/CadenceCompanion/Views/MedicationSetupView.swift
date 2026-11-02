@@ -3,287 +3,237 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Medication name, dose times, and the pill photo. Its own screen, so a
-/// care partner can change a time without wading through contacts and
-/// glasses. Steppers and preset chips; no sliders.
+/// Saved routine first; one explicit edit session and one visible save action.
 struct MedicationSetupView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var voiceFlowID = UUID()
-    @State private var draft: [MedicationSchedule] = []
-    @State private var selected = 0
-    @State private var loaded = false
-    @State private var saveError: String?
-    @State private var saveSuccessMessage: String?
-    @State private var newTime = Date()
-    @State private var draftPhotos: [String: Data] = [:]
-    @State private var loadedPhotos: [String: Data] = [:]
-    @State private var removedPhotos: Set<String> = []
     @ObservedObject var app: CadenceAppModel
     @ObservedObject private var settings: AppSettings
+    @StateObject private var editor: MedicationPlanEditor
+    @State private var voiceFlowID = UUID()
+    @State private var selectedID: UUID?
+    @State private var cameraMedicationID: UUID?
     @State private var automaticVoiceCapture = false
     @State private var showGlassesCamera = false
     @State private var showPillCamera = false
     let isTab: Bool
 
-    private static let presets = [
-        DoseTime(hour: 8, minute: 0), DoseTime(hour: 12, minute: 0),
-        DoseTime(hour: 16, minute: 0), DoseTime(hour: 20, minute: 0),
-    ]
-
     init(app: CadenceAppModel, isTab: Bool = false) {
-        self.app = app
-        self.settings = app.settings
-        self.isTab = isTab
+        self.app = app; self.settings = app.settings; self.isTab = isTab
+        _editor = StateObject(wrappedValue: MedicationPlanEditor(settings: app.settings,
+            loadPhoto: { app.pillPhotos.forMedication($0).load() },
+            savePhoto: { data, name in app.setPillPhoto(data, medicationName: name); return app.photoSaveError }))
     }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Your medications") {
-                    ForEach(Array(draft.enumerated()), id: \.offset) { index, medication in
-                        Button {
-                            selected = index
-                        } label: {
-                            HStack {
-                                Text(medication.medicationName.isEmpty ? "New medication" : medication.medicationName)
-                                Spacer()
-                                if selected == index { Image(systemName: "checkmark") }
-                            }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Your medication routine").font(.largeTitle.weight(.semibold))
+                    Text("Keep the names and reminder times from your prescribed plan in one place.")
+                        .foregroundColor(.secondary)
+                    if let receipt = editor.receipt {
+                        Label(receipt, systemImage: "checkmark.circle.fill")
+                            .font(.headline).foregroundColor(CadenceTheme.calm).card()
                     }
-                    Button("Add medication") {
-                        draft.append(MedicationSchedule(medicationName: "", doseTimes: []))
-                        selected = draft.count - 1
-                    }
-                }
-                if draft.indices.contains(selected) {
-                    nameSection
-                    photoSection.disabled(draft[selected].medicationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    timesSection
-                    Button("Remove this medication", role: .destructive) {
-                        draft.remove(at: selected)
-                        selected = max(0, min(selected, draft.count - 1))
-                    }
-                }
-                if let saveSuccessMessage {
-                    Text(saveSuccessMessage)
-                        .foregroundColor(CadenceTheme.calm)
-                        .font(.subheadline.weight(.semibold))
-                }
-                if let saveError { Text(saveError).foregroundColor(CadenceTheme.caution) }
-                Button("Save medications") { save() }.buttonStyle(PrimaryButtonStyle())
+                    if editor.isEditing { editingContent }
+                    else { savedContent }
+                    Text("Reminders only. Cadence does not choose a dose or change prescribed timing.")
+                        .font(.footnote).foregroundColor(.secondary)
+                }.padding(20)
             }
-            .navigationTitle(isTab ? "Medication" : "Medication setup")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if editor.isEditing {
+                    VStack(spacing: 10) {
+                        if let error = editor.error { Text(error).foregroundColor(CadenceTheme.caution).font(.subheadline) }
+                        GuardedButton(size: .big, style: .filled(CadenceTheme.accent), action: save) {
+                            Text("Save routine")
+                        }
+                        Button("Discard changes") { cancelEditing() }
+                            .frame(minHeight: CadenceTheme.minimumTapHeight)
+                    }.padding(16).background(CadenceTheme.background)
+                }
+            }
+            .background(CadenceTheme.background.ignoresSafeArea())
+            .navigationTitle(isTab ? "My routine" : "Medications")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .onDisappear {
-                if !isTab { app.companion.leaveFlow(id: voiceFlowID) }
-            }
-            .onAppear {
-                draft = settings.medications
-                for medication in draft {
-                    loadedPhotos[medication.medicationName] = medication.medicationName == settings.schedule.medicationName ? app.pillPhoto : app.pillPhotos.forMedication(medication.medicationName).load()
-                }
-                loaded = true
-                saveSuccessMessage = nil
-                saveError = nil
+            .toolbar {
                 if !isTab {
-                    app.companion.enterFlow(id: voiceFlowID, destination: .medication, step: .medication)
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(editor.isEditing ? "Cancel" : "Done") { editor.cancel(); dismiss() }
+                    }
                 }
+            }
+            .interactiveDismissDisabled(editor.isEditing)
+            .onAppear {
+                if editor.isEditing { app.companion.enterFlow(id: voiceFlowID, destination: .medication, step: .medicationSetup) }
+                else if !isTab { app.companion.enterFlow(id: voiceFlowID, destination: .medication, step: .medication) }
+            }
+            .onDisappear {
+                if !showGlassesCamera && !showPillCamera { app.companion.leaveFlow(id: voiceFlowID) }
             }
             .onChange(of: app.companion.actionID) { _ in
                 guard app.companion.context == .medication else { return }
-                if app.companion.action == .capture {
-                    if draft.indices.contains(selected), !draft[selected].medicationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        automaticVoiceCapture = true; showGlassesCamera = true
-                    } else { app.companion.say("Add the medication's name first so I can keep its photo with the right medication.") }
-                }
-                if app.companion.action == .finish { save() }
-                if app.companion.action == .cancel { dismiss() }
-            }
-            .interactiveDismissDisabled()
-            .toolbar {
-                if !isTab {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                }
-                ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
-            }
-            .sheet(isPresented: $showGlassesCamera) {
-                GlassesCameraView(glasses: app.glasses, voice: app.companion, captureWhenReady: automaticVoiceCapture, title: "Medication photo") { jpeg in
-                    stagePhoto(jpeg)
+                switch app.companion.action {
+                case .capture:
+                    beginEditing()
+                    if selectedID == nil { selectedID = editor.items.first?.id }
+                    openGlassesCamera(automatic: true)
+                case .finish:
+                    if editor.isEditing { save() } else if !isTab { dismiss() }
+                case .cancel: cancelEditing(); if !isTab { dismiss() }
+                default: break
                 }
             }
-            .cameraPresentation(
-                isPresented: $showPillCamera,
-                onCapture: { jpeg in
-                    stagePhoto(jpeg)
-                    showPillCamera = false
-                },
-                onCancel: { showPillCamera = false }
-            )
+            .sheet(isPresented: $showGlassesCamera, onDismiss: { automaticVoiceCapture = false }) {
+                GlassesCameraView(glasses: app.glasses, voice: app.companion, captureWhenReady: automaticVoiceCapture, title: "Medication photo") { stagePhoto($0) }
+            }
+            .cameraPresentation(isPresented: $showPillCamera, onCapture: { stagePhoto($0); showPillCamera = false }, onCancel: { showPillCamera = false })
         }
     }
 
-    private var currentPhoto: Data? {
-        guard draft.indices.contains(selected) else { return nil }
-        let name = draft[selected].medicationName
-        return draftPhotos[name] ?? (removedPhotos.contains(name) ? nil : loadedPhotos[name])
-    }
-
-    private func stagePhoto(_ data: Data?) {
-        guard draft.indices.contains(selected) else { return }
-        let name = draft[selected].medicationName
-        draftPhotos[name] = data
-        if data == nil { removedPhotos.insert(name) } else { removedPhotos.remove(name) }
-    }
-
-    private func save() {
-        saveError = nil
-        saveSuccessMessage = nil
-        do {
-            try settings.saveMedicationPlan(draft)
-            for medication in draft {
-                let name = medication.medicationName
-                if draftPhotos[name] != nil || removedPhotos.contains(name) {
-                    app.setPillPhoto(draftPhotos[name], medicationName: name.trimmingCharacters(in: .whitespacesAndNewlines))
-                    if let error = app.photoSaveError { saveError = "Medication times are saved. " + error; return }
-                }
+    private var savedContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if settings.medications.isEmpty {
+                Text("No medications added yet").font(.title2.weight(.semibold))
+                Text("Add a medication, then choose its reminder times.").foregroundColor(.secondary)
             }
-            saveSuccessMessage = "Medication schedule saved."
-            Haptics.success()
-            if !isTab { dismiss() }
-        } catch { saveError = error.localizedDescription }
-    }
-
-    private var nameSection: some View {
-        Section {
-            TextField("Medication name", text: $draft[selected].medicationName)
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-        } header: {
-            Text("Medication")
-        } footer: {
-            Text("Reminders only. Cadence never suggests changing a dose or its timing; use the times the prescriber gave.")
-        }
-    }
-
-    private var photoSection: some View {
-        Section {
-            HStack(spacing: 14) {
-                #if canImport(UIKit)
-                if let data = currentPhoto, let image = UIImage(data: data) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 56, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: CadenceTheme.controlRadius, style: .continuous))
-                } else {
-                    IconBadge(systemName: "pills.fill", color: .secondary, size: 56)
-                }
-                #endif
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(currentPhoto == nil ? "Add a photo of the pill" : "Pill photo")
-                        .font(.headline)
-                    Text("Shown on the Today card so the right tablet is easy to recognise.")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                Button("Open glasses camera") { showGlassesCamera = true }
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-            }
-            Button("Use iPhone camera instead") { showPillCamera = true }
-            if currentPhoto != nil {
-                Button("Remove pill photo", role: .destructive) { stagePhoto(nil) }
-                    .frame(minHeight: CadenceTheme.minimumTapHeight)
-            }
-        } header: {
-            Text("Photo")
-        }
-    }
-
-    private var timesSection: some View {
-        Section {
-            if draft[selected].doseTimes.isEmpty {
-                Text("No times yet. Add one below.")
-                    .foregroundColor(.secondary)
-            }
-            ForEach(Array(draft[selected].doseTimes.enumerated()), id: \.element) { index, time in
-                HStack(spacing: 12) {
-                    Text(String(format: "%d:%02d", time.hour, time.minute))
-                        .font(.title2.weight(.semibold).monospacedDigit())
-                        .frame(minWidth: 84, alignment: .leading)
-                    Spacer()
-                    stepper("−15 min", systemImage: "minus") { adjust(index: index, minutes: -15) }
-                    stepper("+15 min", systemImage: "plus") { adjust(index: index, minutes: 15) }
-                    Button(role: .destructive) {
-                        var times = draft[selected].doseTimes
-                        times.remove(at: index)
-                        draft[selected].doseTimes = times
-                    } label: {
-                        Image(systemName: "trash")
-                            .frame(width: CadenceTheme.minimumTapHeight, height: CadenceTheme.minimumTapHeight)
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Remove \(time.hour):\(String(format: "%02d", time.minute))")
-                }
-                .frame(minHeight: CadenceTheme.minimumTapHeight)
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                DatePicker("Reminder time", selection: $newTime, displayedComponents: .hourAndMinute)
-                Button("Add selected time") {
-                    let calendar = Calendar.current
-                    addTime(DoseTime(hour: calendar.component(.hour, from: newTime), minute: calendar.component(.minute, from: newTime)))
-                }
-                Text("Add a time")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                HStack(spacing: 10) {
-                    ForEach(Self.presets, id: \.self) { preset in
-                        Button(String(format: "%d:%02d", preset.hour, preset.minute)) {
-                            addTime(preset)
+            if !settings.medications.isEmpty { Text("Tap a medication to edit its name, reminders or reference photo.").foregroundColor(.secondary) }
+            ForEach(settings.medications, id: \.medicationName) { medication in
+                Button {
+                    beginEditing()
+                    selectedID = editor.items.first(where: { $0.name == medication.medicationName })?.id
+                } label: {
+                    HStack(spacing: 14) {
+                        IconBadge(systemName: "pills.fill", color: CadenceTheme.accent, size: 44)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(medication.medicationName).font(.title3.weight(.semibold))
+                            Text(timeSummary(medication.doseTimes)).font(.body).foregroundColor(.secondary)
                         }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: CadenceTheme.minimumTapHeight)
-                        .buttonStyle(.bordered)
-                        .tint(CadenceTheme.accent)
-                        .disabled(draft[selected].doseTimes.contains(preset))
-                    }
-                }
+                        Spacer()
+                        Image(systemName: "pencil").foregroundColor(CadenceTheme.accent)
+                    }.frame(maxWidth: .infinity, alignment: .leading).card()
+                }.buttonStyle(.plain).accessibilityHint("Edit this medication and its reminder times")
             }
-            .padding(.vertical, 4)
-        } header: {
-            Text("Dose times")
-        } footer: {
-            Text("Use the plus and minus buttons to move a time in 15-minute steps.")
+            GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: addMedication) {
+                Label("Add medication", systemImage: "plus")
+            }
         }
     }
 
-    private func stepper(_ label: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.headline)
-                .frame(width: CadenceTheme.minimumTapHeight, height: CadenceTheme.minimumTapHeight)
+    private var editingContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Unsaved changes", systemImage: "pencil.circle").foregroundColor(CadenceTheme.caution)
+            ForEach(Array(editor.items.enumerated()), id: \.element.id) { index, item in
+                VStack(alignment: .leading, spacing: 16) {
+                    Button { selectedID = item.id } label: {
+                        HStack {
+                            Text(item.name.isEmpty ? "New medication" : item.name).font(.headline)
+                            Spacer()
+                            Image(systemName: selectedID == item.id ? "chevron.up" : "chevron.down")
+                        }.frame(minHeight: CadenceTheme.minimumTapHeight)
+                    }.buttonStyle(.plain)
+                    if selectedID == item.id {
+                        TextField("Medication name", text: nameBinding(item.id))
+                            .textFieldStyle(.roundedBorder).font(.title3)
+                            .accessibilityLabel("Medication name")
+                        Text("Reminder times").font(.headline)
+                        if item.times.isEmpty { Text("No reminders yet. Add a time below.").foregroundColor(.secondary) }
+                        ForEach(Array(item.times.enumerated()), id: \.offset) { timeIndex, time in
+                            HStack {
+                                DatePicker("Reminder \(timeIndex + 1)", selection: timeBinding(item.id, timeIndex), displayedComponents: .hourAndMinute)
+                                Button(role: .destructive) { editor.items[index].times.remove(at: timeIndex) } label: {
+                                    Image(systemName: "trash").frame(width: 44, height: 44)
+                                }.accessibilityLabel("Remove reminder \(timeIndex + 1)")
+                            }
+                        }
+                        Button { addTime(index) } label: {
+                            Label("Add reminder time", systemImage: "plus.circle")
+                        }.frame(minHeight: CadenceTheme.minimumTapHeight)
+                        photoEditor(index)
+                        Button("Remove medication", role: .destructive) {
+                            editor.items.remove(at: index); selectedID = editor.items.first?.id
+                        }.frame(minHeight: CadenceTheme.minimumTapHeight)
+                    }
+                }.card()
+            }
+            GuardedButton(style: .tinted(CadenceTheme.accent), action: addMedication) {
+                Label("Add another medication", systemImage: "plus")
+            }
         }
-        .buttonStyle(.bordered)
-        .tint(CadenceTheme.accent)
-        .accessibilityLabel(label)
     }
 
-    private func adjust(index: Int, minutes delta: Int) {
-        var times = draft[selected].doseTimes
-        guard times.indices.contains(index) else { return }
-        var total = times[index].minutesFromMidnight + delta
-        total = min(max(total, 0), 23 * 60 + 45)
-        times[index] = DoseTime(hour: total / 60, minute: total % 60)
-        draft[selected].doseTimes = times.sorted()
+    private func photoEditor(_ index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Reference photo · optional").font(.headline)
+            #if canImport(UIKit)
+            if let data = editor.items[index].photo, let image = UIImage(data: data) {
+                Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 160).clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            #endif
+            Button("Take photo with glasses") { selectedID = editor.items[index].id; openGlassesCamera(automatic: false) }
+            Button("Use iPhone camera") { cameraMedicationID = editor.items[index].id; showPillCamera = true }
+            if editor.items[index].photo != nil {
+                Button("Remove photo", role: .destructive) { editor.items[index].photo = nil; editor.items[index].photoChanged = true }
+            }
+            Text("The photo stays on this phone and appears on Today.").font(.footnote).foregroundColor(.secondary)
+        }
     }
 
-    private func addTime(_ time: DoseTime) {
-        var times = draft[selected].doseTimes
-        guard !times.contains(time) else { return }
-        times.append(time)
-        draft[selected].doseTimes = times.sorted()
+    private func openGlassesCamera(automatic: Bool) {
+        guard let index = editor.items.firstIndex(where: { $0.id == selectedID }), !editor.items[index].name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            app.companion.say("Add the medication name first, then take its reference photo."); return
+        }
+        cameraMedicationID = editor.items[index].id; automaticVoiceCapture = automatic; showGlassesCamera = true
+    }
+    private func stagePhoto(_ data: Data?) {
+        guard let index = editor.items.firstIndex(where: { $0.id == cameraMedicationID }) else { return }
+        editor.items[index].photo = data; editor.items[index].photoChanged = true
+    }
+    private func addMedication() { beginEditing(); editor.add(); selectedID = editor.items.last?.id }
+    private func save() {
+        if editor.save() {
+            selectedID = nil; Haptics.success()
+            if isTab { app.companion.leaveFlow(id: voiceFlowID) }
+            else { app.companion.updateFlow(id: voiceFlowID, step: .medication) }
+            app.companion.say(editor.receipt ?? "Routine saved.")
+        }
+    }
+    private func addTime(_ index: Int) {
+        let existing = Set(editor.items[index].times)
+        if let next = (0..<24).map({ DoseTime(hour: $0, minute: 0) }).first(where: { $0.hour >= 8 && !existing.contains($0) }) ?? (0..<24).map({ DoseTime(hour: $0, minute: 0) }).first(where: { !existing.contains($0) }) {
+            editor.items[index].times.append(next)
+        }
+    }
+    private func beginEditing() {
+        editor.begin()
+        app.companion.enterFlow(id: voiceFlowID, destination: .medication, step: .medicationSetup)
+    }
+    private func cancelEditing() {
+        editor.cancel(); selectedID = nil
+        if isTab { app.companion.leaveFlow(id: voiceFlowID) }
+        else { app.companion.updateFlow(id: voiceFlowID, step: .medication) }
+    }
+    private func nameBinding(_ id: UUID) -> Binding<String> {
+        Binding(get: { editor.items.first(where: { $0.id == id })?.name ?? "" }, set: { value in
+            if let index = editor.items.firstIndex(where: { $0.id == id }) { editor.items[index].name = value }
+        })
+    }
+    private func timeBinding(_ id: UUID, _ timeIndex: Int) -> Binding<Date> {
+        Binding(get: {
+            guard let index = editor.items.firstIndex(where: { $0.id == id }), editor.items[index].times.indices.contains(timeIndex) else { return Date() }
+            let time = editor.items[index].times[timeIndex]
+            return Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
+        }, set: { date in
+            guard let index = editor.items.firstIndex(where: { $0.id == id }), editor.items[index].times.indices.contains(timeIndex) else { return }
+            editor.items[index].times[timeIndex] = DoseTime(hour: Calendar.current.component(.hour, from: date), minute: Calendar.current.component(.minute, from: date))
+        })
+    }
+    private func timeSummary(_ times: [DoseTime]) -> String {
+        times.isEmpty ? "No reminders set" : times.sorted().map { time in
+            let date = Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
+            return date.formatted(date: .omitted, time: .shortened)
+        }.joined(separator: " · ")
     }
 }

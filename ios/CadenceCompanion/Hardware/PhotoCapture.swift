@@ -125,15 +125,16 @@ extension View {
     public func cameraPresentation(
         isPresented: Binding<Bool>,
         onCapture: @escaping (Data) -> Void,
-        onCancel: @escaping () -> Void
+        onCancel: @escaping () -> Void,
+        onDismiss: (() -> Void)? = nil
     ) -> some View {
         #if os(iOS)
-        self.fullScreenCover(isPresented: isPresented) {
+        self.fullScreenCover(isPresented: isPresented, onDismiss: onDismiss) {
             CameraPicker(onCapture: onCapture, onCancel: onCancel)
                 .ignoresSafeArea()
         }
         #else
-        self.sheet(isPresented: isPresented) {
+        self.sheet(isPresented: isPresented, onDismiss: onDismiss) {
             CameraPicker(onCapture: onCapture, onCancel: onCancel)
         }
         #endif

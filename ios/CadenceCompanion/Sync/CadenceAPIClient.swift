@@ -15,6 +15,7 @@ public enum CadenceAPIError: Error, LocalizedError {
         switch self {
         case .badURL: return "The backend address is not a valid URL."
         case .httpStatus(401): return "Sign in to this Cadence server again. Your previous login is missing or no longer accepted."
+        case .httpStatus(429): return "Please wait a moment before checking another photo, then retry."
         case let .httpStatus(code): return "The backend returned HTTP \(code)."
         case .emptyBody: return "The backend returned an empty response."
         case .dataGenerationChanged: return "Server data was erased. This attempt was not saved. Record a new action after syncing."
@@ -24,21 +25,22 @@ public enum CadenceAPIError: Error, LocalizedError {
 
 public struct URLSessionJSONTransport: JSONTransporting {
     public let timeoutSec: TimeInterval
+    public let session: URLSession
 
-    public init(timeoutSec: TimeInterval = 8.0) {
-        self.timeoutSec = timeoutSec
+    public init(timeoutSec: TimeInterval = 8.0, session: URLSession = .shared) {
+        self.timeoutSec = timeoutSec; self.session = session
     }
 
     public func send(_ request: URLRequest, bearerToken: String) async throws -> Data {
         var req = request
-        req.timeoutInterval = timeoutSec
+        req.timeoutInterval = request.url?.path == "/api/v1/reality-check" ? max(timeoutSec, 20) : timeoutSec
         if !bearerToken.isEmpty {
             req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         }
         if req.httpBody != nil {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw CadenceAPIError.emptyBody }
         guard (200...299).contains(http.statusCode) else {
             if http.statusCode == 409,
@@ -55,6 +57,16 @@ public struct URLSessionJSONTransport: JSONTransporting {
 // MARK: - Response types
 
 public struct RealityCheckResult: Decodable {
+    public let analysisStatus: String?
+    public let searchedConcepts: [String]?
+    public var statusTitle: String {
+        switch analysisStatus {
+        case "unavailable": return "Photo check unavailable"
+        case "partial": return "Partial photo observations"
+        case "no_supported_match": return "No verified match"
+        default: return detectedLabels.isEmpty ? "No verified match" : "Photo observations"
+        }
+    }
     public let eventUUID: String
     public let samVerified: Bool
     public let livingSubjectPresent: Bool
@@ -64,9 +76,11 @@ public struct RealityCheckResult: Decodable {
     public let verifiedMasks: [DetectedMask]
     public let latencyMs: Int
 
-    public var detectedLabels: [String] { verifiedMasks.map(\.label) }
+    public var detectedLabels: [String] { verifiedMasks.reduce(into: []) { labels, mask in if !labels.contains(mask.label) { labels.append(mask.label) } } }
 
     enum CodingKeys: String, CodingKey {
+        case analysisStatus = "analysis_status"
+        case searchedConcepts = "searched_concepts"
         case eventUUID = "event_uuid"
         case samVerified = "sam_verified"
         case livingSubjectPresent = "living_subject_present"

@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,7 +11,7 @@ os.environ["SQLITE_DB_PATH"] = _tmp_db.name
 
 from app.clients.circuit_breaker import PerModelCircuitBreakerRegistry, RequestDeadlineContext
 from app.config import settings
-from app.db import init_db_sync
+from app.db import init_db_sync, fetch_one_sync
 from app.main import app
 from app.services.diary_engine import (
     DiaryBucketMetrics,
@@ -231,7 +232,15 @@ def test_end_to_end_api_pipelines_and_rbac(research_mode):
             headers=device_headers,
         )
         assert cancel_ok.status_code == 200
-        assert cancel_ok.json()["all_clear_sms_sent"] >= 1
+        assert cancel_ok.json()["status"] == "canceled_false_alarm"
+        # A recovery worker may own the clear-job lease before cancel returns.
+        # Observe the durable outcome rather than require this request to send it.
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            clear = fetch_one_sync("SELECT COUNT(*) AS cnt FROM caregiver_alerts WHERE fall_event_uuid=? AND channel='all_clear_sms'", ("fall-test-001",))
+            if clear["cnt"] >= 1: break
+            time.sleep(.01)
+        assert clear["cnt"] >= 1
 
         # Guided Home Motor Exam
         exam_ok = client.post(
