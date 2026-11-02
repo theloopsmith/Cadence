@@ -41,6 +41,7 @@ def test_demo_secrets_are_scoped_private_and_stable(tmp_path, monkeypatch, capsy
     assert first['META_API_KEY'] == 'fake-meta-key'
     assert first['TWILIO_AUTH_TOKEN'] == ''
     assert first['CADENCE_ENV'] == 'public_demo'
+    assert first['DEMO_ACCOUNTS_EXPIRE_AT_UTC'] == '2026-11-18T08:00:00Z'
     assert first['ALLOW_STATIC_TOKENS'] == 'false'
     assert 'ENABLE_RESEARCH_METRICS' not in first
     assert len(first['JWT_SECRET']) >= 32

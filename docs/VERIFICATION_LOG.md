@@ -41,7 +41,7 @@ The phone saves candidate events locally and binds its outbox to account, destin
 3. Verify locked-screen/background behavior before claiming continuity. Everyday conversation currently requires the foreground. Native Hey Meta invocation and conversational barge-in are not integrated.
 4. Conduct a separately configured, consenting caregiver delivery/acknowledgment drill before claiming real delivery. Never induce a fall or provoke a freeze for testing.
 5. Verify actual notification delivery, backup/restore, incident retention and physical signal thresholds. Current metrics/heuristics are not clinically calibrated.
-6. Finish the accessible demo video and actual portal submission. Review the contributor, artwork and contribution declarations; organizer scope/media decisions and any required pre-event-work confirmation remain pending. Public judging accounts and their JWTs expire at 2026-11-10 08:00 UTC.
+6. Finish the accessible demo video and actual portal submission. Review the contributor, artwork and contribution declarations; organizer scope/media decisions and any required pre-event-work confirmation remain pending. Public judging accounts have a retirement cutoff of 2026-11-18 08:00 UTC; individual JWT expiration still applies.
 
 ## Scope and positioning (Oct 29)
 
@@ -115,3 +115,7 @@ The public sandbox judging accounts and all their JWTs expire at 2026-11-10 08:0
 Harshal Vaidya confirmed sole human contribution and representative identity and confirmed both disputed scene assets were generated with ChatGPT. [Submission declarations](SUBMISSION_DECLARATIONS.md) record those confirmations and the actual first-commit timestamp, AI development assistance, asset terms and limits. The website discloses ChatGPT-generated scenes. Organizer permission for offline-generated media and any contribution-boundary interpretation remain pending; no approval or portal submission was invented. Physical DAT/audio/background/threshold and caregiver-delivery gates remain open and claims remain explicitly scoped.
 
 [Live closeout evidence](verification/submission-closeout-2026-11-02.json): deployed schema metadata confirms zero retired fields across all three tables, valid foreign keys and a private pre-migration backup. HTTPS, original sandbox JWTs, role restrictions, server identity and the saved synthetic baseline survived deployment. A fresh live judge token is capped at the cutoff; the generated-scene disclosure appears in the served page. The isolated real-browser check passed with zero unexpected requests after its walking fixture was updated to carry TaskEvidence. Expiration rejection is verified locally at a past cutoff, not by disabling current judging access.
+
+## Judging access extension — November 2
+
+At the owner's request, the judging-account retirement cutoff is extended to **2026-11-18 08:00 UTC (November 18, 00:00 Pacific)**. Source defaults, generated deployment configuration and current public instructions use the same cutoff. Earlier evidence records retain their original dates. Existing JWTs retain their immutable signed exp claims and normal lifetimes; this change does not silently extend an already issued JWT. Sign in again for a fresh token under the extended policy.

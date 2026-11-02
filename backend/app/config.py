@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     # The phone is signed in once by a care partner; a short token would leave
     # falls waiting on the phone every night.
     jwt_device_ttl_days: int = 30
-    # Public judging accounts retire after the Nov 9 closing day (Pacific).
-    demo_accounts_expire_at_utc: datetime = datetime(2026, 11, 10, 8, tzinfo=timezone.utc)
+    # Public judging accounts retire at the configured Pacific-date cutoff.
+    demo_accounts_expire_at_utc: datetime = datetime(2026, 11, 18, 8, tzinfo=timezone.utc)
 
     # Optional local-development bearer tokens. No built-in credentials;
     # public demo and production require account sign-in instead.

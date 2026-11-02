@@ -30,4 +30,4 @@ Organizer confirmation is still needed for scope/contribution-date questions and
 
 ## Access and completion
 
-The two published sandbox accounts expire at 2026-11-10 08:00 UTC, including already issued tokens. The remaining submission work is the actual three-minute video, final owner review of declarations and asset/input rights, any required organizer reply, and submission through the organizer's portal. This repository does not establish that the portal form has been submitted or accepted.
+The two published sandbox accounts expire at 2026-11-18 08:00 UTC, including already issued tokens. The remaining submission work is the actual three-minute video, final owner review of declarations and asset/input rights, any required organizer reply, and submission through the organizer's portal. This repository does not establish that the portal form has been submitted or accepted.
