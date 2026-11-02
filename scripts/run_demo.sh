@@ -15,7 +15,7 @@ if ! "$VENV_HOME/bin/python3" -c "import sys" 2>/dev/null; then
   rm -rf "$VENV_HOME"
   python3 -m venv "$VENV_HOME"
   "$VENV_HOME/bin/pip" install --upgrade pip -q
-  "$VENV_HOME/bin/pip" install -r requirements.txt -q
+  "$VENV_HOME/bin/pip" install -r requirements-lock.txt -q
 fi
 
 # Point ./.venv at it unless it already resolves to a runnable interpreter.

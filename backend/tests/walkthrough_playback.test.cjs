@@ -34,7 +34,8 @@ function setup({allowAutoplay = false} = {}) {
   }
   const fields = new Map();
   const get = id => { if (!fields.has(id)) fields.set(id, new Element()); return fields.get(id); };
-  const names = ['medication','motor','walking','surroundings','safety'];
+  const html = fs.readFileSync(path.join(__dirname,'../app/static/walkthrough.html'),'utf8');
+  const names = [...html.matchAll(/data-chapter="([^"]+)"/g)].map(match=>match[1]);
   const chapters = names.map((name,index) => {
     const chapter = new Element(); chapter.id = name; chapter.dataset.chapter = name;
     const children = new Map();
@@ -98,7 +99,7 @@ function setup({allowAutoplay = false} = {}) {
     now=end;
     const callbacks=[...frames.values()];frames.clear();callbacks.forEach(callback=>callback());await flush();
   }
-  const motor=chapters[1];
+  const motor=chapters.find(chapter=>chapter.id === 'motor');
   return {get,chapters,motor,click,advance,flush,speech,doc,events,scrolls,
     requests:()=>requests,
     step:()=>motor.querySelector('[data-step-count]').textContent,
@@ -201,6 +202,9 @@ test('Play the day navigates to the first scene even with no prior playback',asy
   const env=setup();
   await env.mute();
   await env.click(env.get('playDay'));
+  assert.deepEqual(env.chapters.map(chapter=>chapter.id),['motor','medication','walking','surroundings','safety']);
+  assert.equal(env.motor.dataset.running,'true');
+  assert.equal(env.chapters[1].dataset.running,undefined);
   assert.equal(env.scrolls.length,1);
   assert.equal(env.scrolls[0].top,964); // scene at 1032, minus 52px nav and 16px breathing room
 });
@@ -208,7 +212,7 @@ test('Play the day navigates to the first scene even with no prior playback',asy
 test('local guided exam start and subsequent steps never request a scroll',async()=>{
   const env=setup();
   await env.mute();
-  await env.click(env.chapters[0].querySelector('[data-play]'));
+  await env.click(env.chapters.find(chapter=>chapter.id === 'medication').querySelector('[data-play]'));
   await env.click(env.motor.querySelector('[data-play]'));
   await env.click(env.motor.querySelector('[data-next]'));
   assert.equal(env.scrolls.length,0);
@@ -301,4 +305,17 @@ test('deliberate wheel scrolling pauses a guided task',async()=>{
   await env.advance(300000);
   assert.equal(env.chapters[0].dataset.running,'false');
   assert.notEqual(env.get('care').scrolled,true);
+});
+
+
+test('full-day playback advances from the motor exam into medication next', async () => {
+  const env=setup(); await env.mute();
+  await env.click(env.get('playDay'));
+  for (let i=0; i<11; i++) await env.click(env.get('journeyNext'));
+  assert.equal(env.chapters[0].id,'motor');
+  assert.equal(env.chapters[0].dataset.running,undefined);
+  assert.equal(env.chapters[1].id,'medication');
+  assert.equal(env.chapters[1].dataset.running,'true');
+  assert.equal(env.get('journeyPlayer').hidden,false);
+  assert.equal(env.requests(),0);
 });

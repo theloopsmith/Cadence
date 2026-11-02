@@ -104,3 +104,15 @@ def test_walkthrough_fog_and_fall_payloads_accepted():
     })
     assert res_rc.status_code == 200
     assert "spoken_response" in res_rc.json()
+
+
+def test_story_order_numbers_and_times_match_motor_first_journey():
+    import re
+    text = TestClient(app).get('/walkthrough').text
+    assert re.findall(r'data-chapter="([^"]+)"', text) == ['motor', 'medication', 'walking', 'surroundings', 'safety']
+    assert '01 / YOUR DAILY CHECK' in text
+    assert '02 / YOUR MEDICATIONS' in text
+    assert text.index('07:45 · A moment for yourself') < text.index('08:00 · A familiar morning')
+    assert 'href="#medication"' not in text
+    assert 'href="#motor">Skip introduction' in text
+    assert text.index('<strong>Daily motor check</strong>') < text.index('<strong>Morning medication</strong>')

@@ -2,7 +2,7 @@
 
 Target project: `ultra-concord-513321-q3`. This deploys a synthetic/demo environment; it does not migrate the Mac's SQLite database or activate real caregiver calls.
 
-## Live demo (verified 2026-10-31)
+## Live demo (verified 2026-11-01)
 
 - Public domain: `https://cadence-companion.duckdns.org`
 - Interactive Smart Glasses Walkthrough: <https://cadence-companion.duckdns.org/walkthrough> (alias: `/demo`)

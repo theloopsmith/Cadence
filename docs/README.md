@@ -2,13 +2,14 @@
 
 Start with [the project README](../README.md) for the product, setup, model provenance and live demo.
 
+- [App setup and voice guide](APP_GUIDE.md): phone/server connection, glasses permissions, guided tasks, medication reminders and troubleshooting.
 - [Architecture and design contract](ARCHITECTURE_AND_DESIGN_SPEC.md): current ownership, models, measurement contracts, fall sequence, privacy and native experience.
-- [Editable architecture](cadence_architecture.drawio): five pages—system, fall safety, Meta calls, data/privacy, and generated storage schema. [Schema SVG](assets/storage-schema.svg) opens directly in a browser.
+- [Rendered implementation map](assets/system-architecture.svg) and [editable architecture](cadence_architecture.drawio): five pages—system, fall safety, Meta calls, data/privacy, and generated storage schema. [Schema SVG](assets/storage-schema.svg) opens directly in a browser.
 - [Cloud demo runbook](GOOGLE_CLOUD_DEMO.md): deployment, protected credentials, role separation, restart checks and operational limits.
 - [Walkthrough implementation and asset provenance](WALKTHROUGH_DESIGN.md): browser behavior, synthetic/live boundaries and image prompts.
 - [Verification log](VERIFICATION_LOG.md) and [sanitized evidence](verification/): dated checks, failure cases and limits. Historical entries are not the current status of a feature.
 - [Hackathon guide](<Details – Meta Global AI Developer Hackathon – Cerebral Valley.pdf>): the supplied rules snapshot. Scope and contribution-date questions still need an organizer reply.
-- [Branding source](branding/README.md): icon asset provenance and regeneration instructions.
+- [Icon source and prompt](WALKTHROUGH_DESIGN.md#app-icon): retained with the static-artwork provenance, alongside the [editable image master](branding/Cadence-icon-master.png).
 
 ## Current acceptance gates
 
@@ -22,7 +23,7 @@ The app and backend are implemented and CI-tested; physical acceptance remains s
 
 ## Maintenance
 
-Keep current guides here; implementation history belongs in Git and the verification log. The dated readiness review and separate repair notes were consolidated into these guides. No source code, private photo, credential, or database belongs in this directory.
+Each guide has one purpose: app operation, architecture, cloud operation, web/asset provenance, or verification. Superseded screenshots and historical implementation diaries remain in Git rather than competing with current guidance. The rules snapshot and branding master are retained for attribution and submission review. No private photo, credential or database belongs here.
 
 Run from the repository root:
 

@@ -42,7 +42,7 @@ def main():
         parser.error('port must be between 1024 and 65535')
     python = ROOT / 'backend/.venv/bin/python'
     if not python.exists():
-        parser.error('Create backend/.venv and install backend/requirements.txt first.')
+        parser.error('Create backend/.venv and install backend/requirements-lock.txt first.')
     local = ROOT / '.local'
     local.mkdir(mode=0o700, exist_ok=True)
     env = dict(os.environ, SQLITE_DB_PATH=str(local / 'phone-server.sqlite'),

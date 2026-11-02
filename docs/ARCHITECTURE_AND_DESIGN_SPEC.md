@@ -6,7 +6,7 @@ This document describes implemented paths. Physical glasses capture/audio accept
 
 ## System map
 
-![High-level architecture](assets/architecture.svg)
+![Current implementation architecture](assets/system-architecture.svg)
 
 Open [the editable five-page diagram](cadence_architecture.drawio) for the system overview, fall safety path, model calls, data/privacy flow and generated storage schema. The [animated website guide](https://cadence-companion.duckdns.org/walkthrough#how-it-works) explains these boundaries for judges.
 
@@ -90,12 +90,12 @@ Cadence's microphone route and native Hey Meta are separate. A spoken handoff re
 
 ## Keeping diagrams current
 
-Run `python3 scripts/sync_architecture_docs.py` after changing model defaults, native tabs or storage DDL. It updates draw.io labels from source and regenerates the schema page/SVG without loading secrets or records. `--check` runs in CI. The diagram's four main pages retain editable geometry. Regenerate the README overview art with `scripts/generate_architecture_art.py` if the system's four ownership boundaries change.
+Run `python3 scripts/sync_architecture_docs.py` after changing model defaults, native tabs or storage DDL. It updates draw.io labels from source and regenerates the implementation SVG and schema page/SVG without loading secrets or records. `--check` runs in CI. The diagram's four main pages retain editable geometry. The README retains its original animated four-boundary overview; `scripts/generate_architecture_art.py` is its source. Detailed current behavior belongs in the source-checked implementation map.
 
 The [verification log](VERIFICATION_LOG.md) records dated evidence and its limits. The [docs index](README.md) lists current acceptance gates. Neither compilation nor synthetic tests establish physical-device or clinical acceptance.
 
 
-### Public API and inference guardrails
+## Public API and inference guardrails
 
 Production and `public_demo` refuse `ENABLE_RESEARCH_METRICS=true` at startup. Meal logging records time only; it does not detect protein, evaluate absorption or recommend food/dose timing. Explicit response models cover the report, exam history and photo result (including wiped-event drops). Motor observations carry `measurement_source` plus paired per-task status/source; device source is client-reported, not hardware attestation. The table and serial comparison label simulated and unverified sources.
 

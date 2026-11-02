@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1020" viewBox="0 0 1280 1020" role="img" aria-labelledby="title desc">
+<title id="title">Cadence current implementation architecture</title>
+<desc id="desc">Meta glasses feed supported camera, motion and Bluetooth audio to the iPhone. The iPhone owns sensing, confirmations, Apple speech and an account-bound offline queue. Authenticated HTTPS connects it to FastAPI, SQLite, Meta model providers and a read-only dashboard. Public caregiver delivery is simulated; physical capture and audio acceptance are pending.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#92c8ad"/></marker></defs>
+<rect width="1280" height="1020" rx="20" fill="#0c0e0f"/>
+<g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+<text x="32" y="59" font-size="34" font-weight="600" fill="#f5f5f7">Cadence · current implementation</text>
+<text x="32" y="96" font-size="16" fill="#abb5b4">Immediate assistance on iPhone. Bounded inference and durable follow-through on the backend.</text>
+<rect x="32" y="140" width="260" height="270" rx="16" fill="#151a19" stroke="#3d5149"/>
+<text x="54" y="171" font-size="12" fill="#9fcdba" font-weight="600">INPUT / OUTPUT</text>
+<text x="54" y="204" font-size="24" fill="#edf2ef" font-weight="600">Meta glasses</text>
+<text x="54" y="239" font-size="15" fill="#b6c1be" font-weight="400">DAT camera preview + photos</text>
+<text x="54" y="265" font-size="15" fill="#b6c1be" font-weight="400">Shutter / wear-state input</text>
+<text x="54" y="291" font-size="15" fill="#b6c1be" font-weight="400">Motion adapter when available</text>
+<text x="54" y="317" font-size="15" fill="#b6c1be" font-weight="400">Bluetooth microphone + speakers</text>
+<text x="54" y="377" font-size="13" fill="#e4c88a" font-weight="400">Physical acceptance pending</text>
+<rect x="32" y="440" width="260" height="166" rx="16" fill="#151a19" stroke="#3d5149"/>
+<text x="54" y="471" font-size="12" fill="#9fcdba" font-weight="600">FALLBACK / TEST INPUT</text>
+<text x="54" y="504" font-size="24" fill="#edf2ef" font-weight="600">iPhone + mock kit</text>
+<text x="54" y="537" font-size="15" fill="#b6c1be" font-weight="400">CoreMotion fallback</text>
+<text x="54" y="563" font-size="15" fill="#b6c1be" font-weight="400">Labeled synthetic test streams</text>
+<rect x="326" y="140" width="410" height="466" rx="16" fill="#151a19" stroke="#3d5149"/>
+<text x="348" y="171" font-size="12" fill="#9fcdba" font-weight="600">SWIFT / SWIFTUI</text>
+<text x="348" y="204" font-size="24" fill="#edf2ef" font-weight="600">iPhone app</text>
+<text x="348" y="242" font-size="18" fill="#edf2ef" font-weight="600">Companion and guided tasks</text>
+<text x="348" y="273" font-size="16" fill="#b6c1be" font-weight="400">Saved facts + explicit confirmations</text>
+<text x="348" y="299" font-size="16" fill="#b6c1be" font-weight="400">Motor check, medication and photo review</text>
+<text x="348" y="347" font-size="18" fill="#edf2ef" font-weight="600">Immediate assistance</text>
+<text x="348" y="378" font-size="16" fill="#b6c1be" font-weight="400">Local motion DSP and walking cues</text>
+<text x="348" y="404" font-size="16" fill="#b6c1be" font-weight="400">Deterministic fall check-in / siren</text>
+<text x="348" y="430" font-size="16" fill="#b6c1be" font-weight="400">Apple recognition + installed speech voices</text>
+<text x="348" y="480" font-size="18" fill="#edf2ef" font-weight="600">Account-bound local storage</text>
+<text x="348" y="511" font-size="16" fill="#b6c1be" font-weight="400">Diary / photos + durable SQLite outbox</text>
+<text x="348" y="537" font-size="16" fill="#b6c1be" font-weight="400">JWT in Keychain; generation-fenced retries</text>
+<text x="348" y="582" font-size="14" fill="#9fcdba" font-weight="400">Foreground conversation; safety takes priority</text>
+<rect x="770" y="140" width="478" height="466" rx="16" fill="#151a19" stroke="#3d5149"/>
+<text x="792" y="171" font-size="12" fill="#9fcdba" font-weight="600">HTTPS / FASTAPI / ONE WORKER</text>
+<text x="792" y="204" font-size="24" fill="#edf2ef" font-weight="600">Protected backend</text>
+<text x="792" y="242" font-size="18" fill="#edf2ef" font-weight="600">Scoped API</text>
+<text x="792" y="273" font-size="16" fill="#b6c1be" font-weight="400">Writer / reader JWTs; typed response contracts</text>
+<text x="792" y="299" font-size="16" fill="#b6c1be" font-weight="400">Account inference quota: 30/minute</text>
+<text x="792" y="325" font-size="16" fill="#b6c1be" font-weight="400">Photo pipeline: 8-second shared deadline</text>
+<text x="792" y="376" font-size="18" fill="#edf2ef" font-weight="600">Services and recovery</text>
+<text x="792" y="407" font-size="16" fill="#b6c1be" font-weight="400">Grounded photo replies + optional transcription</text>
+<text x="792" y="433" font-size="16" fill="#b6c1be" font-weight="400">OpenCV handwriting observations</text>
+<text x="792" y="459" font-size="16" fill="#b6c1be" font-weight="400">Durable fall jobs, leases and signed callbacks</text>
+<text x="792" y="507" font-size="18" fill="#edf2ef" font-weight="600">Persistent storage</text>
+<text x="792" y="538" font-size="16" fill="#b6c1be" font-weight="400">SQLite · 17 declared tables · patient-scoped</text>
+<text x="792" y="564" font-size="16" fill="#b6c1be" font-weight="400">Caddy HTTPS + persistent Google Cloud VM disk</text>
+<path d="M292 280L326 280" stroke="#92c8ad" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M292 519L326 519" stroke="#92c8ad" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M736 355L770 355" stroke="#92c8ad" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<path d="M1009 606V638H208V667M580 638V667M1030 638V667" fill="none" stroke="#92c8ad" stroke-width="2"/>
+<rect x="32" y="668" width="350" height="218" rx="16" fill="#151a19" stroke="#3d5149"/>
+<text x="54" y="699" font-size="12" fill="#9fcdba" font-weight="600">META MODEL API</text>
+<text x="54" y="732" font-size="24" fill="#edf2ef" font-weight="600">Photo + speech input</text>
+<text x="54" y="768" font-size="15" fill="#b6c1be" font-weight="400">sam-3.1</text>
+<text x="54" y="794" font-size="15" fill="#b6c1be" font-weight="400">muse-voice-transcribe-1.0</text>
+<text x="54" y="830" font-size="14" fill="#b6c1be" font-weight="400">Named-concept masks / boxes</text>
+<text x="54" y="856" font-size="14" fill="#b6c1be" font-weight="400">Audio → text; no reply-audio model</text>
+<rect x="410" y="668" width="350" height="218" rx="16" fill="#151a19" stroke="#3d5149"/>
+<text x="432" y="699" font-size="12" fill="#9fcdba" font-weight="600">BASETEN / META OPEN WEIGHTS</text>
+<text x="432" y="732" font-size="24" fill="#edf2ef" font-weight="600">Constrained interpretation</text>
+<text x="432" y="768" font-size="18" fill="#edf2ef" font-weight="600">Muse Spark Open</text>
+<text x="432" y="800" font-size="12" fill="#b6c1be" font-weight="400">meta-models/muse-spark-open-1026</text>
+<text x="432" y="838" font-size="14" fill="#b6c1be" font-weight="400">Allowlisted intent or a verified object label</text>
+<rect x="788" y="668" width="460" height="218" rx="16" fill="#151a19" stroke="#3d5149"/>
+<text x="810" y="699" font-size="12" fill="#9fcdba" font-weight="600">REPORTING / CARE CONNECTION</text>
+<text x="810" y="732" font-size="24" fill="#edf2ef" font-weight="600">Evidence before claims</text>
+<text x="810" y="768" font-size="16" fill="#b6c1be" font-weight="400">Read-only dashboard + phone PDF</text>
+<text x="810" y="794" font-size="16" fill="#b6c1be" font-weight="400">Queued ≠ provider accepted ≠ acknowledged</text>
+<text x="810" y="830" font-size="14" fill="#b6c1be" font-weight="400">Public demo: caregiver transport simulated</text>
+<text x="810" y="856" font-size="14" fill="#b6c1be" font-weight="400">Configured deployments: Twilio + signed callbacks</text>
+<text x="32" y="933" font-size="16" fill="#e4c88a" font-weight="400">Public demo excludes research scores, medication-state labels and nutrition advice.</text>
+<text x="32" y="965" font-size="14" fill="#b6c1be" font-weight="400">Glasses routes are implemented adapters; exported-photo proofs do not establish live DAT capture or audible output.</text>
+<text x="32" y="991" font-size="14" fill="#b6c1be" font-weight="400">Known requests can stay local. Fireworks / Meta Llama 3.3 is a configured alternative when the Baseten key is absent.</text>
+</g></svg>

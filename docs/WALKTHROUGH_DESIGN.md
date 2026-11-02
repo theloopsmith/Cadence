@@ -1,4 +1,4 @@
-# Cadence wearer walkthrough
+# Walkthrough and static artwork
 
 Live page: <https://cadence-companion.duckdns.org/walkthrough> (`/demo` is an alias).
 
@@ -6,7 +6,7 @@ The reference is Apple's [MacBook Pro display page](https://www.apple.com/macboo
 
 ## Experience
 
-The opening introduces Cadence explicitly as an iPhone app used with Ray-Ban Meta glasses. A wearer portrait zooms into a glasses-frame transition and a first-person morning scene. Five sequential chapters cover medication history/confirmation, the guided voice-writing-walking check, rhythmic walking support, photo confirmation and surroundings descriptions, and a simulated care-partner escalation. The final scene shows an illustrative iPhone diary and a link to the real authenticated dashboard.
+The opening introduces Cadence explicitly as an iPhone app used with Ray-Ban Meta glasses. A wearer portrait zooms into a glasses-frame transition and a first-person morning scene. Five sequential chapters cover the guided voice-writing-walking check, medication history/confirmation, rhythmic walking support, photo confirmation and surroundings descriptions, and a simulated care-partner escalation. The final scene shows an illustrative iPhone diary and a link to the real authenticated dashboard.
 
 Each chapter has three scroll-driven beats. Captions, the highlighted step, and an app receipt change together. Short phone screens use ordinary scrolling; reduced-motion settings remove the pinning/zooming/footstep animation. All chapter steps remain readable without JavaScript. Narration is enabled by default and uses OS/browser speech synthesis. Story-page load attempts a short welcome when the browser allows autoplay. If a tap is required, Enable sound and Play/Continue unlock narration; it can be muted. It stops when the page is hidden or the user switches it off. There is no looping metronome or microphone request.
 
@@ -27,8 +27,11 @@ One explicit run calls the existing Meta intent endpoint, writes a labeled synth
 - `backend/app/static/walkthrough/table.jpg`
 - `backend/app/static/walkthrough/hall.jpg`
 - `backend/app/static/walkthrough/desk.jpg`
+- Other retained scene assets: `coatstand.jpg`, `safety_floor.jpg`, `together.jpg`, `motor-voice.jpg`, `writing-first.jpg`, `writing-second.jpg`, `writing-complete.jpg`, `handwriting-capture.jpg`. All are in the same directory and exact server allowlist.
 
-Original raster artwork was generated with the built-in `image_gen` tool during development and encoded as JPEG for delivery (about 1.5 MB combined). This introduces no OpenAI model call at app/page runtime. Originals remain in the local generated-images directory. The page uses only same-origin images/CSS/JS, the existing per-response script nonce, and an exact allowlist for image delivery; unknown image names return 404. No provider credentials are embedded in assets.
+The retained generated-asset prompts are below. The coat-stand and safety-floor scene provenance still needs owner rights confirmation before final submission; their presence in the repository is not proof of rights.
+
+Original raster artwork was generated with the built-in `image_gen` tool during development and encoded as JPEG for delivery. This introduces no OpenAI model call at app/page runtime. Originals remain in the local generated-images directory. The page uses only same-origin images/CSS/JS, the existing per-response script nonce, and an exact allowlist for image delivery; unknown image names return 404. No provider credentials are embedded in assets.
 
 ### Image prompts
 
@@ -40,11 +43,11 @@ Original raster artwork was generated with the built-in `image_gen` tool during 
 
 **Desk:** Use case: photorealistic-natural. Asset type: premium website first-person POV photograph, wide landscape 16:9. First-person view from an older Indian adult seated at a pale oak desk in the same bright warm minimalist home, looking down at a clean open cream notebook. Right hand with natural age texture holds a black pen above the mostly blank right page, left hand rests near the notebook. A subtle short handwritten loop mark on one page, no legible text. Soft daylight, light cream sleeve, quiet organized setting, authentic hands, crisp realistic photography, ample unobstructed background above the notebook. No phone screen, no UI, no medical props, no branding or text.
 
-## Guided journeys and human story (second iteration)
+## Guided journeys and human story
 
 The tour now follows fictional Arun and his daughter Maya through ordinary plans for the day, ending with an illustrative scene of tea together. This is a product scenario, not a patient testimonial or claim of clinical efficacy. Parkinson's is the current product focus; assistance for other conditions is explicitly a future direction.
 
-“Play Arun’s day” plays the five feature journeys in sequence, then moves to the care diary. Each chapter can also be played alone or explored using previous/next controls. A fixed player keeps pause, previous, next, and stop reachable on phones. Scrolling or hiding the page pauses playback; returning to the page does not resume it. The ordinary scroll tour remains available.
+“Play Arun’s day” plays the five feature journeys in sequence, then moves to the care diary. Each chapter can also be played alone or explored using previous/next controls. A fixed player keeps pause, previous, next, and stop reachable on phones. Deliberate user scrolling or hiding the page pauses playback; returning to the page does not resume it. The ordinary scroll tour remains available.
 
 The motor journey has eleven beats, grounded in `ios/CadenceCompanion/DSP/MotorExamGuidance.swift`: introduction, voice readiness, five-second sustained-vowel illustration, writing setup, the actual three writing chunks (“The quick brown fox” / “jumps over” / “the lazy dog.”), glasses photo capture, explicit photo confirmation, ten-second walking illustration, and a sample summary. Writing narration runs at a slower rate, and each six-second writing pause begins after OS speech ends. Capture countdowns also begin after the spoken instruction. The browser does not record audio, open a camera, measure movement, generate exam scores, or save a fake motor exam.
 
@@ -60,7 +63,7 @@ Use the man in the supplied portrait as a character reference, preserving his re
 
 ## Playback and photo behavior
 
-The first full-day Play navigates to the medication scene. Individual task controls do not request a scroll. Deliberate wheel/touch/key scrolling pauses playback; responsive layout changes and programmatic navigation do not. Switching tabs, hiding the page and opening photo review also pause. Speech and timers are fenced against stale callbacks.
+The first full-day Play navigates to the motor scene (01, 07:45), followed by medication (02, 08:00). Playback reads the chapter order from the HTML. Individual task controls do not request a scroll. Deliberate wheel/touch/key scrolling pauses playback; responsive layout changes and programmatic navigation do not. Switching tabs, hiding the page and opening photo review also pause. Speech and timers are fenced against stale callbacks.
 
 The Experience / How it works tabs use an equal-column grid to stay centered independently of the brand and audio controls. Very narrow phones use a second header row. Sound activation may require a browser gesture even though narration defaults on.
 
@@ -101,3 +104,16 @@ Edit this first-person photograph preserving the same notebook, hands, cream sle
 Project path: `backend/app/static/walkthrough/handwriting-capture.jpg`
 
 Create a closer, readable photo review of the completed right-hand notebook page in this reference. Preserve the exact black-ink handwriting "The quick brown fox jumps over the lazy dog." with correct spelling and period, same warm daylight and cream paper. Camera is now almost directly above the right page, showing the ENTIRE right page including all four edges and generous margins, with the page occupying 85 percent of the image. The left blank page can appear as a narrow strip at left; most desk clutter is out of frame. Keep a small part of the older man's hand and pen near the outside right edge but do not cover any text. The sentence is handwritten large across two or three lines in the central part of the page and very clearly legible. Landscape 4:3 framing. This is a photorealistic glasses-camera image of the actual notebook, not a flat generated text document. No digital UI, captions, labels, branding or other writing.
+
+## App icon
+
+The final icon is an ivory C with an aqua terminal on a deep teal square. It is intentionally simple enough for the iPhone home screen. iOS supplies the corner mask.
+
+- App asset: [App icon](../ios/App/CadenceCompanionApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png) (1024 × 1024, opaque).
+- Generated master: [Generated master](branding/Cadence-icon-master.png) (1254 × 1254, opaque).
+- Generation: built-in image generation tool, during development. This is a bundled static asset; the app adds no runtime image-generation model call.
+- Packaging: master resized with macOS sips to the app-icon dimensions, without changing the design. AppIcon is selected for Debug and Release targets.
+
+### Icon generation prompt
+
+Use case: logo-brand. Asset type: production iPhone home-screen app icon for Cadence, a calm voice-first daily living companion that helps people move with a steady rhythm. Create ONE final square icon, 1024 by 1024 pixels if possible. Full-bleed opaque deep midnight teal background. Center a single distinctive, bold, warm ivory C-shaped mark: a clean open circular ribbon with subtly staggered rounded ends suggesting gentle forward steps and cadence. One restrained soft aqua accent on the lower terminal, integrated into the C, not a separate badge. Large simple silhouette, very legible at 40 pixels, generous safe area (mark within central 66% of canvas), beautifully balanced negative space. Flat refined vector-like finish, smooth edges, no noise or texture. No text, no wordmark, no letters other than the implied C, no medical cross, no ECG/heartbeat line, no glasses drawing, no gradients, no shadows, no mockup, no phone frame, no rounded outer corners, no border. The background fills all four square corners; iOS supplies the mask.
