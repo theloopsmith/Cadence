@@ -162,15 +162,15 @@ public final class AppSettings: ObservableObject {
         signedInUsername = defaults.string(forKey: localKey(Key.signedInUsername))
         summaryName = defaults.string(forKey: localKey(Key.summaryName)) ?? ""
         preferredVoiceIdentifier = defaults.string(forKey: localKey(Key.preferredVoice))
-        // Upgrade the old button-driven setup once. Afterwards, an explicit
-        // voice-off choice made in the new setup still survives reopening.
-        let automaticVoiceKey = localKey("automaticVoiceStartupV1")
-        if !defaults.bool(forKey: automaticVoiceKey) {
-            voiceCompanionEnabled = true
-            defaults.set(true, forKey: localKey("voiceCompanionEnabled"))
-            defaults.set(true, forKey: automaticVoiceKey)
+        // Older builds enabled listening automatically. Require a fresh opt-in
+        // once for the quieter interaction model, then preserve the choice.
+        let quietVoiceKey = localKey("quietVoiceOptInV2")
+        if !defaults.bool(forKey: quietVoiceKey) {
+            voiceCompanionEnabled = false
+            defaults.set(false, forKey: localKey("voiceCompanionEnabled"))
+            defaults.set(true, forKey: quietVoiceKey)
         } else {
-            voiceCompanionEnabled = defaults.object(forKey: localKey("voiceCompanionEnabled")) as? Bool ?? true
+            voiceCompanionEnabled = defaults.object(forKey: localKey("voiceCompanionEnabled")) as? Bool ?? false
         }
         cloudListeningEnabled = defaults.object(forKey: localKey(Key.cloudListening)) as? Bool ?? true
         caregiverName = defaults.string(forKey: localKey(Key.caregiverName)) ?? ""

@@ -30,6 +30,37 @@ private final class DelayedReleaseTranscript: TranscriptListening {
 
 @MainActor
 final class VoiceCompanionTests: XCTestCase {
+    func testUnrelatedSpeechDuringWritingDoesNotSpeakOrInvokeModel() {
+        let (voice, log, _) = make()
+        voice.start()
+        voice.enterFlow(id: UUID(), destination: .motor, step: .handwriting)
+        let count = log.spoken.count
+        voice.understand = { _, _ in XCTFail("Task chatter must not invoke a model"); return .surroundings }
+        voice.submit("the meeting is tomorrow afternoon")
+        XCTAssertEqual(log.spoken.count, count)
+        XCTAssertTrue(voice.isEnabled)
+        voice.submit("please send that document to the team")
+        XCTAssertEqual(log.spoken.count, count)
+        XCTAssertFalse(voice.isEnabled)
+        XCTAssertEqual(voice.context, .motor)
+        XCTAssertNil(voice.destination)
+    }
+
+    func testIdleConversationPausesWithoutAnotherSpokenPrompt() async throws {
+        let log = SpokenLog()
+        let voice = VoiceCompanion(listener: MockTranscriptListener(), speaker: log, echo: CompanionEcho(),
+                                   promptDelaySeconds: 0.001, idleWindowSeconds: 0.01)
+        defer { voice.stop() }
+        voice.start()
+        let count = log.spoken.count
+        let deadline = ProcessInfo.processInfo.systemUptime + 2
+        while voice.isEnabled, ProcessInfo.processInfo.systemUptime < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(voice.isEnabled)
+        XCTAssertEqual(log.spoken.count, count)
+    }
+
     func testStartupFailureKeepsActualMicrophoneReasonAndRetryPreference() async throws {
         let voice = VoiceCompanion(listener: UnavailableTranscript(), speaker: SpokenLog(), echo: CompanionEcho(),
                                    promptDelaySeconds: 0.001, listenerHealthDelaySeconds: 0.005)
@@ -271,13 +302,14 @@ final class VoiceCompanionTests: XCTestCase {
         // Wait for the observed timeout, not a short wall-clock guess. A busy
         // CI runner may take longer to start the listening/confirmation tasks.
         let deadline = ProcessInfo.processInfo.systemUptime + 3
-        while !log.spoken.contains(where: { $0.contains("timed out") }),
+        while voice.isEnabled,
               ProcessInfo.processInfo.systemUptime < deadline {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         voice.submit("yes")
         XCTAssertTrue(effects.isEmpty)
-        XCTAssertTrue(log.spoken.contains { $0.contains("timed out") })
+        XCTAssertFalse(voice.isEnabled)
+        XCTAssertEqual(voice.status, "Listening paused; confirmation expired")
     }
 
     func testRepeatInMotorFlowAsksTheOwningExamToNarrateAgain() {
@@ -334,11 +366,12 @@ final class VoiceCompanionTests: XCTestCase {
         voice.start()
         voice.enterFlow(id: parent, destination: .surroundings, step: .surroundings)
         voice.enterFlow(id: camera, destination: .camera, step: .photoReview)
+        let beforeUnclear = log.spoken.count
         voice.submit("huh?")
         try await Task.sleep(nanoseconds: 20_000_000)
         XCTAssertEqual(voice.context, .camera)
         XCTAssertEqual(voice.step, .photoReview)
-        XCTAssertTrue(log.spoken.last?.contains("I still have your photo") == true)
+        XCTAssertEqual(log.spoken.count, beforeUnclear)
         voice.submit("Use it")
         XCTAssertEqual(voice.action, .usePhoto)
         voice.leaveFlow(id: camera)
@@ -354,15 +387,16 @@ final class VoiceCompanionTests: XCTestCase {
         voice.enterFlow(id: camera, destination: .camera, step: .photoReview)
         voice.updateFlow(id: motor, step: .walkReady)
         XCTAssertEqual(voice.context, .camera)
-        voice.submit("what now")
+        voice.submit("what do I do next")
         try await Task.sleep(nanoseconds: 20_000_000)
         XCTAssertTrue(log.spoken.last?.contains("I still have your photo") == true)
         voice.leaveFlow(id: camera)
         XCTAssertEqual(voice.context, .motor)
         XCTAssertEqual(voice.step, .walkReady)
+        let beforeUnclear = log.spoken.count
         voice.submit("I didn't quite get that")
         try await Task.sleep(nanoseconds: 20_000_000)
-        XCTAssertTrue(log.spoken.last?.contains("walking step") == true)
+        XCTAssertEqual(log.spoken.count, beforeUnclear)
         voice.submit("yes")
         XCTAssertEqual(voice.action, .start)
     }
@@ -397,10 +431,11 @@ final class VoiceCompanionTests: XCTestCase {
         XCTAssertEqual(voice.action, .usePhoto)
         voice.leaveFlow(id: camera)
         voice.updateFlow(id: motor, step: .walkReady)
+        let beforeUnclear = log.spoken.count
         voice.submit("garbled")
         try await Task.sleep(nanoseconds: 20_000_000)
         XCTAssertEqual(voice.context, .motor)
-        XCTAssertTrue(log.spoken.last?.contains("walking step") == true)
+        XCTAssertEqual(log.spoken.count, beforeUnclear)
     }
 
     func testMetaHandoffStopsConversationBeforeReleasingDevice() {
@@ -420,7 +455,7 @@ final class VoiceCompanionTests: XCTestCase {
         voice.understand = { _, _ in await withCheckedContinuation { answer = $0; started.fulfill() } }
         let motor = UUID()
         voice.start(); voice.enterFlow(id: motor, destination: .motor, step: .motorIntro)
-        voice.submit("maybe something else")
+        voice.submit("Cadence maybe something else")
         await fulfillment(of: [started], timeout: 1)
         voice.updateFlow(id: motor, step: .handwriting)
         answer?.resume(returning: .surroundings)

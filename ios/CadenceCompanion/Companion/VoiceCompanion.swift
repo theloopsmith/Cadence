@@ -111,6 +111,7 @@ public final class VoiceCompanion: ObservableObject {
     private let promptDelaySeconds: Double
     private let confirmationWindowSeconds: Double
     private let listenerHealthDelaySeconds: Double
+    private let idleWindowSeconds: Double
     private var pending: CompanionIntent?
     private var pauses: Set<String> = []
     private var generation = UUID()
@@ -119,17 +120,19 @@ public final class VoiceCompanion: ObservableObject {
     private var healthTask: Task<Void, Never>?
     private var debounce: Task<Void, Never>?
     private var history: [String] = []
+    private var unrelatedTurns = 0
 
-    public init(listener: TranscriptListening, speaker: PromptSpeaking, echo: EchoGuarding, debounceSeconds: Double = 0.8, promptDelaySeconds: Double = 0.35, confirmationWindowSeconds: Double = 20, listenerHealthDelaySeconds: Double = 4) {
+    public init(listener: TranscriptListening, speaker: PromptSpeaking, echo: EchoGuarding, debounceSeconds: Double = 0.8, promptDelaySeconds: Double = 0.35, confirmationWindowSeconds: Double = 20, listenerHealthDelaySeconds: Double = 4, idleWindowSeconds: Double = 40) {
         self.listener = listener; self.speaker = speaker; self.echo = echo
         self.debounceSeconds = max(0.001, debounceSeconds)
         self.promptDelaySeconds = max(0.001, promptDelaySeconds)
         self.confirmationWindowSeconds = max(0.001, confirmationWindowSeconds)
         self.listenerHealthDelaySeconds = max(0.001, listenerHealthDelaySeconds)
+        self.idleWindowSeconds = max(0.001, idleWindowSeconds)
     }
 
     public func start() {
-        history.removeAll(); lastHeard = ""
+        history.removeAll(); lastHeard = ""; unrelatedTurns = 0
         isEnabled = true
         if !pauses.isEmpty {
             status = "Voice paused: " + pauses.sorted().joined(separator: ", ")
@@ -197,6 +200,7 @@ public final class VoiceCompanion: ObservableObject {
     }
 
     private func flowDidChange() {
+        unrelatedTurns = 0
         flowRevision = UUID(); pending = nil; medicationChoice = nil; lastQuestion = nil; turn = UUID()
         task?.cancel(); debounce?.cancel(); listener.stopListening()
         if isEnabled, pauses.isEmpty { listenAfterSpeech() }
@@ -285,12 +289,16 @@ public final class VoiceCompanion: ObservableObject {
         // Apple recognition tasks end periodically. Reopen between turns rather
         // than leaving a permanently lit microphone after the task has ended.
         task?.cancel()
-        let timeout = UInt64((pending == nil && medicationChoice == nil ? 40 : confirmationWindowSeconds) * 1_000_000_000)
+        let timeout = UInt64((pending == nil && medicationChoice == nil ? idleWindowSeconds : confirmationWindowSeconds) * 1_000_000_000)
         task = Task { @MainActor [weak self] in
             do { try await Task.sleep(nanoseconds: timeout) } catch { return }
             guard let self, self.turn == turn, self.isEnabled, self.pauses.isEmpty else { return }
-            if self.pending != nil || self.medicationChoice != nil { self.pending = nil; self.medicationChoice = nil; self.say("That confirmation timed out. Nothing was changed. What would you like to do?") }
-            else { self.openTurn() }
+            if self.pending != nil || self.medicationChoice != nil {
+                self.pending = nil; self.medicationChoice = nil
+                self.stop(); self.status = "Listening paused; confirmation expired"
+            } else if self.context == nil {
+                self.stop(); self.status = "Listening paused"
+            } else { self.openTurn() }
         }
     }
 
@@ -347,7 +355,10 @@ public final class VoiceCompanion: ObservableObject {
             say(context == nil ? "What would you like me to help with?" : step.guidance); return
         }
         history.append("user: " + String(text.prefix(1000))); history = Array(history.suffix(6))
-        if intent != .unknown { handle(intent); return }
+        if intent != .unknown { unrelatedTurns = 0; handle(intent); return }
+        // While a task is open, unrelated conversation must not be interpreted
+        // as a request to switch tasks. Explicitly address Cadence for free-form help.
+        if context != nil, !normalized.contains("cadence") { handle(.unknown); return }
         let generation = self.generation
         let revision = flowRevision
         status = "Thinking"
@@ -443,8 +454,12 @@ public final class VoiceCompanion: ObservableObject {
             if context != nil { say(step.guidance); return }
             say("I'm here with you. What do you need help with: medication, your surroundings, a motor check, or contacting your caregiver?")
         default:
-            if context != nil { say("I didn't quite catch that. " + step.guidance); return }
-            say("I didn't quite catch what you need. We can check your surroundings, review your medication, or do a motor check. Which would help?")
+            unrelatedTurns += 1
+            if unrelatedTurns >= 2 {
+                stop(); status = "Listening paused"
+            } else {
+                listenAfterSpeech()
+            }
         }
     }
 

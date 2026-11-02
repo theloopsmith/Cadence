@@ -143,6 +143,7 @@ public final class CadenceAppModel: ObservableObject {
         }
         companion.execute = { [weak self] intent in self?.executeCompanionAction(intent) ?? "That action is unavailable." }
         companion.onDisabled = { [weak self] in
+            self?.voiceActivationID = UUID()
             if self?.companion.preservesVoicePreferenceOnStop != true { self?.settings.voiceCompanionEnabled = false }
             self?.voiceDose.cancel()
             Task { @MainActor [weak self] in
@@ -527,7 +528,7 @@ public final class CadenceAppModel: ObservableObject {
             if fallAlert.isAlertVisible { return "Voice paused for the safety check-in" }
             return companion.status == "Voice companion is off" ? "Voice waiting to start" : companion.status
         }
-        return "Voice is turned off in Settings"
+        return "Listening paused"
     }
 
     public func voiceSceneChanged(isActive: Bool, isBackground: Bool) {
@@ -542,7 +543,7 @@ public final class CadenceAppModel: ObservableObject {
         }
     }
 
-    public func enableVoiceCompanion() async {
+    public func enableVoiceCompanion(persistPreference: Bool = true) async {
         guard !settings.restartRequired, !fallAlert.isAlertVisible, !isHandingOffToMeta, !isStartingVoice else { return }
         isStartingVoice = true
         defer { isStartingVoice = false }
@@ -567,7 +568,7 @@ public final class CadenceAppModel: ObservableObject {
         if isUsingMetaAssistant { glasses.connect() }
         isUsingMetaAssistant = false; metaHandoffError = nil
         voicePermissionError = nil
-        settings.voiceCompanionEnabled = true
+        if persistPreference { settings.voiceCompanionEnabled = true }
         companion.start()
     }
 

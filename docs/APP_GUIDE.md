@@ -20,7 +20,7 @@ The displayed input/output routes reflect the route iOS actually selected. Physi
 
 ## Voice companion
 
-After microphone and speech-recognition permission, the companion starts automatically while foregrounded unless an explicit saved off choice exists. Re-enable it under **Settings → Hands-free voice companion**. Backgrounding pauses everyday conversation.
+Tap **Talk to Cadence** on Today to start a conversation, and **Pause listening** to stop. Continuous listening is off by default; upgrading from the former automatic mode requires a fresh opt-in once. Optional **Settings → Hands-free voice companion** starts listening while foregrounded; a one-session Talk tap does not enable automatic startup. Backgrounding pauses everyday conversation. Unknown speech no longer triggers spoken menu repetition; two unrelated turns pause listening quietly. Idle general conversation pauses after 40 seconds, while an active task retains its listening window. Confirmation expiry pauses without taking the action. During a task, address “Cadence” explicitly for free-form model interpretation; ordinary task commands still work. This is not a dedicated wake-word detector, and recognized commands can still be picked up from nearby conversation. Walking protection and its safety check-ins are independent of this listening preference.
 
 Try:
 

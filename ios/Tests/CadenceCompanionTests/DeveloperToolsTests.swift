@@ -118,16 +118,16 @@ final class DeveloperToolsTests: XCTestCase {
         XCTAssertThrowsError(try app.settings.saveMedicationPlan([original, MedicationSchedule(medicationName: " first ", doseTimes: [])]))
         XCTAssertEqual(app.settings.medications, [original])
     }
-    func testVoiceDefaultsToAutomaticButExplicitOffSurvivesReload() {
+    func testVoiceRequiresFreshOptInAndThenPreservesChoice() {
         let suite = "voice-setup-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let profile = DeviceProfile(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(suite))
         let sync = EventSyncManager(databasePath: NSTemporaryDirectory() + "\(suite).sqlite", startPeriodicDrain: false)
-        // An installed phone may still carry false from the old startup flow.
-        defaults.set(false, forKey: "cadence.profile.\(profile.id).voiceCompanionEnabled")
+        // An installed device may carry automatic listening from the old flow.
+        defaults.set(true, forKey: "cadence.profile.\(profile.id).voiceCompanionEnabled")
         let first = AppSettings(defaults: defaults, sync: sync, profile: profile)
-        XCTAssertTrue(first.voiceCompanionEnabled)
+        XCTAssertFalse(first.voiceCompanionEnabled)
         first.voiceCompanionEnabled = false
         let reopened = AppSettings(defaults: defaults, sync: sync, profile: profile)
         XCTAssertFalse(reopened.voiceCompanionEnabled)
@@ -137,10 +137,10 @@ final class DeveloperToolsTests: XCTestCase {
 
     func testVoiceStatusExplainsSetupInsteadOfGenericOff() {
         let (app, _) = makeApp()
-        XCTAssertTrue(app.settings.voiceCompanionEnabled)
+        XCTAssertFalse(app.settings.voiceCompanionEnabled)
         XCTAssertNotEqual(app.voiceStatusText, "Voice companion is off")
         app.companion.stop()
-        XCTAssertEqual(app.voiceStatusText, "Voice is turned off in Settings")
+        XCTAssertEqual(app.voiceStatusText, "Listening paused")
     }
 
     func testVoiceStatusKeepsTheActualPauseReason() {
