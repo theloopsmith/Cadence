@@ -42,7 +42,7 @@ def test_demo_secrets_are_scoped_private_and_stable(tmp_path, monkeypatch, capsy
     assert first['TWILIO_AUTH_TOKEN'] == ''
     assert first['CADENCE_ENV'] == 'public_demo'
     assert first['ALLOW_STATIC_TOKENS'] == 'false'
-    assert first['ENABLE_RESEARCH_METRICS'] == 'false'
+    assert 'ENABLE_RESEARCH_METRICS' not in first
     assert len(first['JWT_SECRET']) >= 32
     assert env.stat().st_mode & 0o777 == 0o600
     assert accounts.stat().st_mode & 0o777 == 0o600

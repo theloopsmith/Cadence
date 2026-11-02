@@ -37,7 +37,6 @@ from app.models import (
     HomeMotorExamCreate,
     LoginRequest,
     SpeechTranscribeRequest,
-    MealProteinAnalyzeRequest,
     MealLogCreate,
     RealityCheckRequest,
     VoiceLogCreate,
@@ -51,27 +50,17 @@ from app.security import (
     require_device_writer,
     verify_twilio_signature,
 )
-from app.responses import ExamHistoryResponse, NeurologistReportResponse, RealityCheckResponse, DroppedEventResponse
+from app.responses import observation_projection, ExamHistoryResponse, NeurologistReportResponse, RealityCheckResponse, DroppedEventResponse
 from app.rate_limit import consume_inference, require_metered_writer
 from app.errors import install_error_handlers
-from app.services.dose_clock import dose_timestamp_at_or_before, parse_utc
+from app.services.dose_clock import parse_utc
 from app.services.plain_language import describe_task_metrics
-from app.services.diary_engine import (
-    DiaryBucketMetrics,
-    build_24h_diary_timeline,
-    classify_diary_bucket,
-)
+from app.services.diary_engine import build_24h_diary_timeline
 from app.services.fall_escalation import fall_escalation_manager
 from app.services.handwriting import analyze_handwriting_opencv, handwriting_response
-from app.services.motor_exam import MotorExamInput, score_home_motor_exam
 from app.services.exam_validity import measured_exam
 from app.services.report_snapshot import report_snapshot
 from app.services.plain_language import summarize_day
-from app.services.protein_checker import (
-    FOOD_CANDIDATE_VOCAB,
-    check_dose_protein_conflict,
-    estimate_meal_protein,
-)
 from app.services.reality_check import run_reality_check_pipeline
 
 
@@ -512,76 +501,10 @@ async def log_meal_time(payload: MealLogCreate, auth: AuthContext = Depends(requ
         (auth.patient_id, payload.event_uuid, payload.timestamp_utc),
     )
     return {"event_uuid": payload.event_uuid, "timestamp_utc": payload.timestamp_utc,
-            "estimated_protein_grams": None, "plate_detected": False,
-            "conflict_detected": False, "items": [],
             "spoken_response": "Meal time logged in your routine diary."}
 
 
-@app.post("/api/v1/medication/meal-protein", deprecated=True)
-async def analyze_meal_protein(
-    payload: MealProteinAnalyzeRequest,
-    auth: AuthContext = Depends(require_metered_writer),
-) -> Dict[str, Any]:
-    if not settings.enable_research_metrics:
-        return await log_meal_time(MealLogCreate(event_uuid=payload.event_uuid, timestamp_utc=payload.timestamp_utc), auth)
-    reject_simulated_inputs(simulated_masks=payload.simulated_masks)
-    deadline = RequestDeadlineContext()
-    img_bytes = _validated_image(payload.image_base64)
-    sam_res = await meta_client.segment_sam_3_1(
-        image_bytes=img_bytes,
-        candidate_labels=FOOD_CANDIDATE_VOCAB,
-        deadline=deadline,
-        simulated_masks=payload.simulated_masks,
-    )
-    masks = sam_res.get("masks", []) if sam_res.get("sam_verified") else []
-    protein_est = estimate_meal_protein(masks)
-
-    dose_ts = await dose_timestamp_at_or_before(auth.patient_id, payload.timestamp_utc)
-    conflict = check_dose_protein_conflict(
-        meal_timestamp_iso=payload.timestamp_utc,
-        estimated_protein_grams=protein_est["estimated_protein_grams"],
-        dose_timestamp_iso=dose_ts,
-    )
-
-    await execute_patient_write(auth,
-        """
-        INSERT INTO medication_logs (
-            patient_id, event_uuid, timestamp_utc, event_type,
-            detected_foods_json, plate_detected, plate_area_ratio,
-            estimated_protein_grams, conflict_detected
-        ) VALUES (?, ?, ?, 'meal_logged', ?, ?, ?, ?, ?)
-        ON CONFLICT(event_uuid) DO NOTHING
-        """,
-        (
-            auth.patient_id,
-            payload.event_uuid,
-            payload.timestamp_utc,
-            json.dumps(protein_est["items"]),
-            1 if protein_est["plate_detected"] else 0,
-            protein_est["plate_area_ratio"],
-            protein_est["estimated_protein_grams"],
-            1 if conflict else 0,
-        ),
-    )
-
-    if conflict:
-        spoken = (
-            f"Meal logged, about {protein_est['estimated_protein_grams']:.0f} grams of protein, "
-            "close to your Levodopa time. Some people find protein near a dose matters for them; "
-            "it's noted in your diary to share with your care team."
-        )
-    else:
-        spoken = f"Meal logged (~{protein_est['estimated_protein_grams']:.0f} grams of protein)."
-
-    return {
-        "event_uuid": payload.event_uuid,
-        **protein_est,
-        "conflict_detected": conflict,
-        "spoken_response": spoken,
-    }
-
-
-# ==================== PIPELINE 4: HALLUCINATION REALITY CHECK ====================
+# ==================== PIPELINE 4: BOUNDED PHOTO OBSERVATIONS ====================
 @app.post("/api/v1/reality-check", response_model=RealityCheckResponse | DroppedEventResponse, response_model_exclude_unset=True)
 async def reality_check_endpoint(
     payload: RealityCheckRequest,
@@ -650,7 +573,6 @@ async def analyze_handwriting_endpoint(
         image_bytes=img_bytes,
         simulated_letter_heights_px=payload.simulated_letter_heights_px,
         simulated_sam_decay_pct=payload.simulated_sam_decay_pct,
-        include_research_metrics=settings.enable_research_metrics,
     )
 
     if not res["measured"]:
@@ -661,7 +583,7 @@ async def analyze_handwriting_endpoint(
                 "I couldn't read enough of that line to measure it. "
                 "Try again with the whole sentence in frame."
             ),
-        }, include_research_metrics=settings.enable_research_metrics)
+        })
 
     await execute_patient_write(auth,
         """
@@ -682,30 +604,19 @@ async def analyze_handwriting_endpoint(
             res["final_stroke_height_px"],
             res["opencv_cc_decay_pct"],
             res["sam_3_1_decay_pct"],
-            1 if res["micrographia_detected"] else 0,
+            0,  # Inert compatibility value for the legacy NOT NULL column.
             res["deskew_angle_deg"],
             payload.source_context,
         ),
     )
 
-    if not settings.enable_research_metrics:
-        # Withheld, not "false": the default mode reports the measurement, not a finding.
-        shrink = res["opencv_cc_decay_pct"]
-        spoken = (
-            f"Letters at the end of the line were about {abs(shrink):.0f}% "
-            f"{'smaller' if shrink < 0 else 'larger'} than at the start."
-            if abs(shrink) >= 5 else "Letter size stayed about the same across the line."
-        )
-    elif res["micrographia_detected"]:
-        shrink_abs = abs(res["opencv_cc_decay_pct"])
-        spoken = (
-            f"Your letters shrank by {shrink_abs:.0f}% across the line—pause, "
-            "relax your hand, and aim for tall strokes."
-        )
-    else:
-        spoken = "Your handwriting stroke height looks steady."
-    return handwriting_response({"event_uuid": payload.event_uuid, **res, "spoken_response": spoken},
-                                include_research_metrics=settings.enable_research_metrics)
+    shrink = res["opencv_cc_decay_pct"]
+    spoken = (
+        f"Letters at the end of the line were about {abs(shrink):.0f}% "
+        f"{'smaller' if shrink < 0 else 'larger'} than at the start."
+        if abs(shrink) >= 5 else "Letter size stayed about the same across the line."
+    )
+    return handwriting_response({"event_uuid": payload.event_uuid, **res, "spoken_response": spoken})
 
 
 @app.post("/api/v1/events/voice")
@@ -747,33 +658,16 @@ async def complete_home_motor_exam(
         reject_simulated_inputs(simulated_exam=True)
     raw = payload.model_dump()
     values = measured_exam(raw)
-    complete = values['complete']
-    scores = dict.fromkeys(('voice_score','handwriting_score','gait_score','composite_motor_score'))
-    diary_eval = {'clinical_state': None, 'symptom_burden_score': None}
+    # Historical score/state columns are not populated by new observations.
     minutes_since_dose = None
-    # Legacy research calculations run only for complete, explicitly measured tasks.
-    if settings.enable_research_metrics and complete:
-        scores = score_home_motor_exam(MotorExamInput(**{k: values[k] for k in MotorExamInput.__dataclass_fields__}))
-        dose_ts = await dose_timestamp_at_or_before(auth.patient_id, payload.timestamp_utc)
-        if dose_ts:
-            try:
-                diff = int((parse_utc(payload.timestamp_utc)-parse_utc(dose_ts)).total_seconds()//60)
-                if 0 <= diff <= 720: minutes_since_dose = diff
-            except ValueError:
-                pass
-        diary_eval = classify_diary_bucket(DiaryBucketMetrics(
-            fog_count=values['walk_fog_count'], mean_fi=values['walk_mean_fi'],
-            opencv_decay_pct=values['handwriting_opencv_decay_pct'], mean_voice_dbfs=values['voice_mean_dbfs'],
-            has_exam=True, exam_composite_score=scores['composite_motor_score'],
-            has_dose=minutes_since_dose is not None, minutes_since_last_dose=minutes_since_dose))
     clinical_summary = 'Home motor check: ' + describe_task_metrics(
         voice_mean_dbfs=values['voice_mean_dbfs'], handwriting_decay_pct=values['handwriting_opencv_decay_pct'],
         walk_cadence_spm=values['walk_cadence_spm'], walk_fog_count=values['walk_fog_count']) + '.'
-    columns = ['patient_id','exam_uuid','timestamp_utc','medication_state_label','minutes_since_last_dose',
-        'voice_mean_dbfs','voice_stability_db','voice_score','handwriting_opencv_decay_pct','handwriting_sam_decay_pct',
-        'handwriting_score','walk_cadence_spm','walk_mean_fi','walk_fog_count','gait_score','composite_motor_score',
+    columns = ['patient_id','exam_uuid','timestamp_utc','minutes_since_last_dose',
+        'voice_mean_dbfs','voice_stability_db','handwriting_opencv_decay_pct','handwriting_sam_decay_pct',
+        'walk_cadence_spm','walk_mean_fi','walk_fog_count',
         'clinical_summary','voice_status','handwriting_status','walk_status','measurement_source']
-    row = {**values, **scores, 'patient_id': auth.patient_id, 'medication_state_label': diary_eval['clinical_state'],
+    row = {**values, 'patient_id': auth.patient_id,
         'minutes_since_last_dose': minutes_since_dose, 'clinical_summary': clinical_summary}
     # Replays return the committed record, not a different summary of a replacement body.
     existing = await fetch_one('SELECT patient_id FROM motor_exams WHERE exam_uuid=?',(payload.exam_uuid,))
@@ -788,9 +682,7 @@ async def complete_home_motor_exam(
 
 def _exam_response(row):
     result = measured_exam(row)
-    if not settings.enable_research_metrics:
-        for key in ('medication_state_label','voice_score','handwriting_score','gait_score','composite_motor_score'):
-            result.pop(key, None)
+    result = observation_projection(result)
     result.pop('id', None)
     result.pop('patient_id', None)
     return result
@@ -804,11 +696,7 @@ async def get_exam_history(
         "SELECT * FROM motor_exams WHERE patient_id = ? ORDER BY timestamp_utc DESC LIMIT 50",
         (auth.patient_id,),
     )
-    exams = [measured_exam(exam) for exam in exams]
-    if not settings.enable_research_metrics:
-        for exam in exams:
-            for key in ("medication_state_label", "voice_score", "handwriting_score", "gait_score", "composite_motor_score"):
-                exam.pop(key, None)
+    exams = [_exam_response(exam) for exam in exams]
     return {"patient_id": auth.patient_id, "exams": exams}
 
 
@@ -831,14 +719,10 @@ async def get_neurologist_report(
         writing_rows=writing_rows,
         voice_rows=voice_rows,
         exam_rows=exam_rows,
-        reference_end_utc=snapshot['end'], include_research_metrics=settings.enable_research_metrics, other_rows=reality_rows,
+        reference_end_utc=snapshot['end'], other_rows=reality_rows,
     )
 
     summary_stats = {
-        "on_pct": timeline["on_pct"],
-        "wearing_off_pct": timeline["wearing_off_pct"],
-        "off_pct": timeline["off_pct"],
-        "no_dose_pct": timeline["no_dose_pct"],
         "fog_count": len(fog_rows),
         # Confirmed falls drive the clinical headline; cancelled and suppressed
         # candidates are reported separately so a neurologist can still see that
@@ -857,8 +741,6 @@ async def get_neurologist_report(
         "fall_suppressed_count": len(
             [f for f in fall_rows if f.get("status") == "suppressed_unworn_drop"]
         ),
-        "latest_exam_score": exam_rows[0]["composite_motor_score"] if exam_rows else None,
-        "exam_on_vs_off_delta": timeline["exam_on_vs_off_delta"],
         "dose_count": len(
             [
                 m
@@ -891,19 +773,10 @@ async def get_neurologist_report(
     # Delivery wording and report counts are factual; do not ask a model to infer contact.
     narrative = summarize_day(summary_stats)
 
-    if not settings.enable_research_metrics:
-        for key in ("on_pct", "wearing_off_pct", "off_pct", "no_dose_pct", "unknown_pct", "latest_exam_score", "exam_on_vs_off_delta"):
-            summary_stats.pop(key, None)
-        hidden = {"medication_state_label", "voice_score", "handwriting_score", "gait_score",
-                  "composite_motor_score", "estimated_protein_grams", "conflict_detected",
-                  "micrographia_detected"}
-        for rows in (exam_rows, med_rows, writing_rows):
-            for row in rows:
-                for key in hidden:
-                    row.pop(key, None)
-        for bucket in timeline["buckets"]:
-            for key in ("clinical_state", "symptom_burden_score", "exam_composite_score", "protein_conflict_active"):
-                bucket.pop(key, None)
+    # Legacy stored findings never re-enter public observations.
+    exam_rows = observation_projection(exam_rows)
+    med_rows = observation_projection(med_rows)
+    writing_rows = observation_projection(writing_rows)
     return {
         "patient_id": pid,
         "report_metadata": {
@@ -948,24 +821,15 @@ async def seed_demo_patient_timeline(
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
     """
-    Populates a complete, clinically realistic 24-hour Parkinson's patient timeline:
-
-      07:30 Morning OFF Home Motor Exam    12:50 Steak high-protein conflict
-      08:00 Morning Levodopa dose          14:00 Post-meal FoG + micrographia
-      09:15 Peak ON Home Motor Exam        16:15 Hallucination reality check
-      11:30 Wearing-off FoG episode        16:20 Hypophonia voice nudge
-      12:30 Midday Levodopa dose           17:30 Evening Levodopa dose
-                                           17:45 Fall, resolved on check-in
-                                           19:30 End-of-day OFF Home Motor Exam
-
-    The 17:45 fall is seeded already resolved ('canceled_false_alarm') so
-    re-running the demo never places a live Twilio call.
+    Populates a labeled synthetic day of routine checks, dose/meal timestamps,
+    walking events and photo observations. The fall is already resolved so
+    re-running the seed never places a caregiver call.
     """
     pid = auth.patient_id
     seed_base = datetime.now(timezone.utc) - timedelta(hours=21)
     def demo_time(hour,minute):
         return (seed_base+timedelta(hours=hour,minutes=minute)).isoformat()
-    # 1. Morning OFF Home Motor Exam (07:30 UTC)
+    # 1. Morning sample motor check (07:30 UTC)
     off_exam = HomeMotorExamCreate(
         voice_status='measured', handwriting_status='measured', walk_status='measured', measurement_source='simulated',
         exam_uuid="demo-exam-morning-off-001",
@@ -991,7 +855,7 @@ async def seed_demo_patient_timeline(
         auth,
     )
 
-    # 3. 09:15 UTC Peak ON Home Motor Exam (75 min post-dose)
+    # 3. 09:15 UTC Later sample motor check
     on_exam = HomeMotorExamCreate(
         voice_status='measured', handwriting_status='measured', walk_status='measured', measurement_source='simulated',
         exam_uuid="demo-exam-morning-on-002",
@@ -1008,7 +872,7 @@ async def seed_demo_patient_timeline(
         on_exam, auth
     )
 
-    # 4. 11:30 UTC End-of-Dose WEARING-OFF FoG Episode
+    # 4. 11:30 UTC Sample walking event
     await log_fog_event(
         FoGEventCreate(
             event_uuid="demo-fog-1130",
@@ -1025,7 +889,7 @@ async def seed_demo_patient_timeline(
         auth,
     )
 
-    # 5. 12:30 UTC Midday Levodopa Dose + 12:50 UTC High-Protein Steak Meal (Conflict)
+    # 5. 12:30 UTC Midday dose and meal time
     await log_medication_dose(
         DoseLogCreate(
             event_uuid="demo-med-dose-1230",
@@ -1033,19 +897,9 @@ async def seed_demo_patient_timeline(
         ),
         auth,
     )
-    await analyze_meal_protein(
-        MealProteinAnalyzeRequest(
-            event_uuid="demo-meal-steak-1250",
-            timestamp_utc=demo_time(12,50),
-            simulated_masks=[
-                {"label": "steak", "area_px": 34000.0, "confidence": 0.94},
-                {"label": "plate", "area_px": 72000.0, "confidence": 0.98},
-            ],
-        ),
-        auth,
-    )
+    await log_meal_time(MealLogCreate(event_uuid="demo-meal-1250", timestamp_utc=demo_time(12,50)), auth)
 
-    # 6. 14:00 UTC Delayed-Absorption OFF Episode (FoG + Micrographia)
+    # 6. 14:00 UTC Walking and writing sample observations
     await log_fog_event(
         FoGEventCreate(
             event_uuid="demo-fog-1400",
@@ -1132,7 +986,7 @@ async def seed_demo_patient_timeline(
         data_generation=auth.data_generation,
     )
 
-    # 11. 19:30 UTC End-of-Day OFF Home Motor Exam (120 min after the evening dose)
+    # 11. 19:30 UTC Evening sample motor check
     evening_exam = HomeMotorExamCreate(
         voice_status='measured', handwriting_status='measured', walk_status='measured', measurement_source='simulated',
         exam_uuid="demo-exam-evening-off-003",

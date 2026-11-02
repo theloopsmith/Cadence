@@ -37,33 +37,9 @@ final class StubExamSubmitter: ExamSubmitting, @unchecked Sendable {
 /// live endpoint for these exact measurements.
 private let scoredResult = HomeMotorExamResult(
     examUUID: "exam-test-1",
-    medicationStateLabel: "WEARING_OFF",
-    voiceScore: 86.5,
-    handwritingScore: 72.8,
-    gaitScore: 71.5,
-    compositeMotorScore: 76.4,
-    clinicalSummary: "Guided Home Motor Exam (WEARING_OFF): Composite 76.4/100."
+    clinicalSummary: "Home motor check recorded."
 )
 
-extension HomeMotorExamResult {
-    init(
-        examUUID: String, medicationStateLabel: String, voiceScore: Double,
-        handwritingScore: Double, gaitScore: Double, compositeMotorScore: Double,
-        clinicalSummary: String
-    ) {
-        let json: [String: Any] = [
-            "exam_uuid": examUUID,
-            "medication_state_label": medicationStateLabel,
-            "voice_score": voiceScore,
-            "handwriting_score": handwritingScore,
-            "gait_score": gaitScore,
-            "composite_motor_score": compositeMotorScore,
-            "clinical_summary": clinicalSummary,
-        ]
-        let data = try! JSONSerialization.data(withJSONObject: json)
-        self = try! JSONDecoder().decode(HomeMotorExamResult.self, from: data)
-    }
-}
 
 @MainActor
 final class HomeMotorExamTests: XCTestCase {
@@ -160,7 +136,7 @@ final class HomeMotorExamTests: XCTestCase {
         mgr.measurements = m
 
         let result = await mgr.completeExam(examUUID: "exam-score-1")
-        XCTAssertEqual(result?.compositeMotorScore, 76.4)
+        XCTAssertEqual(result?.examUUID, "exam-test-1")
         XCTAssertFalse(mgr.lastResultSummary?.contains("76") == true)
         XCTAssertFalse(mgr.lastResultSummary?.contains("WEARING") == true)
         XCTAssertTrue(mgr.lastResultSummary?.contains("22% smaller") == true, mgr.lastResultSummary ?? "")

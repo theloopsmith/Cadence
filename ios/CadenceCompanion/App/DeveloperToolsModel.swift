@@ -12,7 +12,7 @@ public final class DeveloperToolsModel: ObservableObject {
     @Published public private(set) var replayName: String?
     @Published public private(set) var lastMessage: String?
     @Published public private(set) var lastEnvironmentCheck: RealityCheckResult?
-    @Published public private(set) var lastMeal: MealProteinResult?
+    @Published public private(set) var lastMeal: MealLogResult?
     @Published public private(set) var isBusy = false
 
     public var replaySampleIntervalNs: UInt64 = 20_000_000

@@ -1,13 +1,14 @@
 """Validity travels with each task. Old numeric defaults cannot establish measurement."""
 TASK_FIELDS = {
-    'voice': ('voice_mean_dbfs','voice_stability_db','voice_score'),
-    'handwriting': ('handwriting_opencv_decay_pct','handwriting_sam_decay_pct','handwriting_score'),
-    'walk': ('walk_cadence_spm','walk_mean_fi','walk_fog_count','gait_score'),
+    'voice': ('voice_mean_dbfs','voice_stability_db'),
+    'handwriting': ('handwriting_opencv_decay_pct','handwriting_sam_decay_pct'),
+    'walk': ('walk_cadence_spm','walk_mean_fi','walk_fog_count'),
 }
 
 
 def measured_exam(row):
-    result = dict(row)
+    from app.responses import observation_projection
+    result = observation_projection(dict(row))
     source = result.setdefault("measurement_source", "legacy_unverified")
     result["task_evidence"] = {task: {"status": result.get(task+"_status", "legacy_unverified"),
                                       "measurement_source": source} for task in TASK_FIELDS}
@@ -16,9 +17,6 @@ def measured_exam(row):
             for field in fields:
                 result[field] = None
     complete = all(result.get(task+'_status') == 'measured' for task in TASK_FIELDS)
-    if not complete:
-        for field in ('composite_motor_score','medication_state_label','symptom_burden_score'):
-            result[field] = None
     if 'clinical_summary' in result:
         from app.services.plain_language import describe_task_metrics, exam_source_words
         result['clinical_summary'] = 'Home motor check (' + exam_source_words(source) + '): ' + describe_task_metrics(

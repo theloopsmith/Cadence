@@ -71,25 +71,15 @@ public struct HomeMotorExamMeasurements {
 /// What the backend returns from `POST /api/v1/exam/complete`.
 public struct HomeMotorExamResult: Decodable {
     public let examUUID: String
-    public let medicationStateLabel: String?
-    public let voiceScore: Double?
-    public let handwritingScore: Double?
-    public let gaitScore: Double?
-    public let compositeMotorScore: Double?
     public let clinicalSummary: String
 
     enum CodingKeys: String, CodingKey {
         case examUUID = "exam_uuid"
-        case medicationStateLabel = "medication_state_label"
-        case voiceScore = "voice_score"
-        case handwritingScore = "handwriting_score"
-        case gaitScore = "gait_score"
-        case compositeMotorScore = "composite_motor_score"
         case clinicalSummary = "clinical_summary"
     }
 }
 
-/// Submits a completed exam and returns the scored result.
+/// Submits a completed exam and returns the recorded observations.
 public protocol ExamSubmitting {
     func submit(examJSON: Data, bearerToken: String) async throws -> HomeMotorExamResult?
 }
@@ -97,10 +87,10 @@ public protocol ExamSubmitting {
 /// Posts to `POST /api/v1/exam/complete`.
 ///
 /// Unlike telemetry events, an exam is interactive: the wearer is standing
-/// there waiting to hear their score, so this returns the scored body rather
+/// there waiting for confirmation, so this returns the recorded body rather
 /// than going through the fire-and-forget offline queue. If the post fails the
 /// exam is handed to `EventSyncManager`, which retries it in the background —
-/// the wearer loses the spoken score but the neurologist still gets the data.
+/// the wearer misses the immediate receipt but the saved observation can still sync.
 public struct URLSessionExamSubmitter: ExamSubmitting {
     public let baseURL: String
     public let timeoutSec: TimeInterval

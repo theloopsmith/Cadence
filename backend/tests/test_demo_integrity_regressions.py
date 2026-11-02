@@ -24,7 +24,6 @@ from app.main import app  # noqa: E402
 from app.models import FallEventCreate  # noqa: E402
 from app.services.diary_engine import build_24h_diary_timeline  # noqa: E402
 from app.services.fall_escalation import FallEscalationManager  # noqa: E402
-from app.services.protein_checker import estimate_meal_protein, mask_area  # noqa: E402
 from app.services.reality_check import (  # noqa: E402
     CLOSED_REALITY_VOCAB,
     run_reality_check_pipeline,
@@ -38,46 +37,10 @@ DEVICE_HEADERS = {"Authorization": f"Bearer {settings.cadence_device_token}"}
 # --------------------------------------------------------------------------
 # Defect 1: plate normalization silently skipped when masks report area_ratio
 # --------------------------------------------------------------------------
-def test_plate_normalization_accepts_both_area_units():
-    """
-    SAM 3.1 reports absolute pixel area; the dashboard and demo fixtures report
-    fractional frame coverage. Both must normalize identically, because only the
-    food-to-plate quotient is used. Previously an area_ratio frame fell through
-    to the no-plate scale = 1.0 path and under-reported protein.
-    """
-    px = estimate_meal_protein(
-        [
-            {"label": "steak", "area_px": 34000.0, "confidence": 0.94},
-            {"label": "plate", "area_px": 72000.0, "confidence": 0.98},
-        ]
-    )
-    ratio = estimate_meal_protein(
-        [
-            {"label": "steak", "area_ratio": 0.34, "confidence": 0.94},
-            {"label": "plate", "area_ratio": 0.72, "confidence": 0.98},
-        ]
-    )
-
-    assert px["plate_detected"] is True
-    assert ratio["plate_detected"] is True
-    assert px["estimated_protein_grams"] == ratio["estimated_protein_grams"]
-    # 0.34/0.72 = 0.472 coverage; 0.472/0.35 r_ref = 1.35 scale; 28g * 1.35
-    assert px["estimated_protein_grams"] == pytest.approx(37.8, abs=0.05)
-    assert px["items"][0]["scale"] == pytest.approx(1.35, abs=0.01)
 
 
-def test_mask_area_falls_back_to_zero_without_an_area_key():
-    assert mask_area({"label": "steak", "confidence": 0.9}) == 0.0
-    assert mask_area({"area_px": None}) == 0.0
 
 
-def test_no_plate_detected_still_falls_back_to_unit_scale():
-    res = estimate_meal_protein(
-        [{"label": "chicken", "area_px": 20000.0, "confidence": 0.9}]
-    )
-    assert res["plate_detected"] is False
-    assert res["items"][0]["scale"] == 1.0
-    assert res["estimated_protein_grams"] == pytest.approx(26.0, abs=0.05)
 
 
 # --------------------------------------------------------------------------
@@ -127,7 +90,7 @@ def test_object_resting_on_a_seat_still_uses_the_seat_template():
 # --------------------------------------------------------------------------
 # Defect 3 & 4: demo timeline truncated, no fall, protein conflict invisible
 # --------------------------------------------------------------------------
-def test_demo_seed_covers_the_full_day_and_every_pipeline(research_mode):
+def test_demo_seed_covers_the_full_day_and_every_pipeline():
     with TestClient(app) as client:
         wiped = client.delete("/api/v1/patient/data", headers=DEVICE_HEADERS)
         headers = {**DEVICE_HEADERS, "X-Cadence-Data-Generation": str(wiped.json()["data_generation"])}
@@ -144,7 +107,7 @@ def test_demo_seed_covers_the_full_day_and_every_pipeline(research_mode):
     assert rep["medication_logs"], "Pipeline 3 produced no rows"
     assert rep["reality_checks"], "Pipeline 4 produced no rows"
     assert rep["handwriting_logs"], "Pipeline 5 produced no rows"
-    assert len(rep["motor_exams"]) >= 3, "Pipeline 6 needs OFF, ON and evening exams"
+    assert len(rep["motor_exams"]) >= 3, "Pipeline 6 needs morning, later and evening samples"
 
     # The seeded fall resolves on check-in, so it must not inflate confirmed
     # falls, and must not disappear from the report either.
@@ -152,19 +115,18 @@ def test_demo_seed_covers_the_full_day_and_every_pipeline(research_mode):
     assert stats["fall_count"] == 0
     assert stats["fall_candidate_resolved_count"] == 1
 
-    # The steak meal normalizes against the plate rather than defaulting to 1.0x.
+    # Meal entries are factual timestamps, without nutritional interpretation.
     meal = [m for m in rep["medication_logs"] if m["event_type"] == "meal_logged"][0]
-    assert meal["plate_detected"] == 1
-    assert meal["conflict_detected"] == 1
-    assert meal["estimated_protein_grams"] > 30.0
+    assert "estimated_protein_grams" not in meal
+    assert "conflict_detected" not in meal
 
     # The reality check returns a grounded object, never the generic fallback.
     rc = rep["reality_checks"][0]
     assert rc["template_id"] != "REASSURE_EMPTY_SPACE"
     assert rc["chosen_inanimate_label"] == "coat rack"
 
-    # The conflict is visible on the diary ribbon, not just in the meal row.
-    assert any(b["protein_conflict_active"] for b in rep["buckets_24h"])
+    # Retired nutrition findings must never appear in diary buckets.
+    assert all("protein_conflict_active" not in b for b in rep["buckets_24h"])
 
 
 def test_demo_seed_is_idempotent():
@@ -184,87 +146,8 @@ def test_demo_seed_is_idempotent():
 # --------------------------------------------------------------------------
 # Defect 5: ON/OFF delta used a WEARING_OFF trough as the OFF baseline
 # --------------------------------------------------------------------------
-def test_exam_delta_prefers_a_true_off_baseline_over_a_later_wearing_off():
-    """
-    Rows arrive newest-first. A later WEARING_OFF exam must not shadow a genuine
-    OFF exam, which would understate the measured levodopa response.
-    """
-    exam_rows = [
-        {
-            "timestamp_utc": "2026-10-26T19:30:00Z",
-            "medication_state_label": "WEARING_OFF",
-            "composite_motor_score": 59.1,
-            "voice_score": 60.0,
-            "handwriting_score": 70.0,
-            "gait_score": 50.0,
-            "walk_fog_count": 0,
-            "walk_mean_fi": 1.0,
-            "handwriting_opencv_decay_pct": -10.0,
-            "voice_mean_dbfs": -22.0,
-        },
-        {
-            "timestamp_utc": "2026-10-26T09:15:00Z",
-            "medication_state_label": "ON",
-            "composite_motor_score": 99.3,
-            "voice_score": 98.0,
-            "handwriting_score": 97.8,
-            "gait_score": 100.0,
-            "walk_fog_count": 0,
-            "walk_mean_fi": 0.7,
-            "handwriting_opencv_decay_pct": -6.0,
-            "voice_mean_dbfs": -15.0,
-        },
-        {
-            "timestamp_utc": "2026-10-26T07:30:00Z",
-            "medication_state_label": "OFF",
-            "composite_motor_score": 42.1,
-            "voice_score": 79.8,
-            "handwriting_score": 58.4,
-            "gait_score": 0.0,
-            "walk_fog_count": 2,
-            "walk_mean_fi": 2.95,
-            "handwriting_opencv_decay_pct": -31.0,
-            "voice_mean_dbfs": -25.5,
-        },
-    ]
-    tl = build_24h_diary_timeline([], [], [], [], [], exam_rows, reference_end_utc=datetime(2026,10,26,20,tzinfo=timezone.utc))
-    delta = tl["exam_on_vs_off_delta"]
-    assert delta is not None
-    assert delta["off_baseline_state"] == "OFF"
-    assert delta["off_composite"] == pytest.approx(42.1)
-    assert delta["composite_improvement_pts"] == pytest.approx(57.2, abs=0.05)
 
 
-def test_exam_delta_uses_wearing_off_only_when_no_true_off_exists():
-    exam_rows = [
-        {
-            "timestamp_utc": "2026-10-26T19:30:00Z",
-            "medication_state_label": "WEARING_OFF",
-            "composite_motor_score": 59.1,
-            "voice_score": 60.0,
-            "handwriting_score": 70.0,
-            "gait_score": 50.0,
-            "walk_fog_count": 0,
-            "walk_mean_fi": 1.0,
-            "handwriting_opencv_decay_pct": -10.0,
-            "voice_mean_dbfs": -22.0,
-        },
-        {
-            "timestamp_utc": "2026-10-26T09:15:00Z",
-            "medication_state_label": "ON",
-            "composite_motor_score": 99.3,
-            "voice_score": 98.0,
-            "handwriting_score": 97.8,
-            "gait_score": 100.0,
-            "walk_fog_count": 0,
-            "walk_mean_fi": 0.7,
-            "handwriting_opencv_decay_pct": -6.0,
-            "voice_mean_dbfs": -15.0,
-        },
-    ]
-    delta = build_24h_diary_timeline([], [], [], [], [], exam_rows, reference_end_utc=datetime(2026,10,26,20,tzinfo=timezone.utc))["exam_on_vs_off_delta"]
-    assert delta["off_baseline_state"] == "WEARING_OFF"
-    assert delta["off_composite"] == pytest.approx(59.1)
 
 
 # --------------------------------------------------------------------------

@@ -39,11 +39,6 @@ def test_source_public_tokens_are_not_runtime_defaults(monkeypatch):
             assert http.get("/api/v1/device/connection", headers=headers(token)).status_code == 401
 
 
-def test_production_rejects_research_opt_in(monkeypatch):
-    monkeypatch.setattr(settings, "cadence_env", "production")
-    monkeypatch.setattr(settings, "enable_research_metrics", True)
-    with pytest.raises(RuntimeError, match="ENABLE_RESEARCH_METRICS=false"):
-        auth.validate_security_settings()
 
 
 def test_quota_is_atomic_and_expires_without_sleep():
@@ -90,7 +85,6 @@ def test_paid_routes_share_quota_and_unauthorized_requests_do_not_consume(monkey
             ("/api/v1/companion/interpret", {"text": "hello"}),
             ("/api/v1/reality-check", {"event_uuid": "quota-photo", "user_query": "chair?"}),
             ("/api/v1/handwriting/analyze", {"event_uuid": "quota-writing"}),
-            ("/api/v1/medication/meal-protein", {"event_uuid": "quota-meal"}),
             ("/api/v1/speech/transcribe", {"audio_base64": "AAAA", "purpose": "companion"}),
         ]:
             result = http.post(path, headers=headers(), json=body)

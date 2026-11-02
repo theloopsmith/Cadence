@@ -114,13 +114,6 @@ class MealLogCreate(CadenceModel):
     timestamp_utc: UtcTimestamp = Field(default_factory=utc_now_iso)
 
 
-class MealProteinAnalyzeRequest(CadenceModel):
-    event_uuid: str = Field(..., min_length=4)
-    timestamp_utc: UtcTimestamp = Field(default_factory=utc_now_iso)
-    image_base64: Optional[str] = Field(None, max_length=MAX_IMAGE_BASE64_LENGTH)
-    simulated_masks: Optional[List[Dict[str, Any]]] = Field(None, max_length=50)
-
-
 class RealityCheckRequest(CadenceModel):
     event_uuid: str = Field(..., min_length=4)
     timestamp_utc: UtcTimestamp = Field(default_factory=utc_now_iso)

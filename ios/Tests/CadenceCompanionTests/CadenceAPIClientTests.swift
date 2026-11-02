@@ -111,7 +111,6 @@ final class CadenceAPIClientTests: XCTestCase {
         XCTAssertNotNil(body["image_base64"])
         XCTAssertTrue(result.measured)
         XCTAssertEqual(result.opencvDecayPct, -27.8)
-        XCTAssertEqual(result.micrographiaDetected, true)
     }
 
     /// An unreadable photo comes back unmeasured, and the client must say so
@@ -149,8 +148,6 @@ final class CadenceAPIClientTests: XCTestCase {
             transport.responses = [try JSONSerialization.data(withJSONObject: response)]
             let result = try await makeClient(transport).analyzeHandwriting(jpeg: Data([0xFF]))
             XCTAssertEqual(result.measured, measured)
-            XCTAssertNil(result.micrographiaDetected, "Withheld is not a negative finding")
-            XCTAssertNil(result.handwritingScore)
             XCTAssertEqual(result.opencvDecayPct, measured ? -20 : nil)
         }
     }
@@ -163,8 +160,6 @@ final class CadenceAPIClientTests: XCTestCase {
         let body = try json(transport.requests.first?.body)
         XCTAssertNil(body["image_base64"])
         XCTAssertNotNil(body["timestamp_utc"])
-        XCTAssertNil(result.estimatedProteinGrams)
-        XCTAssertFalse(result.conflictDetected)
     }
 
     func testDoseLogPostsATimestampedEvent() async throws {
@@ -199,10 +194,7 @@ final class CadenceAPIClientTests: XCTestCase {
 
         let report = try await makeClient(transport).fetchReport()
         XCTAssertEqual(transport.requests.first?.method, "GET")
-        XCTAssertEqual(report.summary.onPct, 55.0)
         XCTAssertEqual(report.summary.fogCount, 2)
-        XCTAssertEqual(report.summary.latestExamScore, 76.4)
-        XCTAssertEqual(report.buckets.first?.clinicalState, "ON")
         XCTAssertEqual(report.clinicalNarrative, "Objective 24h Motor Summary.")
     }
 

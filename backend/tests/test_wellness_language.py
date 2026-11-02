@@ -149,11 +149,10 @@ def test_report_narrative_is_plain_and_counts_doses(client):
 def test_meal_reply_is_general_information(client):
     client.post("/api/v1/medication/dose", headers=DEVICE_HEADERS, json={"event_uuid": "plain-dose-002"})
     res = client.post(
-        "/api/v1/medication/meal-protein",
+        "/api/v1/meals/log",
         headers=DEVICE_HEADERS,
         json={
             "event_uuid": "plain-meal-001",
-            "simulated_masks": [{"label": "steak", "area_px": 1000, "confidence": 0.9}],
         },
     )
     spoken = res.json()["spoken_response"]

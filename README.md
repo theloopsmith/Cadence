@@ -77,7 +77,7 @@ CI also runs silent walkthrough/math checks, an isolated dashboard browser-secur
 
 Live SAM + Muse analysis is recorded for an approved [iPhone photo](docs/verification/real-photo-meta-2026-11-01.json) and an [exported glasses photo](docs/verification/glasses-photo-meta-2026-11-01.json). Separate traces cover [Meta intent interpretation](docs/verification/muse-intent-live-2026-11-01.json) and [Muse transcription](docs/verification/muse-transcribe-live-2026-10-29.json). Private photos are not published.
 
-These checks do not establish live DAT capture, audible physical-glasses output, locked-screen continuity or real caregiver delivery. Organizer scope/contribution-date approval and the final submission package remain pending. Production and public-demo startup reject research metrics; simulated task sources are labeled throughout reports.
+These checks do not establish live DAT capture, audible physical-glasses output, locked-screen continuity or real caregiver delivery. Organizer scope/contribution-date approval and the final submission package remain pending. Experimental scoring, medication-state inference and protein estimation have been removed; simulated task sources are labeled throughout reports.
 
 [Documentation index](docs/README.md) · [Verification log and remaining checks](docs/VERIFICATION_LOG.md) · [Static artwork provenance](docs/WALKTHROUGH_DESIGN.md)
 

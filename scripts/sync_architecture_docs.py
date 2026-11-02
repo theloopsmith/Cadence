@@ -89,7 +89,7 @@ def labels(config):
             'c31': 'Still unverified: physical glasses routing, locked-screen continuity and real caregiver delivery. A queued job or provider SID is not human acknowledgment.',
         },
         '3 Meta model calls': {
-            'c2': '<b>Meta model calls — bounded inputs, explicit provenance</b><br/>Public startup pins reviewed model IDs and disables research metrics. Muse proposes search terms; SAM must verify. Service failure and no supported match are distinct; the phone speaks bounded wording.',
+            'c2': '<b>Meta model calls — bounded inputs, explicit provenance</b><br/>Public startup pins reviewed model IDs; experimental scoring and nutrition inference are removed. Muse proposes search terms; SAM must verify. Service failure and no supported match are distinct; the phone speaks bounded wording.',
             'c4': '<b>POST /reality-check</b><br/>General question: Muse image search terms + living-subject SAM probes run concurrently; SAM then verifies object terms. Named objects skip discovery. At most 6 concepts; no absence/safety claims.',
             'c5': f'<b>{config["meta_sam_model"]}</b><br/>Meta /responses, one named concept per call. Parallel concepts; {config["sam_stage_budget_sec"]:g} s stage, {config["interactive_request_budget_sec"]:g} s shared budget. No free-form scene invention.',
             'c6': '<b>Decode and ground</b><br/>Boxes/masks; missing confidence is not zero. Normal area gate 1.5%. Explicitly requested small objects need confidence ≥0.8 and valid ≥16 px box sides.',
@@ -101,7 +101,7 @@ def labels(config):
         },
         '4 Data and sync': {
             'c3': '<b>Phone profile</b><br/>Documents/CadenceDevice/&lt;uuid&gt;/: diary and task files; pill photos; meal photos/notes (local only); labelled captures; SQLite outbox. Meal receipts stamp the original owner, destination and erase generation. JWT in Keychain.',
-            'c5': '<b>Auth and deployment</b><br/>scrypt login budgets; scoped JWTs; account inference quota 30/min + separate check-in transcription quota 60/min (process-local). Static tokens have no built-in values. Public demo: durable secret, static tokens off, simulated transport only, research off and pinned Meta IDs. Caddy HTTPS + one Uvicorn worker.',
+            'c5': '<b>Auth and deployment</b><br/>scrypt login budgets; scoped JWTs; account inference quota 30/min + separate check-in transcription quota 60/min (process-local). Static tokens have no built-in values. Public demo: durable secret, static tokens off, simulated transport only, removed experimental scoring and pinned Meta IDs. Caddy HTTPS + one Uvicorn worker.',
             'c9': '<b>Care-team dashboard</b><br/>Nonce CSP + textContent; scoped readers cannot write. Source column distinguishes simulated/device-reported/unverified checks; paired task provenance in typed API responses. Public schema disabled; generation fences writes.',
             'c21': 'Privacy boundaries: inference media is transient. Medication reference photos, meal photos and notes stay local. Logs/metrics persist by owner. Local reset does not erase server rows; server wipe does not erase phone files. Server caregiver routing is deployment-wide.',
             'c22': 'CI: locked backend dependencies, pytest, generated-diagram freshness, dashboard renderer + browser security, tour/math tests, silent Swift tests, and DAT app compilation with the macOS runner’s supported Xcode.',

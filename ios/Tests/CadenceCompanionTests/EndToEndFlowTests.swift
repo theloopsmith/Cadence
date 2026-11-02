@@ -108,9 +108,7 @@ final class EndToEndFlowTests: XCTestCase {
     /// The exam button's full path: three prompts, submit, raw measurements on screen.
     func testGuidedExamRunsAndShowsMeasurementsNotAScore() async {
         let scored = HomeMotorExamResult(
-            examUUID: "exam-e2e-1", medicationStateLabel: "WEARING_OFF",
-            voiceScore: 86.5, handwritingScore: 72.8, gaitScore: 71.5,
-            compositeMotorScore: 76.4, clinicalSummary: "composite 76.4"
+            examUUID: "exam-e2e-1", clinicalSummary: "Home motor check recorded."
         )
         let stub = StubExamSubmitter(result: scored)
         let mgr = HomeMotorExamManager(submitter: stub, audio: .shared, sync: sync)
@@ -126,7 +124,7 @@ final class EndToEndFlowTests: XCTestCase {
 
         let summary = await mgr.runDemoExam(measurements: m, examUUID: "exam-e2e-1")
         XCTAssertEqual(mgr.currentStep, .completed)
-        XCTAssertEqual(mgr.lastResult?.compositeMotorScore, 76.4)
+        XCTAssertEqual(mgr.lastResult?.examUUID, "exam-e2e-1")
         XCTAssertFalse(summary.contains("WEARING_OFF"))
         XCTAssertTrue(summary.contains("22% smaller"), summary)
         XCTAssertEqual(sync.pendingCount(), 0, "a successful exam must not be queued for retry")

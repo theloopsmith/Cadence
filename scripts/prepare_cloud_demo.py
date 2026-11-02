@@ -26,7 +26,6 @@ def prepare(hostname: str):
     values.update({
         'CADENCE_ENV': 'public_demo', 'JWT_SECRET': existing.get('JWT_SECRET') or secrets.token_urlsafe(48),
         'ALLOW_STATIC_TOKENS': 'false', 'DEMO_MODE': 'true',
-        'ENABLE_RESEARCH_METRICS': 'false',
         'SQLITE_DB_PATH': '/var/lib/cadence/data/demo.sqlite',
         'INTERACTIVE_REQUEST_BUDGET_SEC': '12',
         'SCENE_PROPOSAL_BUDGET_SEC': '7',

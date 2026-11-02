@@ -13,18 +13,16 @@ def test_method_invariant_handwriting_opencv_score():
         image_bytes=None,
         simulated_letter_heights_px=[100.0, 100.0, 100.0, 65.0, 65.0, 65.0],
         simulated_sam_decay_pct=-42.0,
-        include_research_metrics=True,
     )
     r_without_sam = analyze_handwriting_opencv(
         image_bytes=None,
         simulated_letter_heights_px=[100.0, 100.0, 100.0, 65.0, 65.0, 65.0],
         simulated_sam_decay_pct=None,
-        include_research_metrics=True,
     )
     assert r_with_sam["opencv_cc_decay_pct"] == -35.0
-    assert r_with_sam["handwriting_score"] == 52.0
-    assert r_without_sam["handwriting_score"] == 52.0
-    assert r_with_sam["micrographia_detected"] is True
+    assert "handwriting_score" not in r_with_sam
+    assert "handwriting_score" not in r_without_sam
+    assert "micrographia_detected" not in r_with_sam
 
 
 def test_too_few_letters_is_not_scored_as_healthy_writing():
@@ -35,7 +33,7 @@ def test_too_few_letters_is_not_scored_as_healthy_writing():
         simulated_letter_heights_px=[40.0, 20.0, 10.0],
     )
     assert res["measured"] is False
-    assert res["handwriting_score"] is None
+    assert "handwriting_score" not in res
     assert res["opencv_cc_decay_pct"] is None
 
 
@@ -43,9 +41,9 @@ def test_a_missing_or_undecodable_photo_is_not_scored_as_healthy_writing():
     missing = analyze_handwriting_opencv(image_bytes=None)
     garbage = analyze_handwriting_opencv(image_bytes=b"not-a-jpeg")
     assert missing["measured"] is False
-    assert missing["handwriting_score"] is None
+    assert "handwriting_score" not in missing
     assert garbage["measured"] is False
-    assert garbage["handwriting_score"] is None
+    assert "handwriting_score" not in garbage
 
 
 @pytest.fixture
@@ -84,7 +82,6 @@ def test_an_unreadable_line_is_not_stored_or_called_steady(client):
     ([40,18], False, "couldn't read enough"),
 ])
 def test_default_handwriting_contract_withholds_research_fields(client, monkeypatch, heights, measured, description):
-    monkeypatch.setattr(settings, "enable_research_metrics", False)
     response = client.post("/api/v1/handwriting/analyze", headers={"Authorization": f"Bearer {settings.cadence_device_token}"},
         json={"event_uuid":"default-contract", "simulated_letter_heights_px":heights})
     assert response.status_code == 200
@@ -100,7 +97,7 @@ def test_default_measurement_does_not_compute_a_research_finding():
     from app.services.handwriting import compute_decay_from_heights, handwriting_response
     measured = compute_decay_from_heights([40,40,40,20,20,20])
     assert measured["opencv_cc_decay_pct"] == -50
-    assert measured["handwriting_score"] is None
+    assert "handwriting_score" not in measured
     public = handwriting_response({**measured,"future_private_finding":"hidden"})
     assert "micrographia_detected" not in public
     assert "future_private_finding" not in public

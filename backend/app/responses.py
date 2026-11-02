@@ -1,4 +1,4 @@
-"""Explicit output contracts. Optional research fields remain absent unless supplied.
+"""Explicit output contracts. Retired findings are always excluded.
 
 These models do not infer measurement from numbers: task status always travels
 with reported provenance. Device provenance is a client declaration, not hardware
@@ -7,7 +7,6 @@ attestation. Unknown motor/model fields are dropped at the HTTP boundary.
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.config import settings
 
 
 RESEARCH_FIELDS = {
@@ -16,6 +15,7 @@ RESEARCH_FIELDS = {
     "on_pct", "wearing_off_pct", "off_pct", "no_dose_pct", "unknown_pct",
     "latest_exam_score", "exam_on_vs_off_delta", "estimated_protein_grams",
     "conflict_detected", "protein_conflict_active", "micrographia_detected",
+    "detected_foods_json", "plate_detected", "plate_area_ratio",
 }
 
 
@@ -32,8 +32,8 @@ class WireResponse(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def keep_research_out_of_default_outputs(cls, value):
-        return value if settings.enable_research_metrics else observation_projection(value)
+    def keep_retired_findings_out_of_outputs(cls, value):
+        return observation_projection(value)
 
 
 Source = Literal["device", "simulated", "legacy_unverified"]
@@ -63,12 +63,6 @@ class MotorExamResponse(WireResponse):
     walk_fog_count: int | None
     minutes_since_last_dose: int | None
     clinical_summary: str
-    # Compatibility for explicitly opted-in, non-public research environments.
-    medication_state_label: str | None = None
-    voice_score: float | None = None
-    handwriting_score: float | None = None
-    gait_score: float | None = None
-    composite_motor_score: float | None = None
 
 
 class ExamHistoryResponse(WireResponse):
@@ -99,12 +93,6 @@ class SummaryStats(WireResponse):
     alert_queued_count: int
     alert_exhausted_count: int
     check_in_pending_count: int
-    on_pct: float | None = None
-    wearing_off_pct: float | None = None
-    off_pct: float | None = None
-    no_dose_pct: float | None = None
-    latest_exam_score: float | None = None
-    exam_on_vs_off_delta: dict[str, Any] | None = None
 
 
 class NeurologistReportResponse(WireResponse):

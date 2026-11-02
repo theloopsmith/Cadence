@@ -21,7 +21,6 @@ def default_test_settings(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "cadence_clinician_token", "cadence-dev-clinician-reader-token-2026")
     from app import rate_limit
     monkeypatch.setattr(rate_limit, "inference_quota", rate_limit.InferenceQuota())
-    monkeypatch.setattr(settings, "enable_research_metrics", False)
     monkeypatch.setattr(settings, "twilio_account_sid", "")
     monkeypatch.setattr(settings, "twilio_auth_token", "")
     monkeypatch.setattr(settings, "twilio_from_phone", "")
@@ -33,9 +32,3 @@ def default_test_settings(monkeypatch, tmp_path):
     from app.db import init_db_sync
     monkeypatch.setattr(settings, 'sqlite_db_path', str(tmp_path / 'isolated-test.db'))
     init_db_sync()
-
-
-@pytest.fixture
-def research_mode(monkeypatch):
-    """Legacy research tests opt in; ordinary tests match the submitted default."""
-    monkeypatch.setattr(settings, "enable_research_metrics", True)

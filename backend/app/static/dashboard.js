@@ -234,10 +234,6 @@ function element(tag, text, className) {
           entry.style.marginBottom = "6px";
           entry.appendChild(element("strong", m.event_type ?? "Event"));
           entry.appendChild(element("span", ` (${m.timestamp_utc ?? "Unknown time"})`));
-          if (typeof m.estimated_protein_grams === "number" && Number.isFinite(m.estimated_protein_grams)) {
-            entry.appendChild(element("span", ` — ${m.estimated_protein_grams.toFixed(0)}g protein`));
-          }
-          if (m.conflict_detected) entry.appendChild(element("span", "near a dose", "badge badge-WEARING_OFF"));
           mList.appendChild(entry);
         }
 

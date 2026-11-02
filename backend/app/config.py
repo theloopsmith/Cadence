@@ -50,9 +50,6 @@ class Settings(BaseSettings):
             return self.allow_static_tokens
         return not self.is_production and bool(self.cadence_device_token or self.cadence_clinician_token)
 
-    # Legacy experimental derived metrics are excluded from the accessibility API by default.
-    enable_research_metrics: bool = False
-
     # SQLite & Retention
     sqlite_db_path: str = str(Path(__file__).resolve().parent.parent / "cadence_clinical.db")
     # Shared quota across ordinary paid inference routes; process-local, not a billing cap.

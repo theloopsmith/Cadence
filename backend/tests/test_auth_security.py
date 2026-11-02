@@ -304,11 +304,10 @@ def test_seeding_is_refused_when_demo_mode_is_off(server, monkeypatch):
     "path,body",
     [
         ("/api/v1/reality-check", {"event_uuid": "rc-sim-1", "user_query": "anyone?", "simulated_sam_masks": []}),
-        ("/api/v1/medication/meal-protein", {"event_uuid": "meal-sim-1", "simulated_masks": []}),
         ("/api/v1/handwriting/analyze", {"event_uuid": "hw-sim-1", "simulated_letter_heights_px": [40, 40, 30, 20]}),
     ],
 )
-def test_simulated_inputs_are_refused_outside_demo_mode(server, monkeypatch, path, body, research_mode):
+def test_simulated_inputs_are_refused_outside_demo_mode(server, monkeypatch, path, body):
     monkeypatch.setattr(settings, "demo_mode", False)
     token = _login(server, "phone-1", "device pass phrase long enough").json()["access_token"]
     res = server.post(path, headers=_bearer(token), json=body)
@@ -351,7 +350,6 @@ def test_public_demo_requires_accounts_secret_and_simulated_caregiver(monkeypatc
 
 
 @pytest.mark.parametrize("field,value", [
-    ("enable_research_metrics", True),
     ("baseten_model", "non-meta-model"),
     ("meta_sam_model", "unreviewed-segmenter"),
     ("meta_stt_model", "third-party-transcriber"),

@@ -14,7 +14,6 @@ HEADERS = {'Authorization':'Bearer cadence-dev-device-writer-token-2026'}
 @pytest.fixture
 def db(monkeypatch,tmp_path):
     monkeypatch.setattr(settings,'sqlite_db_path',str(tmp_path/'report.db'))
-    monkeypatch.setattr(settings,'enable_research_metrics',False)
     init_db_sync()
 
 def fog(uuid,at,pid='default_patient'):
@@ -35,8 +34,7 @@ def test_exact_utc_window_excludes_stale_future_invalid_and_other_wearers(db):
 def test_empty_or_dose_only_periods_do_not_imply_monitoring_or_good_health():
     timeline=build_24h_diary_timeline([],[],[{'timestamp_utc':(END-timedelta(minutes=1)).isoformat(),'event_type':'dose_taken'}],[],[],[],reference_end_utc=END)
     assert len(timeline['buckets'])==48
-    assert timeline['unknown_pct']==100
-    assert timeline['on_pct']==0
+    assert 'unknown_pct' not in timeline and 'on_pct' not in timeline
     assert timeline['buckets'][-1]['observation_status']=='events_logged'
     assert all(b['monitoring_coverage']=='unknown' for b in timeline['buckets'])
     assert sum(b['observation_status']=='no_observations' for b in timeline['buckets'])==47

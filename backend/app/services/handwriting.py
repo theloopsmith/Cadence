@@ -9,13 +9,11 @@ def unreadable_handwriting() -> Dict[str, Any]:
         "initial_stroke_height_px": None,
         "final_stroke_height_px": None,
         "opencv_cc_decay_pct": None,
-        "handwriting_score": None,
-        "micrographia_detected": False,
         "measured": False,
     }
 
 
-def compute_decay_from_heights(heights_px: List[float], *, include_research_metrics: bool = False) -> Dict[str, Any]:
+def compute_decay_from_heights(heights_px: List[float]) -> Dict[str, Any]:
     """
     Computes progressive stroke height change (opencv_cc_decay_pct) from ordered
     character bounding box heights [h_1, ..., h_M].
@@ -34,21 +32,10 @@ def compute_decay_from_heights(heights_px: List[float], *, include_research_metr
     else:
         decay_pct = round(((h_last - h_first) / h_first) * 100.0, 1)
 
-    # Default submission mode computes observations only. The false flag is
-    # a legacy storage placeholder, withheld from the public response.
-    writing_score = None
-    micrographia_detected = False
-    if include_research_metrics:
-        shrinkage_pct = max(0.0, -decay_pct - 5.0)
-        writing_score = round(max(0.0, min(100.0, 100.0 - 1.6 * shrinkage_pct)), 1)
-        micrographia_detected = decay_pct <= -20.0
-
     return {
         "initial_stroke_height_px": round(h_first, 1),
         "final_stroke_height_px": round(h_last, 1),
         "opencv_cc_decay_pct": decay_pct,
-        "handwriting_score": writing_score,
-        "micrographia_detected": micrographia_detected,
         "measured": True,
     }
 
@@ -57,18 +44,16 @@ def analyze_handwriting_opencv(
     image_bytes: Optional[bytes],
     simulated_letter_heights_px: Optional[List[float]] = None,
     simulated_sam_decay_pct: Optional[float] = None,
-    include_research_metrics: bool = False,
 ) -> Dict[str, Any]:
     """
     Always-on local CPU OpenCV deskew + connected-components stroke height analyzer (<8ms).
-    Research mode derives its optional score from this same measurement. Default
-    mode computes only stroke-height observations, without classifying handwriting.
+    Computes stroke-height observations without classifying handwriting.
     """
     boxes: List[Dict[str, int]] = []
     deskew_angle = 0.0
 
     if simulated_letter_heights_px is not None:
-        metrics = compute_decay_from_heights(simulated_letter_heights_px, include_research_metrics=include_research_metrics)
+        metrics = compute_decay_from_heights(simulated_letter_heights_px)
         for idx, h in enumerate(simulated_letter_heights_px):
             boxes.append({"x": idx * 24, "y": 40, "w": 16, "h": int(round(h))})
         return {
@@ -129,7 +114,7 @@ def analyze_handwriting_opencv(
 
     raw_boxes.sort(key=lambda b: b["x"])
     heights = [float(b["h"]) for b in raw_boxes]
-    metrics = compute_decay_from_heights(heights, include_research_metrics=include_research_metrics)
+    metrics = compute_decay_from_heights(heights)
     return {
         **metrics,
         "sam_3_1_decay_pct": simulated_sam_decay_pct,
@@ -144,7 +129,5 @@ OBSERVATION_FIELDS = frozenset(("event_uuid", "measured", "initial_stroke_height
     "final_stroke_height_px", "opencv_cc_decay_pct", "sam_3_1_decay_pct",
     "deskew_angle_deg", "letter_boxes", "spoken_response"))
 
-def handwriting_response(result: Dict[str, Any], *, include_research_metrics: bool = False) -> Dict[str, Any]:
-    if include_research_metrics:
-        return dict(result)
+def handwriting_response(result: Dict[str, Any]) -> Dict[str, Any]:
     return {key: value for key, value in result.items() if key in OBSERVATION_FIELDS}

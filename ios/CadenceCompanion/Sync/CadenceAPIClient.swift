@@ -113,9 +113,6 @@ public struct HandwritingResult: Decodable {
     public let measured: Bool
     public let opencvDecayPct: Double?
     public let sam31DecayPct: Double?
-    public let handwritingScore: Double?
-    /// Withheld in the accessibility-only response; nil must not mean false.
-    public let micrographiaDetected: Bool?
     public let spokenResponse: String
 
     enum CodingKeys: String, CodingKey {
@@ -123,8 +120,6 @@ public struct HandwritingResult: Decodable {
         case measured
         case opencvDecayPct = "opencv_cc_decay_pct"
         case sam31DecayPct = "sam_3_1_decay_pct"
-        case handwritingScore = "handwriting_score"
-        case micrographiaDetected = "micrographia_detected"
         case spokenResponse = "spoken_response"
     }
 }
@@ -134,30 +129,11 @@ public enum HandwritingSourceContext: String {
     case homeMotorExam = "home_motor_exam"
 }
 
-public struct MealProteinResult: Decodable {
-    public struct Item: Decodable {
-        public let label: String
-        public let estimatedGrams: Double
-
-        enum CodingKeys: String, CodingKey {
-            case label
-            case estimatedGrams = "estimated_grams"
-        }
-    }
-
+public struct MealLogResult: Decodable {
     public let eventUUID: String
-    public let estimatedProteinGrams: Double?
-    public let plateDetected: Bool
-    public let conflictDetected: Bool
-    public let items: [Item]
     public let spokenResponse: String
-
     enum CodingKeys: String, CodingKey {
         case eventUUID = "event_uuid"
-        case estimatedProteinGrams = "estimated_protein_grams"
-        case plateDetected = "plate_detected"
-        case conflictDetected = "conflict_detected"
-        case items
         case spokenResponse = "spoken_response"
     }
 }
@@ -187,14 +163,9 @@ public struct ReportMetadata: Decodable {
 }
 
 public struct ReportSummary: Decodable {
-    public let onPct: Double?
-    public let wearingOffPct: Double?
-    public let offPct: Double?
-    public let noDosePct: Double?
     public let fogCount: Int
     public let fallCount: Int
     public let fallCandidateResolvedCount: Int
-    public let latestExamScore: Double?
     /// Doses logged in the last 24 hours. Absent from older servers.
     public let caregiverProviderAcceptedCount: Int?
     public let caregiverAcknowledgedCount: Int?
@@ -206,14 +177,9 @@ public struct ReportSummary: Decodable {
         case caregiverAcknowledgedCount = "caregiver_acknowledged_count"
         case simulatedAlertCount = "simulated_alert_count"
         case doseCount = "dose_count"
-        case onPct = "on_pct"
-        case wearingOffPct = "wearing_off_pct"
-        case offPct = "off_pct"
-        case noDosePct = "no_dose_pct"
         case fogCount = "fog_count"
         case fallCount = "fall_count"
         case fallCandidateResolvedCount = "fall_candidate_resolved_count"
-        case latestExamScore = "latest_exam_score"
     }
 }
 
@@ -222,8 +188,6 @@ public struct DiaryBucket: Decodable, Identifiable {
     public let bucketStartUTC: String?
     public let observationStatus: String?
     public let labelHHMM: String
-    public let clinicalState: String?
-    public let symptomBurdenScore: Double?
     public let fogCount: Int?
     public let fallOccurred: Bool?
     public let hasExam: Bool?
@@ -232,8 +196,6 @@ public struct DiaryBucket: Decodable, Identifiable {
         case bucketStartUTC = "bucket_start_utc"
         case observationStatus = "observation_status"
         case labelHHMM = "label_hhmm"
-        case clinicalState = "clinical_state"
-        case symptomBurdenScore = "symptom_burden_score"
         case fogCount = "fog_count"
         case fallOccurred = "fall_occurred"
         case hasExam = "has_exam"
@@ -331,7 +293,7 @@ public struct CadenceAPIClient {
         )
     }
 
-    public func logMeal(jpeg: Data) async throws -> MealProteinResult {
+    public func logMeal(jpeg: Data) async throws -> MealLogResult {
         try await post(
             "/api/v1/meals/log",
             body: [

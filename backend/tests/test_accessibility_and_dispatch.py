@@ -14,7 +14,6 @@ from app.services.reality_check import render_grounded_template
 @pytest.fixture
 def http(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, 'sqlite_db_path', str(tmp_path / 'boundary.db'))
-    monkeypatch.setattr(settings, 'enable_research_metrics', False)
     init_db_sync()
     with TestClient(app) as client:
         yield client
@@ -64,8 +63,8 @@ def test_meal_logging_uses_no_inference_or_nutrition_claim(http, monkeypatch):
     result = http.post('/api/v1/meals/log', headers=headers(), json={'event_uuid': 'meal-boundary'})
     assert result.status_code == 200
     body = result.json()
-    assert body['estimated_protein_grams'] is None
-    assert body['conflict_detected'] is False
+    assert 'estimated_protein_grams' not in body
+    assert 'conflict_detected' not in body
     assert body['spoken_response'] == 'Meal time logged in your routine diary.'
 
 def test_default_report_omits_interpreted_states(http):
