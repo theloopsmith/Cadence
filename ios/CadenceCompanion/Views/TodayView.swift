@@ -346,8 +346,8 @@ struct TodayView: View {
                 Divider().padding(.vertical, 2)
 
                 actionRow(
-                    title: "Describe a photo",
-                    subtitle: "Review a photo from your glasses",
+                    title: "Check my surroundings",
+                    subtitle: "Take a photo to help identify what’s around you",
                     icon: "eye.fill",
                     tint: CadenceTheme.calm
                 ) {
@@ -393,8 +393,8 @@ struct TodayView: View {
             Divider().padding(.vertical, 2)
 
             actionRow(
-                title: "Describe a photo",
-                subtitle: "Choose a photo, then hear a description",
+                title: "Check my surroundings",
+                subtitle: "Take a photo to help identify what’s around you",
                 icon: "eye.fill",
                 tint: CadenceTheme.calm
             ) {
