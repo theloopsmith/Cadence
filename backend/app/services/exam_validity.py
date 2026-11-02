@@ -8,6 +8,9 @@ TASK_FIELDS = {
 
 def measured_exam(row):
     result = dict(row)
+    source = result.setdefault("measurement_source", "legacy_unverified")
+    result["task_evidence"] = {task: {"status": result.get(task+"_status", "legacy_unverified"),
+                                      "measurement_source": source} for task in TASK_FIELDS}
     for task, fields in TASK_FIELDS.items():
         if result.get(task+'_status', 'legacy_unverified') != 'measured':
             for field in fields:
@@ -17,8 +20,8 @@ def measured_exam(row):
         for field in ('composite_motor_score','medication_state_label','symptom_burden_score'):
             result[field] = None
     if 'clinical_summary' in result:
-        from app.services.plain_language import describe_task_metrics
-        result['clinical_summary'] = 'Home motor check: ' + describe_task_metrics(
+        from app.services.plain_language import describe_task_metrics, exam_source_words
+        result['clinical_summary'] = 'Home motor check (' + exam_source_words(source) + '): ' + describe_task_metrics(
             result.get('voice_mean_dbfs'), result.get('handwriting_opencv_decay_pct'),
             result.get('walk_cadence_spm'), result.get('walk_fog_count')) + '.'
     result['complete'] = complete

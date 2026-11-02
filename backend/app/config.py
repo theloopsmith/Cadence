@@ -1,4 +1,7 @@
+from pathlib import Path
 from typing import Optional
+
+from pydantic import Field, field_validator
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,11 +26,11 @@ class Settings(BaseSettings):
     # falls waiting on the phone every night.
     jwt_device_ttl_days: int = 30
 
-    # Shared bearer tokens for local development and the demo. Never enabled in
-    # production unless CADENCE_ALLOW_STATIC_TOKENS=true is set on purpose.
+    # Optional local-development bearer tokens. No built-in credentials;
+    # public demo and production require account sign-in instead.
     allow_static_tokens: Optional[bool] = None
-    cadence_device_token: str = "cadence-dev-device-writer-token-2026"
-    cadence_clinician_token: str = "cadence-dev-clinician-reader-token-2026"
+    cadence_device_token: str = ""
+    cadence_clinician_token: str = ""
     cadence_default_patient_id: str = "default_patient"
 
     # Demo seed endpoint and `simulated_*` request fields. Off in production.
@@ -45,13 +48,26 @@ class Settings(BaseSettings):
     def static_tokens_enabled(self) -> bool:
         if self.allow_static_tokens is not None:
             return self.allow_static_tokens
-        return not self.is_production
+        return not self.is_production and bool(self.cadence_device_token or self.cadence_clinician_token)
 
     # Legacy experimental derived metrics are excluded from the accessibility API by default.
     enable_research_metrics: bool = False
 
     # SQLite & Retention
-    sqlite_db_path: str = "./cadence_clinical.db"
+    sqlite_db_path: str = str(Path(__file__).resolve().parent.parent / "cadence_clinical.db")
+    # Shared quota across ordinary paid inference routes; process-local, not a billing cap.
+    inference_requests_per_minute: int = Field(default=30, ge=1, le=1000)
+
+    @field_validator("sqlite_db_path")
+    @classmethod
+    def absolute_database_path(cls, value: str) -> str:
+        if value == ":memory:":
+            return value
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parent.parent / path
+        return str(path.resolve())
+
     sqlite_encryption_key: str = ""
     retention_days: int = 30
     retention_incident_days: int = 365

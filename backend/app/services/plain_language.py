@@ -39,7 +39,7 @@ def describe_task_metrics(
 ) -> str:
     parts: List[str] = [describe_letter_change(handwriting_decay_pct)]
     if voice_mean_dbfs is not None:
-        parts.append(f"the “Ahhh” averaged {round(voice_mean_dbfs)} dB")
+        parts.append(f"the “Ahhh” averaged {round(voice_mean_dbfs)} dBFS")
     else:
         parts.append("voice was not measured")
     if walk_cadence_spm is not None:
@@ -49,6 +49,10 @@ def describe_task_metrics(
     if walk_fog_count:
         parts.append(f"{_plural(int(walk_fog_count), 'freeze', 'freezes')} during the walk")
     return ", ".join(parts)
+
+
+def exam_source_words(source: Optional[str]) -> str:
+    return {"simulated": "simulated sample", "device": "device-reported"}.get(source, "source unverified")
 
 
 def summarize_day(stats: Dict[str, Any]) -> str:
@@ -86,7 +90,7 @@ def summarize_day(stats: Dict[str, Any]) -> str:
     metrics = stats.get("latest_exam_metrics")
     if metrics:
         sentences.append(
-            "Latest motor check: "
+            "Latest motor check (" + exam_source_words(metrics.get("measurement_source")) + "): "
             + describe_task_metrics(
                 voice_mean_dbfs=metrics.get("voice_mean_dbfs"),
                 handwriting_decay_pct=metrics.get("handwriting_opencv_decay_pct"),

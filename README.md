@@ -6,7 +6,7 @@
 
 [Experience a day with Cadence](https://cadence-companion.duckdns.org/walkthrough) · [Animated “How it works”](https://cadence-companion.duckdns.org/walkthrough#how-it-works) · [Care dashboard](https://cadence-companion.duckdns.org/dashboard)
 
-> **Judges Demo Access**: Click **⚡ 1-Click Judge Sign-In** on the [care dashboard](https://cadence-companion.duckdns.org/dashboard) or use credentials `demo-reviewer` / `cadence-demo-2026`. To run live Meta inference on the backend, expand the judges' section on the [walkthrough](https://cadence-companion.duckdns.org/walkthrough) (`demo-wearer` / `cadence-demo-2026`).
+> **Judges Demo Access**: Click **⚡ 1-Click Judge Sign-In** on the [care dashboard](https://cadence-companion.duckdns.org/dashboard) or use credentials `demo-reviewer` / `cadence-demo-2026`. To run live Meta inference on the backend, expand the judges' section on the [walkthrough](https://cadence-companion.duckdns.org/walkthrough) (`demo-wearer` / `cadence-demo-2026`). These are temporary, sandboxed evaluation credentials intended only for the judging window. The reviewer is read-only; the wearer can create synthetic records and use limited live inference. Do not enter personal or clinical information. The operator must retire these accounts after judging; automatic expiry is not configured.
 
 ![Cadence architecture: glasses, iPhone app, protected backend and care connection](docs/assets/architecture-flow.gif)
 
@@ -64,6 +64,8 @@ It supports rhythmic walking cues, suspected-fall check-ins, attempts to contact
 - **Routine diary:** reminders of an existing prescribed schedule, factual activity/task measurements, and meal timestamps. Meal logging does not estimate nutrients or advise on medication absorption or timing.
 - **Daily summary:** counts and raw measurements. Derived medication states, symptom scores, and nutrition/conflict outputs are excluded by default (`ENABLE_RESEARCH_METRICS=false`). Legacy experimental formulas and API identifiers remain for compatibility; the optional research mode is outside the accessibility submission scope.
 
+**Submission claims:** SAM and Muse Spark Open have live traces on owner-approved real photos/queries; Muse Voice Transcribe has a separate live audio transcription trace. Motion processing and speech playback are on-device, with configured glasses routes and phone fallback; physical glasses capture/audio acceptance remains pending. Caregiver SMS/voice escalation is deliberately simulated in the public demo. This wording also applies to the video and submission text.
+
 This scope is a product boundary, not a statement of organizer approval. The supplied guide lists medical-advice and nutrition-coaching anti-project examples. An organizer clarification is drafted in the [verification log](docs/VERIFICATION_LOG.md#scope-and-positioning-oct-29); it has not been sent. No inference provider, physical hardware path, or real caregiver delivery should be described as verified solely because its configuration or mock tests work.
 
 ## Run and test
@@ -80,7 +82,7 @@ cd backend && .venv/bin/python -m pytest -q && cd ..
 CADENCE_TEST_SILENT_AUDIO=1 ./scripts/test_ios.sh
 ```
 
-For a physical iPhone on the Mac's Wi-Fi, run `python3 scripts/run_phone_backend.py`. It starts a LAN development server on port 8001, prints the address to enter in iPhone Settings, and keeps phone-login credentials in ignored `.local/phone-login.txt`. Real caregiver SMS/calls are disabled in this server.
+For a physical iPhone on the Mac's Wi-Fi, run `python3 scripts/run_phone_backend.py`. It starts a LAN development server on port 8001, prints the address to enter in iPhone Settings, and keeps phone-login credentials in ignored `.local/phone-login.txt`. Real caregiver SMS/calls and static development tokens are disabled in this server. Sign in using the generated account.
 
 `localhost` in the iPhone app refers to the iPhone, not the Mac. Use the printed `.local` hostname or the Mac's LAN IP. The updated Settings flow can repair an existing localhost binding while preserving the phone's history and queued events.
 

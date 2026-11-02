@@ -41,7 +41,7 @@ def test_task_metrics_are_raw_measurements():
         walk_fog_count=1,
     )
     assert "letters got 35% smaller across the line" in text
-    assert "-28 dB" in text
+    assert "-28 dBFS" in text
     assert "85 steps a minute" in text
     assert "1 freeze during the walk" in text
     assert_plain(text)

@@ -51,6 +51,8 @@ from app.security import (
     require_device_writer,
     verify_twilio_signature,
 )
+from app.responses import ExamHistoryResponse, NeurologistReportResponse, RealityCheckResponse, DroppedEventResponse
+from app.rate_limit import consume_inference, require_metered_writer
 from app.errors import install_error_handlers
 from app.services.dose_clock import dose_timestamp_at_or_before, parse_utc
 from app.services.plain_language import describe_task_metrics
@@ -79,7 +81,7 @@ async def lifespan(app: FastAPI):
     if settings.static_tokens_enabled and not settings.public_webhook_base_url.startswith(("http://localhost", "http://127.0.0.1")):
         logging.getLogger("cadence").warning(
             "Shared development bearer tokens are enabled while PUBLIC_WEBHOOK_BASE_URL is %s. "
-            "Anyone with the public repository can write to this server. Set ALLOW_STATIC_TOKENS=false.",
+            "Use account sign-in and ALLOW_STATIC_TOKENS=false for LAN access.",
             settings.public_webhook_base_url,
         )
     await init_db()
@@ -266,9 +268,11 @@ def _validated_wav(audio_base64: str) -> bytes:
 @app.post("/api/v1/speech/transcribe")
 async def transcribe_speech(
     payload: SpeechTranscribeRequest,
+    request: Request,
     auth: AuthContext = Depends(require_device_writer),
 ) -> Dict[str, Any]:
     """Second listener next to the phone's on-device recognizer. Audio is not stored."""
+    consume_inference(request, auth, urgent=payload.purpose == "fall_check_in")
     wav_bytes = _validated_wav(payload.audio_base64)
     extra = [k.strip()[:40] for k in payload.keywords if k.strip()]
     base = check_in_keywords() if payload.purpose == "fall_check_in" else dose_keywords()
@@ -286,7 +290,7 @@ async def transcribe_speech(
 @app.post("/api/v1/companion/interpret")
 async def interpret_companion(
     payload: CompanionInterpretRequest,
-    auth: AuthContext = Depends(require_device_writer),
+    auth: AuthContext = Depends(require_metered_writer),
 ) -> Dict[str, Any]:
     from app.services.companion import interpret
     return await interpret(payload.text, payload.history)
@@ -516,7 +520,7 @@ async def log_meal_time(payload: MealLogCreate, auth: AuthContext = Depends(requ
 @app.post("/api/v1/medication/meal-protein", deprecated=True)
 async def analyze_meal_protein(
     payload: MealProteinAnalyzeRequest,
-    auth: AuthContext = Depends(require_device_writer),
+    auth: AuthContext = Depends(require_metered_writer),
 ) -> Dict[str, Any]:
     if not settings.enable_research_metrics:
         return await log_meal_time(MealLogCreate(event_uuid=payload.event_uuid, timestamp_utc=payload.timestamp_utc), auth)
@@ -578,10 +582,10 @@ async def analyze_meal_protein(
 
 
 # ==================== PIPELINE 4: HALLUCINATION REALITY CHECK ====================
-@app.post("/api/v1/reality-check")
+@app.post("/api/v1/reality-check", response_model=RealityCheckResponse | DroppedEventResponse, response_model_exclude_unset=True)
 async def reality_check_endpoint(
     payload: RealityCheckRequest,
-    auth: AuthContext = Depends(require_device_writer),
+    auth: AuthContext = Depends(require_metered_writer),
 ) -> Dict[str, Any]:
     if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
@@ -632,7 +636,7 @@ async def reality_check_endpoint(
 @app.post("/api/v1/handwriting/analyze")
 async def analyze_handwriting_endpoint(
     payload: HandwritingAnalyzeRequest,
-    auth: AuthContext = Depends(require_device_writer),
+    auth: AuthContext = Depends(require_metered_writer),
 ) -> Dict[str, Any]:
     if await check_event_wiped(auth.patient_id, payload.timestamp_utc, auth.data_generation):
         return {"status": "dropped_wiped", "event_uuid": payload.event_uuid}
@@ -792,7 +796,7 @@ def _exam_response(row):
     return result
 
 
-@app.get("/api/v1/exam/history")
+@app.get("/api/v1/exam/history", response_model=ExamHistoryResponse, response_model_exclude_unset=True)
 async def get_exam_history(
     auth: AuthContext = Depends(require_any_authenticated_role),
 ) -> Dict[str, Any]:
@@ -809,7 +813,7 @@ async def get_exam_history(
 
 
 # ==================== PIPELINE 7: NEUROLOGIST REPORT & PATIENT WIPE ====================
-@app.get("/api/v1/report/neurologist")
+@app.get("/api/v1/report/neurologist", response_model=NeurologistReportResponse, response_model_exclude_unset=True)
 async def get_neurologist_report(
     auth: AuthContext = Depends(require_any_authenticated_role),
 ) -> Dict[str, Any]:
@@ -864,6 +868,8 @@ async def get_neurologist_report(
         ),
         "latest_exam_metrics": (
             {
+                "measurement_source": exam_rows[0]["measurement_source"],
+                "task_evidence": exam_rows[0]["task_evidence"],
                 "voice_mean_dbfs": exam_rows[0]["voice_mean_dbfs"],
                 "handwriting_opencv_decay_pct": exam_rows[0]["handwriting_opencv_decay_pct"],
                 "walk_cadence_spm": exam_rows[0]["walk_cadence_spm"],

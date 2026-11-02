@@ -35,6 +35,7 @@ def test_phone_launcher_advertises_without_credentials_and_cleans_up(tmp_path, m
     advertiser.wait.assert_called_once_with(timeout=5)
     assert login.read_bytes() == original_login
     env = call.call_args.kwargs['env']
+    assert env['ALLOW_STATIC_TOKENS'] == 'false'
     assert env['TWILIO_AUTH_TOKEN'] == ''
     assert env['CAREGIVER_PRIMARY_PHONE'] == ''
     assert '--host' in call.call_args.args[0]

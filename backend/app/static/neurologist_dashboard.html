@@ -294,10 +294,9 @@
       transition: transform 0.12s ease;
     }
     .bucket-pill:hover { transform: scale(1.04); }
-    .bucket-ON { background: #059669; border-color: #10b981; }
-    .bucket-WEARING_OFF { background: #b45309; border-color: #f59e0b; }
-    .bucket-OFF { background: #b91c1c; border-color: #ef4444; }
-    .bucket-NO_DOSE, .bucket-UNKNOWN { background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); }
+    .bucket-PAUSES { background: #b45309; border-color: #f59e0b; }
+    .bucket-SAFETY { background: #b91c1c; border-color: #ef4444; }
+    .bucket-UNKNOWN { background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); }
     .bucket-LOGGED { background: #0369a1; border-color: #38bdf8; }
 
     /* Tables */
@@ -423,10 +422,10 @@
 
   <div class="container">
     <div class="dashboard-header">
-      <p class="dashboard-eyebrow">Neurology &amp; Movement Disorders View</p>
-      <h2 class="dashboard-title">Daily Clinical Summary</h2>
+      <p class="dashboard-eyebrow">Daily Living &amp; Task Observations</p>
+      <h2 class="dashboard-title">Daily Living Summary</h2>
       <p class="dashboard-subtitle">
-        Objective motor telemetry, medication timeline, and incident logs recorded from Cadence. Non-diagnostic observational record for neurologist review.
+        Recorded task observations, routine timestamps and check-ins. Sample records are labeled; no diagnosis or medication-state inference.
       </p>
     </div>
 
@@ -436,18 +435,18 @@
         <div>
           <span class="metric-label" style="color: var(--blue);">Interactive Pipeline Simulator</span>
           <p style="font-size: 12px; color: var(--text-secondary); margin: 2px 0 0;">
-            Live API triggers simulating Meta glasses events and cloud inference
+            Synthetic event inputs. Browser voice previews; no physical glasses capture. Public-demo caregiver delivery is simulated.
           </p>
         </div>
         <span id="glassesAudioBanner">
-          🔊 Glasses Audio: Ready
+          Browser voice preview: Ready
         </span>
       </div>
       <div class="sim-grid">
         <button class="btn-sim" id="fogButton">1. 🦶 Walking Pause (100 BPM Cue)</button>
-        <button class="btn-sim" id="mealButton">2. 🥩 Levodopa + High-Protein Meal</button>
+        <button class="btn-sim" id="mealButton">2. Dose + Meal Timestamp</button>
         <button class="btn-sim" id="realityButton">3. 👁️ Look Around (SAM Grounding)</button>
-        <button class="btn-sim" id="writingButton">4. ✍️ Handwriting Micrographia</button>
+        <button class="btn-sim" id="writingButton">4. ✍️ Handwriting Size Sample</button>
         <button class="btn-sim" id="examButton">5. 🩺 3-Step Guided Motor Check</button>
         <button class="btn-sim" id="fallButton">6. 🚨 Fall Detection &amp; Caregiver Alert</button>
       </div>
@@ -460,7 +459,7 @@
         <span id="reportMetadata" style="font-size: 12px; color: var(--text-secondary);">Loading interval…</span>
       </div>
       <p id="narrativeText" class="narrative-box">
-        Click "Seed Routine" above to load a representative patient day, or use the interactive pipeline buttons to log individual clinical events.
+        Click "Seed Routine" above to load a representative patient day, or use the interactive pipeline buttons to log individual sample events.
       </p>
     </div>
 
@@ -511,16 +510,17 @@
           <thead>
             <tr>
               <th>Timestamp (UTC)</th>
-              <th>Voice (“Ahhh”, dB)</th>
+              <th>Voice (“Ahhh”, dBFS)</th>
               <th>Voice Steadiness (dB Spread)</th>
-              <th>Handwriting Decay (Micrographia)</th>
+              <th>Handwriting Size Change</th>
               <th>Cadence (SPM)</th>
               <th>Walking Pauses</th>
               <th>Post-Dose Timing</th>
+              <th>Source</th>
             </tr>
           </thead>
           <tbody id="examTableBody">
-            <tr><td colspan="7" style="color: var(--text-secondary);">No exam rows loaded yet. Click "⚡ Seed Routine" to populate.</td></tr>
+            <tr><td colspan="8" style="color: var(--text-secondary);">No exam rows loaded yet. Click "⚡ Seed Routine" to populate.</td></tr>
           </tbody>
         </table>
       </div>

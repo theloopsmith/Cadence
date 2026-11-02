@@ -17,6 +17,7 @@ class AuthContext:
     role: str          # "device_writer" | "clinician_reader"
     patient_id: str    # Bound patient_id for tenant isolation
     data_generation: int = 0
+    subject: str = ""
 
 
 def get_auth_context(
@@ -32,7 +33,7 @@ def get_auth_context(
     token = credentials.credentials
     claims = decode_token(token)
     if claims is not None:
-        return AuthContext(role=claims["role"], patient_id=claims["pid"], data_generation=data_generation)
+        return AuthContext(role=claims["role"], patient_id=claims["pid"], data_generation=data_generation, subject=claims["sub"])
 
     if settings.static_tokens_enabled:
         if secrets.compare_digest(token, settings.cadence_device_token):

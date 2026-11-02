@@ -46,7 +46,7 @@ def main():
     local = ROOT / '.local'
     local.mkdir(mode=0o700, exist_ok=True)
     env = dict(os.environ, SQLITE_DB_PATH=str(local / 'phone-server.sqlite'),
-               CADENCE_ENV='development', DEMO_MODE='true', ALLOW_STATIC_TOKENS='true',
+               CADENCE_ENV='development', DEMO_MODE='true', ALLOW_STATIC_TOKENS='false',
                TWILIO_ACCOUNT_SID='', TWILIO_AUTH_TOKEN='', TWILIO_FROM_PHONE='',
                TWILIO_API_KEY_SID='', TWILIO_API_KEY_SECRET='',
                CAREGIVER_PRIMARY_PHONE='', CAREGIVER_SECONDARY_PHONE='')

@@ -1,3 +1,9 @@
+import os
+
+# Explicit test-only credentials, installed before modules build request headers.
+os.environ["CADENCE_DEVICE_TOKEN"] = "cadence-dev-device-writer-token-2026"
+os.environ["CADENCE_CLINICIAN_TOKEN"] = "cadence-dev-clinician-reader-token-2026"
+
 import pytest
 from app.config import settings
 
@@ -9,6 +15,12 @@ def default_test_settings(monkeypatch, tmp_path):
     by default, so they do not make real outbound phone calls or network
     calls unless a test explicitly configures credentials.
     """
+    monkeypatch.setattr(settings, "cadence_env", "test")
+    monkeypatch.setattr(settings, "allow_static_tokens", None)
+    monkeypatch.setattr(settings, "cadence_device_token", "cadence-dev-device-writer-token-2026")
+    monkeypatch.setattr(settings, "cadence_clinician_token", "cadence-dev-clinician-reader-token-2026")
+    from app import rate_limit
+    monkeypatch.setattr(rate_limit, "inference_quota", rate_limit.InferenceQuota())
     monkeypatch.setattr(settings, "enable_research_metrics", False)
     monkeypatch.setattr(settings, "twilio_account_sid", "")
     monkeypatch.setattr(settings, "twilio_auth_token", "")

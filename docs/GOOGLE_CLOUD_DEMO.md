@@ -8,7 +8,7 @@ Target project: `ultra-concord-513321-q3`. This deploys a synthetic/demo environ
 - Interactive Smart Glasses Walkthrough: <https://cadence-companion.duckdns.org/walkthrough> (alias: `/demo`)
 - Caregiver/reviewer dashboard: <https://cadence-companion.duckdns.org/dashboard>
 - Phone server origin: `https://cadence-companion.duckdns.org` (fallback IP origin: `https://35.209.6.236.sslip.io`)
-- Phone username: `demo-wearer`; dashboard username: `demo-reviewer`. Their separate passwords are in private, ignored `.local/gcp-demo/accounts.env`. Never embed them in a submission, public README or app build. Share judge access privately.
+- Published sandbox evaluation access: `demo-reviewer` / `cadence-demo-2026` for read-only review; `demo-wearer` / `cadence-demo-2026` for synthetic writes and limited live inference. These temporary credentials are intended only for the judging window. They are not production credentials; do not submit personal/clinical data. Retire both accounts after judging and invalidate their existing tokens; automatic expiry is not configured.
 - In the iPhone app, open Settings, expand the developer options, and use Account and local history to enter the HTTPS origin and phone account. A new server/account is a separate profile: preserve/export existing local records before any deliberate local reset. Do not bypass the account-bound queue guard or repoint another wearer's pending records.
 - For a fresh demo build, Xcode's `CADENCE_SERVER_URL` build setting can provide this origin through the existing Info.plist setting. Existing saved server preferences take precedence; no phone's profile was changed during deployment.
 - Public TLS, anonymous/static-token rejection, both account roles, reader write rejection, a live Muse Spark Open classification, and persistence of a synthetic record/server identity/original JWTs across a service restart all passed. Physical iPhone/glasses use and real caregiver delivery remain unverified; delivery is intentionally simulated.
@@ -20,7 +20,9 @@ Target project: `ultra-concord-513321-q3`. This deploys a synthetic/demo environ
 - Static IPv4 address and automatic HTTPS via Caddy. The default hostname uses the address under `sslip.io`; an owned hostname can be supplied instead. Certificate issuance and DNS must be verified before sharing.
 - Dedicated VPC, only public TCP 80/443, SSH reachable through Google's IAP source range. No Google service account is attached to the VM.
 - `public_demo` startup requires a persistent signing secret, disabled static development tokens, enabled simulated transports, no Twilio credentials, disabled research metrics, and the reviewed Meta model IDs. Interactive API docs/schema are unavailable on the public demo.
-- `demo-wearer` is the iPhone writer account; `demo-reviewer` is the read-only dashboard account. Both bind to `hackathon-demo`. Passwords and the signing key are generated locally in ignored `.local/gcp-demo/` files; no values are logged or committed.
+- `demo-wearer` is the iPhone writer account; `demo-reviewer` is the read-only dashboard account. Both bind to `hackathon-demo`. Deployment credential state and the signing key remain in ignored `.local/gcp-demo/` files. The published evaluation passwords above are intentionally public and must remain confined to the sandbox; provider keys and signing secrets are never published.
+
+Ordinary paid-inference routes share a 30-request/minute sliding window per authenticated account (per configured bearer for local static tokens). Re-signing in does not reset the account budget. Responses return 429 and Retry-After before provider work. Urgent fall-check-in transcription has a separate bounded 60/minute account budget; non-inference event ingestion stays outside these inference quotas. The limiter is process-local, resets on restart and is not a provider spending cap; use one worker and provider-side budgets.
 
 ## Local preparation
 

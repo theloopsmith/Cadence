@@ -128,3 +128,24 @@ test('report exposes freshness, unknown coverage, truncation and separate contac
   const text = nodes.get('fallList').textContent;
   for (const phrase of ['Alert queued; delivery unverified','Alert accepted by provider','Caregiver acknowledged','Simulated delivery']) assert.ok(text.includes(phrase),phrase);
 });
+
+
+test('motor checks and comparisons identify simulated, device-reported and unknown sources', async () => {
+  const data = baseData();
+  data.motor_exams = ['simulated', 'device', 'legacy_unverified', undefined].map(measurement_source => ({
+    timestamp_utc:'fixture', measurement_source, voice_mean_dbfs:-24, voice_stability_db:1,
+    handwriting_opencv_decay_pct:0, walk_cadence_spm:100, walk_fog_count:0
+  }));
+  const {nodes,render} = harness(data); await render();
+  const rows = nodes.get('examTableBody').children;
+  for (const row of rows) assert.equal(row.children.length,8);
+  assert.equal(rows[0].children[7].textContent,'🧪 Demo (Simulated)');
+  assert.equal(rows[1].children[7].textContent,'📱 Wearer Device (reported)');
+  assert.equal(rows[2].children[7].textContent,'Source unverified');
+  assert.equal(rows[3].children[7].textContent,'Source unverified');
+  assert.match(nodes.get('examDelta').textContent,/Latest: 🧪 Demo \(Simulated\); previous: 📱 Wearer Device \(reported\)/);
+  data.buckets_24h = [{fog_count:3, label_hhmm:'00:00'},{fall_occurred:true,label_hhmm:'00:30'}];
+  await render();
+  assert.match(nodes.get('timelineRibbon').children[0].className,/bucket-PAUSES/);
+  assert.match(nodes.get('timelineRibbon').children[1].className,/bucket-SAFETY/);
+});

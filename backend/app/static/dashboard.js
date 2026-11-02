@@ -1,4 +1,9 @@
 "use strict";
+
+function examSourceLabel(ex) {
+  return ex.measurement_source === "simulated" ? "🧪 Demo (Simulated)" : ex.measurement_source === "device" ? "📱 Wearer Device (reported)" : "Source unverified";
+}
+
 function element(tag, text, className) {
       const node = document.createElement(tag);
       if (text != null) node.textContent = String(text);
@@ -28,7 +33,7 @@ function element(tag, text, className) {
 
     function setGlassesBanner(msg) {
       const el = document.getElementById("glassesAudioBanner");
-      el.textContent = "🔊 Glasses Audio: " + msg;
+      el.textContent = "Browser voice preview: " + msg;
       if ("speechSynthesis" in window) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(msg);
@@ -131,7 +136,7 @@ function element(tag, text, className) {
         const [latest, prev] = exams;
         const comparable = (a,b,unit) => a == null || b == null ? "Not measured in both checks" : ((a-b >= 0 ? "+" : "") + (a-b).toFixed(0) + unit + " compared with the previous check");
         const letters = p => p == null ? "Not measured" : (Math.abs(p) < 5 ? "about the same size" : Math.abs(p).toFixed(0) + "% " + (p < 0 ? "smaller" : "larger"));
-        dEl.textContent = `Letters: ${letters(latest.handwriting_opencv_decay_pct)} (previously ${letters(prev.handwriting_opencv_decay_pct)}). Voice: ${comparable(latest.voice_mean_dbfs, prev.voice_mean_dbfs, " dB")}. Walking: ${comparable(latest.walk_cadence_spm, prev.walk_cadence_spm, " steps a minute")}.`;
+        dEl.textContent = `Latest: ${examSourceLabel(latest)}; previous: ${examSourceLabel(prev)}. Letters: ${letters(latest.handwriting_opencv_decay_pct)} (previously ${letters(prev.handwriting_opencv_decay_pct)}). Voice: ${comparable(latest.voice_mean_dbfs, prev.voice_mean_dbfs, " dB")}. Walking: ${comparable(latest.walk_cadence_spm, prev.walk_cadence_spm, " steps a minute")}.`;
 
       }
 
@@ -169,7 +174,7 @@ function element(tag, text, className) {
       for (const b of (data.buckets_24h || [])) {
         const div = document.createElement("div");
         const pauses = b.fog_count || 0;
-        const level = (b.fall_occurred || pauses >= 2) ? "OFF" : (pauses === 1 ? "WEARING_OFF" : ((b.observation_status === "events_logged" || b.has_exam) ? "LOGGED" : "UNKNOWN"));
+        const level = b.fall_occurred ? "SAFETY" : (pauses > 0 ? "PAUSES" : ((b.observation_status === "events_logged" || b.has_exam) ? "LOGGED" : "UNKNOWN"));
         const events = [];
         if (pauses) events.push(pauses + (pauses === 1 ? " pause" : " pauses"));
         if (b.fall_occurred) events.push("fall");
@@ -185,7 +190,7 @@ function element(tag, text, className) {
       if (!data.motor_exams || data.motor_exams.length === 0) {
         const row = element("tr");
         const cell = element("td", "No motor checks recorded yet. Click Seed Sample Routine above!");
-        cell.colSpan = 7;
+        cell.colSpan = 8;
         row.appendChild(cell);
         tbody.appendChild(row);
       } else {
@@ -194,7 +199,7 @@ function element(tag, text, className) {
           const p = ex.handwriting_opencv_decay_pct;
           const letters = p == null ? "Not measured" : (Math.abs(p) < 5 ? "about the same" : Math.abs(p).toFixed(0) + "% " + (p < 0 ? "smaller" : "larger"));
           const number = finiteNumber;
-          for (const value of [ex.timestamp_utc, number(ex.voice_mean_dbfs), number(ex.voice_stability_db,1), letters, number(ex.walk_cadence_spm), ex.walk_fog_count ?? "Not measured", ex.minutes_since_last_dose ?? "—"]) {
+          for (const value of [ex.timestamp_utc, number(ex.voice_mean_dbfs), number(ex.voice_stability_db,1), letters, number(ex.walk_cadence_spm), ex.walk_fog_count ?? "Not measured", ex.minutes_since_last_dose ?? "—", examSourceLabel(ex)]) {
             const cell = document.createElement("td");
             cell.textContent = String(value);
             tr.appendChild(cell);
@@ -277,19 +282,15 @@ function element(tag, text, className) {
       await loadReport();
     }
 
-    async function simDoseAndSteak() {
+    async function simDoseAndMeal() {
       const now = new Date().toISOString();
       await apiPost("/api/v1/medication/dose", {
         event_uuid: "sim-dose-" + Date.now(),
         timestamp_utc: now
       });
-      const res = await apiPost("/api/v1/medication/meal-protein", {
+      const res = await apiPost("/api/v1/meals/log", {
         event_uuid: "sim-meal-" + Date.now(),
-        timestamp_utc: now,
-        simulated_masks: [
-          { label: "steak", area_px: 35000, confidence: 0.95 },
-          { label: "plate", area_px: 70000, confidence: 0.98 }
-        ]
+        timestamp_utc: now
       });
       if (res && res.spoken_response) setGlassesBanner(res.spoken_response);
       await loadReport();
@@ -352,14 +353,14 @@ function element(tag, text, className) {
         status: "confirmed_waiting_dispatch"
       });
       await apiPost(`/api/v1/events/fall/${uuid}/cancel`);
-      setGlassesBanner("Fall alert dispatched and then canceled via All-Clear SMS.");
+      setGlassesBanner("Sample fall saved and canceled. Check the delivery evidence below; this preview does not establish caregiver receipt.");
       await loadReport();
     }
 
     function initializeDashboard() {
       const actions = {
         seedDemoButton: seedDemoTimeline, wipeButton: wipePatientData,
-        printButton: () => window.print(), fogButton: simFoG, mealButton: simDoseAndSteak,
+        printButton: () => window.print(), fogButton: simFoG, mealButton: simDoseAndMeal,
         realityButton: simRealityCheck, writingButton: simMicrographia,
         examButton: simHomeMotorExam, fallButton: simFallAndCancel, signInButton: signIn,
         oneClickJudgeBtn: () => {

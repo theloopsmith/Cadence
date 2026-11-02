@@ -93,3 +93,10 @@ Cadence's microphone route and native Hey Meta are separate. A spoken handoff re
 Run `python3 scripts/sync_architecture_docs.py` after changing model defaults, native tabs or storage DDL. It updates draw.io labels from source and regenerates the schema page/SVG without loading secrets or records. `--check` runs in CI. The diagram's four main pages retain editable geometry. Regenerate the README overview art with `scripts/generate_architecture_art.py` if the system's four ownership boundaries change.
 
 The [verification log](VERIFICATION_LOG.md) records dated evidence and its limits. The [docs index](README.md) lists current acceptance gates. Neither compilation nor synthetic tests establish physical-device or clinical acceptance.
+
+
+### Public API and inference guardrails
+
+Production and `public_demo` refuse `ENABLE_RESEARCH_METRICS=true` at startup. Meal logging records time only; it does not detect protein, evaluate absorption or recommend food/dose timing. Explicit response models cover the report, exam history and photo result (including wiped-event drops). Motor observations carry `measurement_source` plus paired per-task status/source; device source is client-reported, not hardware attestation. The table and serial comparison label simulated and unverified sources.
+
+Everyday paid inference shares an atomic process-local sliding window (default 30/minute per account; local static bearers have separate budgets). Account identity prevents login/token refresh from resetting the quota. Over-limit requests return 429 and `Retry-After` before provider work. Fall-check-in transcription has a separate 60/minute account budget so everyday requests cannot consume its allowance. This is a single-worker throttle that resets after restart, not a billing cap. Default static tokens are empty; the LAN launcher disables them. Default and relative SQLite paths resolve under `backend/`, independent of the shell working directory; deployment's explicit absolute data path remains unchanged.

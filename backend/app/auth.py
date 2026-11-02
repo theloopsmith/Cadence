@@ -219,9 +219,9 @@ def decode_token(token: str) -> Optional[Dict[str, str]]:
 # ---------------------------------------------------------------- startup
 def validate_security_settings() -> None:
     """Refuse to run a production server with development defaults."""
+    if (settings.is_production or settings.cadence_env.strip().lower() == "public_demo") and settings.enable_research_metrics:
+        raise RuntimeError("Public demo and production require ENABLE_RESEARCH_METRICS=false.")
     if settings.cadence_env.strip().lower() == "public_demo":
-        if settings.enable_research_metrics:
-            raise RuntimeError("Public demo must keep ENABLE_RESEARCH_METRICS=false.")
         # Freeze the submission's runtime model identities. Hosting companies
         # are not model authors, and an arbitrary environment override must not
         # silently turn this into a non-Meta build.
