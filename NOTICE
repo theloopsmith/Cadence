@@ -1,0 +1,15 @@
+Cadence
+Copyright 2026 Cadence contributors
+
+Cadence's original source code is licensed under the Apache License,
+Version 2.0. See LICENSE.
+
+Third-party code, SDKs, model weights, API services, documentation and
+assets retain their respective licenses and terms. This license does not
+relicense Meta models or the Meta Wearables Device Access Toolkit, and
+does not grant rights to third-party names, logos or trademarks.
+
+The supplied hackathon guide and third-party materials are not covered
+by Cadence's source-code license. Static artwork provenance is documented
+in docs/WALKTHROUGH_DESIGN.md. This notice is not a complete inventory of
+third-party license obligations.

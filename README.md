@@ -80,3 +80,7 @@ Live SAM + Muse analysis is recorded for an approved [iPhone photo](docs/verific
 These checks do not establish live DAT capture, audible physical-glasses output, locked-screen continuity or real caregiver delivery. Organizer scope/contribution-date approval and the final submission package remain pending. Production and public-demo startup reject research metrics; simulated task sources are labeled throughout reports.
 
 [Documentation index](docs/README.md) · [Verification log and remaining checks](docs/VERIFICATION_LOG.md) · [Static artwork provenance](docs/WALKTHROUGH_DESIGN.md)
+
+## License
+
+Cadence's original source code is licensed under the [Apache License 2.0](LICENSE). Copyright 2026 Cadence contributors. See [NOTICE](NOTICE) for scope. Third-party dependencies, Meta models and SDKs, services, and third-party documentation and assets retain their own licenses and terms. [Static artwork provenance](docs/WALKTHROUGH_DESIGN.md).
