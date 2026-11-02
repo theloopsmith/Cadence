@@ -60,7 +60,7 @@ Add provider keys to the local `backend/.env` to enable online inference. Keep t
 python3 scripts/run_phone_backend.py
 ```
 
-Keep the Mac and iPhone on the same Wi-Fi. Install `ios/App/CadenceCompanionApp.xcodeproj`, open **Settings → Find my Mac server**, select the Mac and sign in using `.local/phone-login.txt`. `localhost` on the iPhone means the iPhone itself. This launcher uses account sign-in and simulated caregiver delivery. [Camera, permissions and troubleshooting](docs/APP_GUIDE.md).
+Keep the Mac and iPhone on the same Wi-Fi. Install `ios/App/CadenceCompanionApp.xcodeproj`, open **Settings → Advanced → Show developer tools → Find my Mac server**, select the Mac and sign in using `.local/phone-login.txt`. `localhost` on the iPhone means the iPhone itself. This launcher uses account sign-in and simulated caregiver delivery. [Camera, permissions and troubleshooting](docs/APP_GUIDE.md).
 
 ## Validate
 

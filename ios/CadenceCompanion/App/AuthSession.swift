@@ -10,6 +10,8 @@ public final class AuthSession: ObservableObject {
     /// The server stopped accepting the token. Events wait on the phone.
     @Published public private(set) var isExpired = false
 
+    public static let hostedDemoURL = "https://cadence-companion.duckdns.org"
+
     private let settings: AppSettings
     private var cancellables: Set<AnyCancellable> = []
     private var generation = UUID()
@@ -35,10 +37,23 @@ public final class AuthSession: ObservableObject {
     }
 
     public func signIn(username rawUsername: String, password: String, serverAddress: String? = nil) async {
-        guard !isWorking, !settings.restartRequired, settings.profile.failure == nil else { return }
+        guard !isWorking else { return }
+        guard !settings.restartRequired else {
+            errorMessage = "Close Cadence completely, then reopen it to finish resetting this device."
+            return
+        }
+        guard settings.profile.failure == nil else { errorMessage = settings.profile.failure; return }
         let username = rawUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !username.isEmpty, !password.isEmpty else {
             errorMessage = "Enter the phone's username and password."
+            return
+        }
+        let destination = DeviceProfile.normalize(serverAddress ?? settings.api.baseURL)
+        guard let url = URLComponents(string: destination),
+              ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
+              url.host?.isEmpty == false, url.user == nil, url.password == nil,
+              url.path.isEmpty || url.path == "/", url.query == nil, url.fragment == nil else {
+            errorMessage = "Enter the server address starting with https://, without /health or /walkthrough."
             return
         }
         isWorking = true
@@ -46,7 +61,7 @@ public final class AuthSession: ObservableObject {
         defer { isWorking = false }
         let generation = self.generation
         let original = settings.api
-        let client = CadenceAPIClient(baseURL: serverAddress.map(DeviceProfile.normalize) ?? original.baseURL,
+        let client = CadenceAPIClient(baseURL: destination,
             bearerToken: original.bearerToken, transport: settings.apiTransport)
         do {
             let result = try await client.login(username: username, password: password)
@@ -76,8 +91,23 @@ public final class AuthSession: ObservableObject {
             errorMessage = "That username or password didn't match."
         } catch CadenceAPIError.httpStatus(let status) where status == 429 {
             errorMessage = "Too many tries. Please wait a few minutes and try again."
+        } catch let error as URLError {
+            switch error.code {
+            case .timedOut:
+                errorMessage = "The server took too long to respond. Try signing in again."
+            case .cannotFindHost, .dnsLookupFailed:
+                errorMessage = "The server address could not be found. Check its spelling and try opening it in Safari."
+            case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid:
+                errorMessage = "Cadence could not establish a trusted HTTPS connection. Check the server certificate and this device's date."
+            default:
+                errorMessage = "Couldn't reach the server. Open its /health page in Safari on this device to check the connection."
+            }
+        } catch is DecodingError {
+            errorMessage = "The address responded, but not with a Cadence sign-in response. Use the server address without a page path."
+        } catch let error as CadenceAPIError {
+            errorMessage = error.localizedDescription
         } catch {
-            errorMessage = "Couldn't reach Cadence's server. Check the connection and try again."
+            errorMessage = "Sign-in could not be completed. Check this device's storage and try again."
         }
     }
 

@@ -40,6 +40,7 @@ struct SettingsView: View, Equatable {
     var body: some View {
         NavigationStack {
             Form {
+                accountSection
                 voiceSection
                 Section("Medications") {
                     Button("Manage medications") { app.companion.destination = .medication }
@@ -63,7 +64,8 @@ struct SettingsView: View, Equatable {
             }
             .onReceive(app.$profileResetError.removeDuplicates()) { resetError = $0 }
             .onAppear {
-                server = settings.backendBaseURL
+                server = !settings.profile.isBound && DeviceProfile.isLoopback(settings.backendBaseURL)
+                    ? AuthSession.hostedDemoURL : settings.backendBaseURL
                 app.companion.enterFlow(id: voiceFlowID, destination: .settings, step: .settings)
             }
             .onReceive(app.companion.$actionID.dropFirst()) { _ in
@@ -106,71 +108,74 @@ struct SettingsView: View, Equatable {
 
     private var accountSection: some View {
         Section {
-            Text("1. Enter your Cadence server's HTTPS address below. A cloud server works without keeping your Mac open or sharing Wi-Fi.")
-            Text("Using a Mac server instead? Start it, keep both devices on the same Wi-Fi, then find it below.")
-            Button("Find my Mac server") { discovery.start() }
-            ForEach(discovery.servers) { found in
-                Button {
-                    server = found.address
-                    discovery.stop()
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text("Use \(found.name)")
-                        Text(found.address).font(.caption)
+            if settings.restartRequired {
+                Text("Close Cadence completely, then reopen it to finish resetting this device.")
+            } else if auth.isSignedIn {
+                Label("Connected as \(auth.username ?? "")", systemImage: "checkmark.circle.fill")
+                Text(settings.api.baseURL).font(.footnote).textSelection(.enabled)
+                Button("Sign out") { auth.signOut() }
+            } else {
+                Text("Sign in once to connect your diary and enable online features.")
+                Button("Use hosted demo") { server = AuthSession.hostedDemoURL }
+                Text("Public sandbox: use demo data only. Photos submitted for surroundings checks are sent for model analysis.")
+                    .font(.footnote)
+                TextField("Server address", text: $server)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    #endif
+                TextField("Username", text: $username)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .textContentType(.username)
+                    #endif
+                SecureField("Password", text: $password)
+                    #if os(iOS)
+                    .textContentType(.password)
+                    #endif
+                Button(auth.isWorking ? "Connecting…" : "Connect and sign in") {
+                    Task {
+                        await auth.signIn(username: username, password: password, serverAddress: server)
+                        password = ""
                     }
                 }
+                .disabled(auth.isWorking || fallAlert.isAlertVisible || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
             }
-            if !discovery.message.isEmpty { Text(discovery.message).font(.footnote) }
-            Text("2. Enter the phone account's username and password, then tap Sign in. The person who set up the server has them.")
+            if let error = auth.errorMessage { Text(error).foregroundColor(CadenceTheme.caution) }
+        } header: { Text("Connection") }
+    }
 
-            TextField("Cadence server address", text: $server)
+    private var connectionToolsSection: some View {
+        Section {
+            Text("These tools are for a Mac development server or an existing-server address repair. Use Connection above for cloud sign-in.")
+            TextField("Server address", text: $server)
                 .autocorrectionDisabled()
                 #if os(iOS)
                 .textInputAutocapitalization(.never)
                 .keyboardType(.URL)
                 #endif
-            if !settings.profile.isBound {
-                Button("Use server address") { settings.backendBaseURL = server }
-            } else {
-                Button(settings.isConnecting ? "Connecting…" : "Connect to this Cadence server") {
+            Button("Find my Mac server") { discovery.start() }
+            ForEach(discovery.servers) { found in
+                Button("Use \(found.name)") { server = found.address; discovery.stop() }
+            }
+            if !discovery.message.isEmpty { Text(discovery.message).font(.footnote) }
+            if settings.profile.isBound {
+                Button(settings.isConnecting ? "Connecting…" : "Verify existing server address") {
                     if DeviceProfile.isLoopback(settings.api.baseURL), DeviceProfile.normalize(server) != settings.api.baseURL {
                         confirmServerRepair = true
                     } else { Task { await settings.connectServer(to: server) } }
-                }.disabled(settings.isConnecting || fallAlert.isAlertVisible)
-            }
-            if DeviceProfile.isLoopback(settings.api.baseURL) {
-                Text("This phone is still pointed at itself. Enter your cloud server's HTTPS address or choose your Mac above, then tap Connect. Your history on this phone is kept.")
-                    .font(.footnote)
+                }.disabled(settings.isConnecting || settings.restartRequired || fallAlert.isAlertVisible)
             }
             if let message = settings.connectionMessage { Text(message).font(.footnote) }
-            if auth.isSignedIn {
-                Text("Signed in as \(auth.username ?? "")")
-                Button("Sign out") { auth.signOut() }
-            } else {
-                TextField("Phone account username", text: $username).autocorrectionDisabled()
-                SecureField("Password", text: $password)
-                HStack(spacing: 12) {
-                    Button(auth.isWorking ? "Signing in…" : "Sign in") {
-                        Task {
-                            await auth.signIn(username: username, password: password, serverAddress: server)
-                            password = ""
-                        }
-                    }.disabled(auth.isWorking)
-                    Button("Use dev token") {
-                        settings.deviceToken = AppSettings.developmentToken
-                        auth.clearExpired()
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
             if let notice = settings.profileNotice { Text(notice).foregroundColor(CadenceTheme.caution) }
-            if let error = auth.errorMessage { Text(error).foregroundColor(CadenceTheme.caution) }
             if let error = resetError { Text(error).foregroundColor(CadenceTheme.caution) }
             if quarantinedRecords > 0 {
                 Text("\(quarantinedRecords) older event records are kept locally because their account owner is unknown. Signing in does not reassign them. New events use your current account; this does not prevent voice listening.").font(.footnote)
             }
             Button("Erase local profile for a new wearer", role: .destructive) { confirmReset = true }
-        } header: { Text("Account and local history") }
+        } header: { Text("Server and local data") }
         footer: { Text("Signing out pauses uploads and keeps this wearer's offline history. A different account or server requires a local reset. Earlier unassigned files are kept separate and are never adopted into this profile.") }
     }
 
@@ -238,9 +243,9 @@ struct SettingsView: View, Equatable {
             Section {
                 Toggle("Show developer tools", isOn: $settings.developerModeEnabled)
             } header: { Text("Advanced") }
-            footer: { Text("Show account, server, photo source and testing tools.") }
+            footer: { Text("Show connection tools, local data reset, photo source and testing tools.") }
             if settings.developerModeEnabled {
-                accountSection
+                connectionToolsSection
                 glassesSection
                 Section("Developer tools") {
                     ForEach(DeveloperArea.allCases) { area in

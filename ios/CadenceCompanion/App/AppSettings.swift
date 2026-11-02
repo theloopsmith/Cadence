@@ -280,7 +280,7 @@ public final class AppSettings: ObservableObject {
                 return false
             }
             guard try profile.stageServerMove(to: target, info: info, token: token, repairLocalhost: repairLocalhost) else {
-                connectionMessage = "This is a different server or account. Use the original Cadence server; changing wearer still requires a local reset."
+                connectionMessage = "This device already has records for a different server or account. Nothing was moved. To start a separate profile, open Settings → Advanced → Show developer tools → Erase local profile for a new wearer. This deletes local records and queued uploads; preserve anything you need first."
                 return false
             }
             if let move = profile.pendingServerMove {

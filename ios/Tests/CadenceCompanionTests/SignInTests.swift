@@ -80,6 +80,34 @@ final class SignInTests: XCTestCase {
         XCTAssertTrue(offline.errorMessage?.contains("reach") == true)
     }
 
+    func testPageURLsAreRejectedBeforeSendingCredentials() async {
+        for address in ["cadence.example", "https://cadence.example/health", "https://cadence.example/walkthrough#how-it-works", "https://user:secret@cadence.example"] {
+            let (auth, _, _, transport) = make()
+            await auth.signIn(username: "phone", password: "fixture", serverAddress: address)
+            XCTAssertTrue(transport.requests.isEmpty)
+            XCTAssertTrue(auth.errorMessage?.contains("server address") == true)
+        }
+    }
+
+    func testCloudSignInUsesEnteredOriginWithoutASeparateApplyStep() async throws {
+        let (auth, settings, _, transport) = make(responses: [loginBody(role: "device_writer")])
+        await auth.signIn(username: "phone", password: "fixture", serverAddress: " \(AuthSession.hostedDemoURL)/ ")
+        XCTAssertTrue(auth.isSignedIn)
+        XCTAssertEqual(settings.api.baseURL, AuthSession.hostedDemoURL)
+        XCTAssertEqual(try XCTUnwrap(transport.requests.first).url.host, "cadence-companion.duckdns.org")
+    }
+
+    func testNetworkAndResponseFailuresAreDistinguished() async {
+        for (error, text) in [(URLError(.timedOut), "too long"), (URLError(.cannotFindHost), "could not be found"), (URLError(.serverCertificateUntrusted), "HTTPS")] {
+            let (auth, _, _, _) = make(error: error)
+            await auth.signIn(username: "phone", password: "fixture")
+            XCTAssertTrue(auth.errorMessage?.contains(text) == true)
+        }
+        let (auth, _, _, _) = make(responses: [Data("<html>Page</html>".utf8)])
+        await auth.signIn(username: "phone", password: "fixture")
+        XCTAssertTrue(auth.errorMessage?.contains("sign-in response") == true)
+    }
+
     func testEmptyFieldsAreCaughtBeforeAnyRequest() async {
         let (auth, _, _, transport) = make()
         await auth.signIn(username: "", password: "")
