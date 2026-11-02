@@ -35,6 +35,7 @@ struct MedicationSetupView: View {
                         Label(receipt, systemImage: "checkmark.circle.fill")
                             .font(.headline).foregroundColor(CadenceTheme.calm).card()
                     }
+                    MedicationReminderStatus(scheduler: app.reminders) { await app.retryMedicationReminders() }
                     if editor.isEditing { editingContent }
                     else { savedContent }
                     Text("Reminders only. Cadence does not choose a dose or change prescribed timing.")
@@ -235,5 +236,30 @@ struct MedicationSetupView: View {
             let date = Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
             return date.formatted(date: .omitted, time: .shortened)
         }.joined(separator: " · ")
+    }
+}
+
+/// Observe reminder state alongside the medication routine.
+private struct MedicationReminderStatus: View {
+    @ObservedObject var scheduler: DoseReminderScheduler
+    let retry: () async -> Void
+    @State private var retrying = false
+
+    var body: some View {
+        switch scheduler.status {
+        case .failed, .notAllowed:
+            Text(scheduler.status == .notAllowed
+                 ? "Medication notifications are off. Allow notifications for Cadence in iPhone Settings, then retry."
+                 : "Some medication reminders could not be scheduled. Your saved medication plan is still available. Retry to update reminders.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Button(retrying ? "Updating reminders…" : "Retry reminders") {
+                retrying = true
+                Task { await retry(); retrying = false }
+            }
+            .disabled(retrying)
+        default:
+            EmptyView()
+        }
     }
 }

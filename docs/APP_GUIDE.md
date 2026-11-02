@@ -46,7 +46,7 @@ Cadence prefers the best installed Apple Premium, Enhanced, then Standard voice,
 
 ## Medication routine
 
-Use **Today → Edit routine** or **Settings → Medications**. Add each medication and its existing prescribed reminder times, then choose **Save routine**. The page returns to a saved-routine summary with a visible receipt. Discard changes leaves the saved plan intact. Camera presentation does not reload your draft. Say “save routine” or “discard changes” while editing. A reference photo follows capture → review → use, and stays local.
+Use **Today → Edit routine** or **My routine**. Reminder permission warnings and retry controls appear here alongside the medication plan. Add each medication and its existing prescribed reminder times, then choose **Save routine**. The page returns to a saved-routine summary with a visible receipt. Discard changes leaves the saved plan intact. Camera presentation does not reload your draft. Say “save routine” or “discard changes” while editing. A reference photo follows capture → review → use, and stays local.
 
 Today's selector chooses the medication used by Taken/Undo. By voice, say “I took [saved medication name].” With multiple medications, a generic request asks for the full saved name and then a separate confirmation. Ambiguous names are not guessed. Recording is not proof of ingestion and never changes a prescribed dose.
 
