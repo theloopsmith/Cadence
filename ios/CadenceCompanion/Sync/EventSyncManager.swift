@@ -93,7 +93,7 @@ public final class EventSyncManager {
     private var suspended = false
     private let autoDispatchEnabled: Bool
     private var currentURL = "http://localhost:8000"
-    private var currentToken = "cadence-dev-device-writer-token-2026"
+    private var currentToken = ""
     private var currentOwner: String?
     private var lastOwnerByDestination: [String: String] = [:]
     private var currentTransport: EventTransport

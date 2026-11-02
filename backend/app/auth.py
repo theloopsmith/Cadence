@@ -166,6 +166,16 @@ class IssuedToken:
     role: str
 
 
+def _judge_deadline(subject: str, patient_id: str) -> Optional[int]:
+    if (settings.cadence_env.strip().lower() == 'public_demo' and
+            subject in {'demo-wearer', 'demo-reviewer'} and patient_id == settings.cadence_default_patient_id):
+        deadline = settings.demo_accounts_expire_at_utc
+        if deadline.tzinfo is None:
+            raise RuntimeError('DEMO_ACCOUNTS_EXPIRE_AT_UTC must include a timezone.')
+        return int(deadline.timestamp())
+    return None
+
+
 def authenticate_sync(username: str, password: str) -> IssuedToken:
     username = username.strip()
     revision = _reserve_attempt(username)
@@ -175,12 +185,17 @@ def authenticate_sync(username: str, password: str) -> IssuedToken:
     stored = row["password_hash"] if row else _DUMMY_HASH
     if not verify_password(password, stored) or row is None:
         raise AuthError("That username or password didn't match.")
+    deadline = _judge_deadline(row["username"], row["patient_id"])
+    if deadline is not None and int(time.time()) >= deadline:
+        raise AuthError("The temporary judging account has expired.")
     _record_success(username, revision)
     ttl = (
         settings.jwt_device_ttl_days * 24 * 3600
         if row["role"] == "device_writer"
         else settings.jwt_access_ttl_minutes * 60
     )
+    if deadline is not None:
+        ttl = min(ttl, deadline - int(time.time()))
     return IssuedToken(
         access_token=issue_token(row["username"], row["role"], row["patient_id"], ttl_seconds=ttl),
         expires_in=ttl,
@@ -196,6 +211,9 @@ def _signing_secret() -> str:
 def issue_token(subject: str, role: str, patient_id: str, ttl_seconds: Optional[int] = None) -> str:
     now = int(time.time())
     ttl = settings.jwt_access_ttl_minutes * 60 if ttl_seconds is None else ttl_seconds
+    deadline = _judge_deadline(subject, patient_id)
+    if deadline is not None:
+        ttl = min(ttl, deadline-now)
     claims = {"sub": subject, "role": role, "pid": patient_id, "iat": now, "exp": now + ttl}
     return jwt.encode(claims, _signing_secret(), algorithm=JWT_ALGORITHM)
 
@@ -212,6 +230,9 @@ def decode_token(token: str) -> Optional[Dict[str, str]]:
     except jwt.PyJWTError:
         return None
     if claims.get("role") not in ROLES:
+        return None
+    deadline = _judge_deadline(claims["sub"], claims["pid"])
+    if deadline is not None and int(time.time()) >= deadline:
         return None
     return claims
 

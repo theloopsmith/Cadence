@@ -49,7 +49,7 @@ final class HomeMotorExamTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         dbPath = NSTemporaryDirectory() + "cadence-exam-\(UUID().uuidString).sqlite"
-        sync = EventSyncManager(
+        sync = makeTestEventSyncManager(
             transport: StubTransport(), databasePath: dbPath, startPeriodicDrain: false
         )
     }

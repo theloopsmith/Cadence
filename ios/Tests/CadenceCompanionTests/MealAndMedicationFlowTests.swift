@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class MealAndMedicationFlowTests: XCTestCase {
     private func sync() -> EventSyncManager {
-        let sync = EventSyncManager(databasePath: NSTemporaryDirectory()+"meals-\(UUID()).sqlite", startPeriodicDrain: false)
+        let sync = makeTestEventSyncManager(databasePath: NSTemporaryDirectory()+"meals-\(UUID()).sqlite", startPeriodicDrain: false)
         sync.configureSession(baseURL: "https://demo.test", bearerToken: "fixture-owner-token")
         return sync
     }
@@ -49,7 +49,7 @@ final class MealAndMedicationFlowTests: XCTestCase {
         let diary = diary()
         let blocked = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("blocked-queue-\(UUID())")
         try Data([1]).write(to: blocked)
-        let sync = EventSyncManager(databasePath: blocked.appendingPathComponent("queue.sqlite").path, startPeriodicDrain: false)
+        let sync = makeTestEventSyncManager(databasePath: blocked.appendingPathComponent("queue.sqlite").path, startPeriodicDrain: false)
         sync.configureSession(baseURL: "https://demo.test", bearerToken: "fixture-owner-token")
         let model = MealLogModel(diary: diary, sync: sync)
         XCTAssertTrue(model.save(at: Date(), note: "", photo: nil))

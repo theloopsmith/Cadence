@@ -77,7 +77,7 @@ final class CadenceDSPTests: XCTestCase {
     /// closes. The queued event has to name the mode that started it.
     func testFreezeEpisodeRecordsTheArmingModeItStartedIn() throws {
         let db = NSTemporaryDirectory() + "fog-arming-\(UUID().uuidString).sqlite"
-        let sync = EventSyncManager(databasePath: db, startPeriodicDrain: false)
+        let sync = makeTestEventSyncManager(databasePath: db, startPeriodicDrain: false)
         let detector = FoGDetector()
         detector.eventSync = sync
 

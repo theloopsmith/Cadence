@@ -104,7 +104,7 @@ final class MotorCheckWordingTests: XCTestCase {
             HomeMotorExamResult.self,
             from: Data(#"{"exam_uuid":"e","medication_state_label":"WEARING_OFF","voice_score":86.5,"handwriting_score":72.8,"gait_score":71.5,"composite_motor_score":76.4,"clinical_summary":"x"}"#.utf8)
         )
-        let sync = EventSyncManager(databasePath: NSTemporaryDirectory() + "wording-\(UUID().uuidString).sqlite", startPeriodicDrain: false)
+        let sync = makeTestEventSyncManager(databasePath: NSTemporaryDirectory() + "wording-\(UUID().uuidString).sqlite", startPeriodicDrain: false)
         let mgr = HomeMotorExamManager(submitter: StubExamSubmitter(result: result), audio: .shared, sync: sync)
         mgr.stepPauseSec = 0
         let summary = await mgr.runDemoExam()

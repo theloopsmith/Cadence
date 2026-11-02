@@ -37,7 +37,7 @@ class WireResponse(BaseModel):
 
 
 Source = Literal["device", "simulated", "legacy_unverified"]
-TaskStatus = Literal["measured", "skipped", "unavailable", "legacy_unverified"]
+TaskStatus = Literal["simulated", "measured", "skipped", "unavailable", "legacy_unverified"]
 
 
 class TaskEvidence(WireResponse):

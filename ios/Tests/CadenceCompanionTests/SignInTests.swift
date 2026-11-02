@@ -12,7 +12,7 @@ final class SignInTests: XCTestCase {
         transport.responses = responses
         transport.error = error
         let store = InMemoryTokenStore()
-        let sync = EventSyncManager(
+        let sync = makeTestEventSyncManager(
             databasePath: NSTemporaryDirectory() + "signin-\(UUID().uuidString).sqlite", startPeriodicDrain: false
         )
         let settings = AppSettings(
@@ -145,7 +145,7 @@ final class SignInTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "migrate-\(UUID().uuidString)")!
         defaults.set("old-token", forKey: "cadence.deviceToken")
         let store = InMemoryTokenStore()
-        let sync = EventSyncManager(
+        let sync = makeTestEventSyncManager(
             databasePath: NSTemporaryDirectory() + "migrate-\(UUID().uuidString).sqlite", startPeriodicDrain: false
         )
         let settings = AppSettings(defaults: defaults, sync: sync, developerMode: false, tokenStore: store, defaultToken: "")

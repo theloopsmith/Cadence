@@ -20,7 +20,7 @@ final class QueueDurabilityTests: XCTestCase {
     private func path()->String { NSTemporaryDirectory()+"queue-durability-\(UUID().uuidString).sqlite" }
 
     func testAnotherAccountCannotDrainOrWithdrawTheFirstAccountsEvents() async {
-        let transport=SessionTransport(); let q=EventSyncManager(transport:transport,databasePath:path(),startPeriodicDrain:false)
+        let transport=SessionTransport(); let q=makeTestEventSyncManager(transport:transport,databasePath:path(),startPeriodicDrain:false)
         q.deviceBearerToken=token("A")
         q.saveLocalImmediate(eventUUID:"event-A",endpoint:"/api/v1/events/fall",payload:["status":"candidate_check_in_pending"])
         q.deviceBearerToken=token("B")
@@ -34,7 +34,7 @@ final class QueueDurabilityTests: XCTestCase {
         XCTAssertEqual(q.pendingCount(),0)
     }
     func testSameUsernameDifferentWearerAndDifferentServerAreIsolated() {
-        let q=EventSyncManager(databasePath:path(),startPeriodicDrain:false)
+        let q=makeTestEventSyncManager(databasePath:path(),startPeriodicDrain:false)
         q.deviceBearerToken=token("same",patient:"first")
         q.saveLocalImmediate(eventUUID:"first",endpoint:"/event",payload:[:])
         q.deviceBearerToken=token("same",patient:"second")
@@ -45,19 +45,19 @@ final class QueueDurabilityTests: XCTestCase {
     func testSignedOutEventsRemainBoundToThePreviousAccountAfterRelaunch() {
         let dbPath=path()
         do {
-            let q=EventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
+            let q=makeTestEventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
             q.deviceBearerToken=token("A"); q.deviceBearerToken=""
             q.saveLocalImmediate(eventUUID:"offline-A",endpoint:"/event",payload:[:])
             XCTAssertTrue(q.dueEvents().isEmpty)
         }
-        let reopened=EventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
+        let reopened=makeTestEventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
         reopened.deviceBearerToken=token("B")
         XCTAssertTrue(reopened.dueEvents().isEmpty)
         reopened.deviceBearerToken=token("A")
         XCTAssertEqual(reopened.dueEvents().map(\.eventUUID),["offline-A"])
     }
     func testSwitchDuringARequestNeverSendsRemainingRowsWithNewCredentials() async {
-        let transport=SessionTransport();let q=EventSyncManager(transport:transport,databasePath:path(),startPeriodicDrain:false)
+        let transport=SessionTransport();let q=makeTestEventSyncManager(transport:transport,databasePath:path(),startPeriodicDrain:false)
         let first=token("A");let second=token("B")
         q.deviceBearerToken=first
         for id in ["A-1","A-2"] { q.saveLocalImmediate(eventUUID:id,endpoint:"/event",payload:[:]) }
@@ -69,7 +69,7 @@ final class QueueDurabilityTests: XCTestCase {
         XCTAssertEqual(q.dueEvents().count,1)
     }
     func testUnauthorizedOldRequestDoesNotExpireANewSignIn() async {
-        let transport=SessionTransport();let q=EventSyncManager(transport:transport,databasePath:path(),startPeriodicDrain:false)
+        let transport=SessionTransport();let q=makeTestEventSyncManager(transport:transport,databasePath:path(),startPeriodicDrain:false)
         q.deviceBearerToken=token("A")
         q.saveLocalImmediate(eventUUID:"A",endpoint:"/event",payload:[:])
         transport.onSend={q.deviceBearerToken=self.token("B")};transport.outcome = .unauthorized
@@ -82,7 +82,7 @@ final class QueueDurabilityTests: XCTestCase {
         XCTAssertEqual(sqlite3_open(dbPath,&db),SQLITE_OK)
         XCTAssertEqual(sqlite3_exec(db,"CREATE TABLE pending_events(event_uuid TEXT PRIMARY KEY,endpoint TEXT NOT NULL,payload_json TEXT NOT NULL,created_at_utc TEXT NOT NULL,retry_count INTEGER DEFAULT 0,synced INTEGER DEFAULT 0); INSERT INTO pending_events VALUES('legacy','/event','{}','2026-10-28T00:00:00Z',0,0);",nil,nil,nil),SQLITE_OK)
         sqlite3_close(db)
-        let q=EventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
+        let q=makeTestEventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
         q.deviceBearerToken=token("new-login")
         XCTAssertEqual(q.quarantinedCount(),1)
         XCTAssertEqual(q.pendingCount(),1)
@@ -90,7 +90,7 @@ final class QueueDurabilityTests: XCTestCase {
     }
     func testFailedDiskSaveIsExplicitAndVolatileRecoveryPreservesItsOwner() throws {
         let dbPath=path();try FileManager.default.createDirectory(atPath:dbPath,withIntermediateDirectories:true)
-        let q=EventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
+        let q=makeTestEventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
         q.deviceBearerToken=token("A")
         var notified=false;q.onPersistenceFailure={_ in notified=true}
         let result=q.saveLocalImmediate(eventUUID:"disk-A",endpoint:"/api/v1/events/fall",payload:["status":"confirmed_waiting_dispatch"])
@@ -105,7 +105,7 @@ final class QueueDurabilityTests: XCTestCase {
         XCTAssertEqual(q.volatileEventCount,0)
     }
     func testLockedDatabaseRetainsEventAndRetriesAfterTheLockIsReleased() {
-        let dbPath=path();let q=EventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
+        let dbPath=path();let q=makeTestEventSyncManager(databasePath:dbPath,startPeriodicDrain:false)
         var lock:OpaquePointer?;sqlite3_open(dbPath,&lock)
         XCTAssertEqual(sqlite3_exec(lock,"BEGIN EXCLUSIVE",nil,nil,nil),SQLITE_OK)
         let result=q.saveLocalImmediate(eventUUID:"locked",endpoint:"/api/v1/events/fall",payload:[:])
@@ -116,7 +116,7 @@ final class QueueDurabilityTests: XCTestCase {
         XCTAssertEqual(q.dueEvents().map(\.eventUUID),["locked"])
     }
     func testInvalidJSONIsReportedRatherThanMarkedSaved() {
-        let q=EventSyncManager(databasePath:path(),startPeriodicDrain:false)
+        let q=makeTestEventSyncManager(databasePath:path(),startPeriodicDrain:false)
         let result=q.saveLocalImmediate(eventUUID:"nan",endpoint:"/event",payload:["value":Double.nan])
         guard case .failure(.invalidPayload) = result else {return XCTFail("must reject unpersistable payload")}
     }

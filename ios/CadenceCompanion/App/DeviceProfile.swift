@@ -4,6 +4,8 @@ import Foundation
 /// changing the wearer requires an explicit erase and a fresh app launch.
 public final class DeviceProfile {
     struct ServerMove: Codable { let from: String; let to: String; let serverID: String; let owner: String }
+    // Hash of a retired placeholder, solely for identifying old local partitions.
+    private static let retiredDevelopmentOwner = "629f8344ec09e4745c044590e5efffb0090c9d213429640151cc7c41b8a8cdcc"
     public static let shared: DeviceProfile = {
         if NSClassFromString("XCTestCase") != nil {
             return DeviceProfile(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("shared-profile-\(UUID())"))
@@ -79,7 +81,7 @@ public final class DeviceProfile {
         if let bound = manifest.owner {
             if bound != owner {
                 // Allow transitioning from the shared development placeholder to a real user account
-                guard bound == EventSyncManager.owner(for: AppSettings.developmentToken) || manifest.allowDevelopmentDefault else {
+                guard bound == Self.retiredDevelopmentOwner || manifest.allowDevelopmentDefault else {
                     return false
                 }
             }
@@ -122,7 +124,7 @@ public final class DeviceProfile {
         let tokenOwner = EventSyncManager.owner(for: token)
         if let boundOwner = manifest.owner {
             if tokenOwner != boundOwner {
-                guard boundOwner == EventSyncManager.owner(for: AppSettings.developmentToken) else { return false }
+                guard boundOwner == Self.retiredDevelopmentOwner else { return false }
             }
         }
         if let serverID = manifest.serverID {

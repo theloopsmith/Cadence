@@ -45,7 +45,7 @@ final class SignInRejectionQueueTests: XCTestCase {
     /// and the app is told it needs signing in again.
     func testARejectedTokenKeepsTheEventQueuedAndRaisesTheAlarm() async {
         let transport = FixedOutcomeTransport(.unauthorized)
-        let mgr = EventSyncManager(
+        let mgr = makeTestEventSyncManager(
             transport: transport,
             databasePath: NSTemporaryDirectory() + "unauth-\(UUID().uuidString).sqlite",
             startPeriodicDrain: false
@@ -80,7 +80,7 @@ final class EventSyncQueueTests: XCTestCase {
 
     private func makeManager(_ transport: EventTransport) -> EventSyncManager {
         // Periodic drain off so each test drives the drain deterministically.
-        EventSyncManager(
+        makeTestEventSyncManager(
             transport: transport,
             databasePath: dbPath,
             startPeriodicDrain: false
@@ -224,7 +224,7 @@ final class FallQueueRevisionTests: XCTestCase {
         let path = NSTemporaryDirectory() + "revision-\(UUID().uuidString).sqlite"
         defer { try? FileManager.default.removeItem(atPath: path) }
         let transport = ReplacementTransport()
-        let queue = EventSyncManager(transport: transport, databasePath: path, startPeriodicDrain: false)
+        let queue = makeTestEventSyncManager(transport: transport, databasePath: path, startPeriodicDrain: false)
         queue.saveLocalImmediate(eventUUID: "revision-fall", endpoint: "/api/v1/events/fall", payload: ["status": "candidate_check_in_pending"])
         transport.onSend = {
             queue.saveLocalImmediate(eventUUID: "revision-fall", endpoint: "/api/v1/events/fall", payload: ["status": "confirmed_waiting_dispatch"])

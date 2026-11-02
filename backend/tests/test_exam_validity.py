@@ -46,7 +46,7 @@ def test_default_mode_does_not_execute_legacy_scoring(client, monkeypatch):
     assert result['complete'] is True
     assert result['voice_stability_db'] == 0
     assert 'composite_motor_score' not in result
-    assert fetch_one_sync('SELECT composite_motor_score FROM motor_exams')['composite_motor_score'] is None
+    assert 'composite_motor_score' not in fetch_one_sync('SELECT * FROM motor_exams')
 
 @pytest.mark.parametrize('field', ['voice_mean_dbfs','voice_stability_db','handwriting_opencv_decay_pct','walk_cadence_spm','walk_mean_fi','walk_fog_count'])
 def test_measured_tasks_must_supply_all_their_values(client, field):
@@ -92,7 +92,7 @@ def test_legacy_database_upgrade_preserves_raw_values_but_withholds_unverified_r
         conn.execute("INSERT INTO motor_exams VALUES(7,'default_patient','old-check','2026-10-29T10:00:00+00:00','ON',30,-24,0,100,0,NULL,100,100,1,0,100,100,'Old score 100')")
     init_db_sync(); init_db_sync()  # upgrade and repeat startup must both be safe
     raw = fetch_one_sync("SELECT * FROM motor_exams WHERE exam_uuid='old-check'")
-    assert raw['id']==7 and raw['voice_mean_dbfs']==-24 and raw['composite_motor_score']==100
+    assert raw['id']==7 and raw['voice_mean_dbfs']==-24 and 'composite_motor_score' not in raw
     assert raw['voice_status']=='legacy_unverified'
     with TestClient(app) as http:
         row = http.get('/api/v1/exam/history',headers=HEADERS).json()['exams'][0]

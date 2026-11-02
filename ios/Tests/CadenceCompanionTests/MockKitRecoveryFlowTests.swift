@@ -5,7 +5,7 @@ import XCTest
 final class MockKitRecoveryFlowTests: XCTestCase {
     func testMockGlassesFallContradictorySpeechCancelAndQueueRelaunch() {
         let path=NSTemporaryDirectory()+"mock-kit-recovery-\(UUID().uuidString).sqlite"
-        let q=EventSyncManager(transport:StubTransport(),databasePath:path,startPeriodicDrain:false)
+        let q=makeTestEventSyncManager(transport:StubTransport(),databasePath:path,startPeriodicDrain:false)
         let listener=MockSpeechCheckInListener()
         let coordinator=FallAlertCoordinator(sync:q,locationProvider:MockLocationProvider(),speechListener:listener)
         let samples=[
@@ -26,7 +26,7 @@ final class MockKitRecoveryFlowTests: XCTestCase {
         XCTAssertTrue(coordinator.isDispatched)
         coordinator.cancelByUser();device.disconnect()
         XCTAssertFalse(coordinator.isAlertVisible)
-        let reopened=EventSyncManager(transport:StubTransport(),databasePath:path,startPeriodicDrain:false)
+        let reopened=makeTestEventSyncManager(transport:StubTransport(),databasePath:path,startPeriodicDrain:false)
         XCTAssertEqual(reopened.pendingCount(),2)
         XCTAssertTrue(reopened.dueEvents().contains{$0.endpoint.hasSuffix("/cancel")})
     }
@@ -37,7 +37,7 @@ extension MockKitRecoveryFlowTests {
         let path=NSTemporaryDirectory()+"unwritable-mock-kit-\(UUID().uuidString)"
         try FileManager.default.createDirectory(atPath:path,withIntermediateDirectories:true)
         defer { try? FileManager.default.removeItem(atPath:path) }
-        let queue=EventSyncManager(transport:StubTransport(),databasePath:path,startPeriodicDrain:false)
+        let queue=makeTestEventSyncManager(transport:StubTransport(),databasePath:path,startPeriodicDrain:false)
         let dialer=RecordingPhoneDialer()
         let c=FallAlertCoordinator(dialer:dialer,sync:queue,locationProvider:MockLocationProvider(),speechListener:MockSpeechCheckInListener())
         c.beginCheckIn(eventUUID:"unsaved-fall")

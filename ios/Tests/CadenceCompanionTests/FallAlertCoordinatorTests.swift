@@ -13,7 +13,7 @@ final class FallAlertCoordinatorTests: XCTestCase {
         screen = NoopScreenController()
         dialer = RecordingPhoneDialer()
         dbPath = NSTemporaryDirectory() + "cadence-alert-\(UUID().uuidString).sqlite"
-        sync = EventSyncManager(
+        sync = makeTestEventSyncManager(
             transport: StubTransport(), databasePath: dbPath, startPeriodicDrain: false
         )
     }

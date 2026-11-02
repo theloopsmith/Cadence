@@ -8,7 +8,7 @@ final class DeveloperToolsTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let profile = DeviceProfile(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(suite))
-        let sync = EventSyncManager(databasePath: NSTemporaryDirectory() + "\(suite).sqlite", startPeriodicDrain: false)
+        let sync = makeTestEventSyncManager(databasePath: NSTemporaryDirectory() + "\(suite).sqlite", startPeriodicDrain: false)
         let original = MedicationSchedule(medicationName: "First", doseTimes: [DoseTime(hour: 8, minute: 10)])
         defaults.set(try JSONEncoder().encode(original), forKey: "cadence.profile.\(profile.id).cadence.medicationSchedule")
         let settings = AppSettings(defaults: defaults, sync: sync, profile: profile)
@@ -123,7 +123,7 @@ final class DeveloperToolsTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let profile = DeviceProfile(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(suite))
-        let sync = EventSyncManager(databasePath: NSTemporaryDirectory() + "\(suite).sqlite", startPeriodicDrain: false)
+        let sync = makeTestEventSyncManager(databasePath: NSTemporaryDirectory() + "\(suite).sqlite", startPeriodicDrain: false)
         // An installed device may carry automatic listening from the old flow.
         defaults.set(true, forKey: "cadence.profile.\(profile.id).voiceCompanionEnabled")
         let first = AppSettings(defaults: defaults, sync: sync, profile: profile)
@@ -170,10 +170,10 @@ final class DeveloperToolsTests: XCTestCase {
         XCTAssertEqual(app.calibration.targetSource, .phoneRecording)
         XCTAssertEqual(app.calibration.source, .phoneRecording)
     }
-    private func makeApp(transport: RecordingJSONTransport = RecordingJSONTransport(), defaultToken: String = AppSettings.developmentToken, notifications: RecordingNotificationCenter = RecordingNotificationCenter()) -> (CadenceAppModel, RecordingJSONTransport) {
+    private func makeApp(transport: RecordingJSONTransport = RecordingJSONTransport(), defaultToken: String = "cadence-dev-device-writer-token-2026", notifications: RecordingNotificationCenter = RecordingNotificationCenter()) -> (CadenceAppModel, RecordingJSONTransport) {
         let suite = "dev-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
-        let sync = EventSyncManager(
+        let sync = makeTestEventSyncManager(
             databasePath: NSTemporaryDirectory() + "\(suite).sqlite", startPeriodicDrain: false
         )
         let settings = AppSettings(defaults: defaults, sync: sync, developerMode: false, defaultToken: defaultToken)

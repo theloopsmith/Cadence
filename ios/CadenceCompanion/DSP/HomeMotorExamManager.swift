@@ -136,7 +136,7 @@ public final class HomeMotorExamManager: ObservableObject {
     public var backendBaseURL: String = "http://localhost:8000" {
         didSet { submitter = URLSessionExamSubmitter(baseURL: backendBaseURL) }
     }
-    public var deviceBearerToken: String = "cadence-dev-device-writer-token-2026"
+    public var deviceBearerToken: String = ""
 
     private var submitter: ExamSubmitting
     private let audio: AudioCueEngine

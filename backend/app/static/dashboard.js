@@ -4,6 +4,20 @@ function examSourceLabel(ex) {
   return ex.measurement_source === "simulated" ? "🧪 Demo (Simulated)" : ex.measurement_source === "device" ? "📱 Wearer Device (reported)" : "Source unverified";
 }
 
+// Never infer measurement from a numeric value or a status without provenance.
+function examForDisplay(ex) {
+  const result = {...ex};
+  const fields = {voice:['voice_mean_dbfs','voice_stability_db'], handwriting:['handwriting_opencv_decay_pct'], walk:['walk_cadence_spm','walk_fog_count']};
+  for (const [task, names] of Object.entries(fields)) {
+    const evidence = ex.task_evidence && ex.task_evidence[task];
+    const valid = evidence && evidence.measurement_source === ex.measurement_source &&
+      ((evidence.status === 'measured' && evidence.measurement_source === 'device') ||
+       (evidence.status === 'simulated' && evidence.measurement_source === 'simulated'));
+    if (!valid) for (const name of names) result[name] = null;
+  }
+  return result;
+}
+
 function element(tag, text, className) {
       const node = document.createElement(tag);
       if (text != null) node.textContent = String(text);
@@ -129,7 +143,7 @@ function element(tag, text, className) {
       document.getElementById("incidentsCount").textContent = st.fall_candidate_resolved_count || 0;
 
       const dEl = document.getElementById("examDelta");
-      const exams = data.motor_exams || [];
+      const exams = (data.motor_exams || []).map(examForDisplay);
       if (exams.length < 2) {
         dEl.textContent = "Two motor checks are needed to show a change.";
       } else {
@@ -194,7 +208,8 @@ function element(tag, text, className) {
         row.appendChild(cell);
         tbody.appendChild(row);
       } else {
-        for (const ex of data.motor_exams) {
+        for (const raw of data.motor_exams) {
+          const ex = examForDisplay(raw);
           const tr = document.createElement("tr");
           const p = ex.handwriting_opencv_decay_pct;
           const letters = p == null ? "Not measured" : (Math.abs(p) < 5 ? "about the same" : Math.abs(p).toFixed(0) + "% " + (p < 0 ? "smaller" : "larger"));

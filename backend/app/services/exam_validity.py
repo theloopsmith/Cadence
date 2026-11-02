@@ -10,13 +10,20 @@ def measured_exam(row):
     from app.responses import observation_projection
     result = observation_projection(dict(row))
     source = result.setdefault("measurement_source", "legacy_unverified")
-    result["task_evidence"] = {task: {"status": result.get(task+"_status", "legacy_unverified"),
-                                      "measurement_source": source} for task in TASK_FIELDS}
+    evidence = {}
     for task, fields in TASK_FIELDS.items():
-        if result.get(task+'_status', 'legacy_unverified') != 'measured':
+        status = result.get(task+'_status', 'legacy_unverified')
+        if source == 'simulated' and status in {'measured', 'simulated'}:
+            status = 'simulated'
+        elif source == 'legacy_unverified' or (status == 'simulated' and source != 'simulated'):
+            status = 'legacy_unverified'
+        if status not in {'measured', 'simulated'}:
             for field in fields:
                 result[field] = None
-    complete = all(result.get(task+'_status') == 'measured' for task in TASK_FIELDS)
+        result[task+'_status'] = status
+        evidence[task] = {'status': status, 'measurement_source': source}
+    result['task_evidence'] = evidence
+    complete = all(e['status'] in {'measured','simulated'} for e in evidence.values())
     if 'clinical_summary' in result:
         from app.services.plain_language import describe_task_metrics, exam_source_words
         result['clinical_summary'] = 'Home motor check (' + exam_source_words(source) + '): ' + describe_task_metrics(

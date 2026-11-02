@@ -25,6 +25,9 @@ function harness(data) {
   vm.runInContext(source,context);
   return {nodes,context,render:()=>vm.runInContext('loadReport()',context)};
 }
+function evidence(source) {
+  return Object.fromEntries(['voice','handwriting','walk'].map(task => [task, {status:source === 'simulated' ? 'simulated' : 'measured', measurement_source:source}]));
+}
 function baseData() { return {clinical_narrative:'Summary',summary_stats:{dose_count:0,fog_count:0,fall_count:0},fall_events:[],buckets_24h:[],reality_checks:[],medication_logs:[],motor_exams:[]}; }
 function descendants(node) { return [node,...node.children.flatMap(descendants)]; }
 test('partial checks render missing values and genuine zeros without false comparisons', async () => {
@@ -32,6 +35,7 @@ test('partial checks render missing values and genuine zeros without false compa
     {timestamp_utc:'<img src=x onerror=alert(1)>',voice_mean_dbfs:null,voice_stability_db:null,handwriting_opencv_decay_pct:null,walk_cadence_spm:0,walk_fog_count:0},
     {timestamp_utc:'previous',voice_mean_dbfs:-24,voice_stability_db:0,handwriting_opencv_decay_pct:0,walk_cadence_spm:null,walk_fog_count:null}
   ]};
+  for (const ex of data.motor_exams) { ex.measurement_source='device'; ex.task_evidence=evidence('device'); }
   const {nodes,render} = harness(data);
   await render();
   const rows = nodes.get('examTableBody').children;
@@ -133,7 +137,7 @@ test('report exposes freshness, unknown coverage, truncation and separate contac
 test('motor checks and comparisons identify simulated, device-reported and unknown sources', async () => {
   const data = baseData();
   data.motor_exams = ['simulated', 'device', 'legacy_unverified', undefined].map(measurement_source => ({
-    timestamp_utc:'fixture', measurement_source, voice_mean_dbfs:-24, voice_stability_db:1,
+    timestamp_utc:'fixture', measurement_source, task_evidence:evidence(measurement_source), voice_mean_dbfs:-24, voice_stability_db:1,
     handwriting_opencv_decay_pct:0, walk_cadence_spm:100, walk_fog_count:0
   }));
   const {nodes,render} = harness(data); await render();
@@ -148,4 +152,15 @@ test('motor checks and comparisons identify simulated, device-reported and unkno
   await render();
   assert.match(nodes.get('timelineRibbon').children[0].className,/bucket-PAUSES/);
   assert.match(nodes.get('timelineRibbon').children[1].className,/bucket-SAFETY/);
+});
+
+test('status-only, contradictory and mismatched-source task values cannot render as measured', async () => {
+  const data=baseData();
+  data.motor_exams=[
+    {timestamp_utc:'status-only', measurement_source:'device', voice_status:'measured', voice_mean_dbfs:-24},
+    {timestamp_utc:'contradictory', measurement_source:'simulated', task_evidence:evidence('device'), voice_mean_dbfs:-24},
+    {timestamp_utc:'fake-measured', measurement_source:'simulated', task_evidence:{voice:{status:'measured',measurement_source:'simulated'}},voice_mean_dbfs:-24}
+  ];
+  const {nodes,render}=harness(data); await render();
+  for (const row of nodes.get('examTableBody').children) assert.equal(row.children[1].textContent,'Not measured');
 });

@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS caregiver_alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_caregiver_alerts_patient_ts ON caregiver_alerts(patient_id, timestamp_utc);
 
--- 4. Medication & Plate-Normalized Meal Protein Logs
+-- 4. Medication and meal timestamp logs
 CREATE TABLE IF NOT EXISTS medication_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id TEXT NOT NULL DEFAULT 'default_patient',
@@ -150,12 +150,7 @@ CREATE TABLE IF NOT EXISTS medication_logs (
     timestamp_utc TEXT NOT NULL,
     event_type TEXT NOT NULL,
     medication_name TEXT,
-    scheduled_time_utc TEXT,
-    detected_foods_json TEXT,
-    plate_detected INTEGER NOT NULL DEFAULT 0,
-    plate_area_ratio REAL,
-    estimated_protein_grams REAL,
-    conflict_detected INTEGER NOT NULL DEFAULT 0
+    scheduled_time_utc TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_medication_logs_patient_ts ON medication_logs(patient_id, timestamp_utc);
 
@@ -176,7 +171,7 @@ CREATE TABLE IF NOT EXISTS reality_checks (
 );
 CREATE INDEX IF NOT EXISTS idx_reality_checks_patient_ts ON reality_checks(patient_id, timestamp_utc);
 
--- 6. Handwriting Micrographia Logs (Both OpenCV & SAM 3.1 Decay Stored)
+-- 6. Handwriting stroke-height observations
 CREATE TABLE IF NOT EXISTS handwriting_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id TEXT NOT NULL DEFAULT 'default_patient',
@@ -187,7 +182,6 @@ CREATE TABLE IF NOT EXISTS handwriting_logs (
     final_stroke_height_px REAL NOT NULL,
     opencv_cc_decay_pct REAL NOT NULL,
     sam_3_1_decay_pct REAL,
-    micrographia_detected INTEGER NOT NULL,
     deskew_angle_deg REAL NOT NULL DEFAULT 0.0,
     source_context TEXT NOT NULL DEFAULT 'ambient'
 );
@@ -199,19 +193,14 @@ CREATE TABLE IF NOT EXISTS motor_exams (
     patient_id TEXT NOT NULL DEFAULT 'default_patient',
     exam_uuid TEXT UNIQUE NOT NULL,
     timestamp_utc TEXT NOT NULL,
-    medication_state_label TEXT,
     minutes_since_last_dose INTEGER,
     voice_mean_dbfs REAL,
     voice_stability_db REAL,
-    voice_score REAL,
     handwriting_opencv_decay_pct REAL,
     handwriting_sam_decay_pct REAL,
-    handwriting_score REAL,
     walk_cadence_spm REAL,
     walk_mean_fi REAL,
     walk_fog_count INTEGER,
-    gait_score REAL,
-    composite_motor_score REAL,
     clinical_summary TEXT NOT NULL,
     voice_status TEXT NOT NULL DEFAULT 'legacy_unverified',
     handwriting_status TEXT NOT NULL DEFAULT 'legacy_unverified',
@@ -331,12 +320,42 @@ def _migrate_exam_validity(conn):
         start = SCHEMA_SQL.index('CREATE TABLE IF NOT EXISTS motor_exams (')
         end = SCHEMA_SQL.index(');', start) + 2
         conn.execute(SCHEMA_SQL[start:end].replace('IF NOT EXISTS motor_exams', 'motor_exams_validity_new'))
-        names = ','.join(columns)
+        target_columns = {r['name'] for r in conn.execute('PRAGMA table_info(motor_exams_validity_new)')}
+        names = ','.join(c for c in columns if c in target_columns)
         conn.execute(f'INSERT INTO motor_exams_validity_new ({names}) SELECT {names} FROM motor_exams')
         conn.execute('DROP TABLE motor_exams')
         conn.execute('ALTER TABLE motor_exams_validity_new RENAME TO motor_exams')
         conn.execute('CREATE INDEX idx_motor_exams_patient_ts ON motor_exams(patient_id,timestamp_utc)')
     conn.execute("INSERT INTO schema_migrations(name) VALUES('motor_exam_validity_v1')")
+
+
+def _remove_retired_columns(conn):
+    """Atomically retire derived findings while preserving IDs and observations."""
+    retired = {
+        'motor_exams': {'medication_state_label', 'voice_score', 'handwriting_score', 'gait_score', 'composite_motor_score'},
+        'handwriting_logs': {'micrographia_detected'},
+        'medication_logs': {'detected_foods_json', 'plate_detected', 'plate_area_ratio', 'estimated_protein_grams', 'conflict_detected'},
+    }
+    for table, fields in retired.items():
+        old_columns = {r['name'] for r in conn.execute(f'PRAGMA table_info({table})')}
+        if not old_columns.intersection(fields):
+            continue
+        start = SCHEMA_SQL.index(f'CREATE TABLE IF NOT EXISTS {table} (')
+        end = SCHEMA_SQL.index(');', start) + 2
+        temporary = table + '_observations_new'
+        conn.execute(SCHEMA_SQL[start:end].replace(f'IF NOT EXISTS {table}', temporary))
+        columns = [r['name'] for r in conn.execute(f'PRAGMA table_info({temporary})') if r['name'] in old_columns]
+        names = ','.join(columns)
+        indexes = [r['sql'] for r in conn.execute("SELECT sql FROM sqlite_master WHERE tbl_name=? AND type IN ('index','trigger') AND sql IS NOT NULL", (table,))]
+        sequence = conn.execute('SELECT seq FROM sqlite_sequence WHERE name=?', (table,)).fetchone()
+        conn.execute(f'INSERT INTO {temporary} ({names}) SELECT {names} FROM {table}')
+        conn.execute(f'DROP TABLE {table}')
+        conn.execute(f'ALTER TABLE {temporary} RENAME TO {table}')
+        if sequence:
+            conn.execute('UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name=?', (sequence['seq'],table))
+        for sql in indexes:
+            conn.execute(sql)
+    conn.execute("INSERT OR IGNORE INTO schema_migrations(name) VALUES('retired_findings_removed_v2')")
 
 
 def init_db_sync(db_path: Optional[str] = None) -> None:
@@ -348,6 +367,7 @@ def init_db_sync(db_path: Optional[str] = None) -> None:
         conn.executescript(SCHEMA_SQL + FALL_OUTBOX_SCHEMA)
         conn.execute('INSERT OR IGNORE INTO server_identity(singleton,server_id) VALUES(1,?)', (str(uuid.uuid4()),))
         _migrate_exam_validity(conn)
+        _remove_retired_columns(conn)
         conn.commit()
     finally:
         conn.close()

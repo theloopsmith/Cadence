@@ -256,7 +256,7 @@ private final class ControlledMotionSource: MotionSource {
 final class ProtectionHealthTests: XCTestCase {
     func testStreamGapDiscardsPartialFallButPreservesActiveCheckIn() {
         let detector = FallDetector()
-        detector.eventSync = EventSyncManager(databasePath: NSTemporaryDirectory() + "partial-\(UUID()).sqlite", startPeriodicDrain: false)
+        detector.eventSync = makeTestEventSyncManager(databasePath: NSTemporaryDirectory() + "partial-\(UUID()).sqlite", startPeriodicDrain: false)
         let fall = [
             IMUSample(timestamp:1,ax:0.1,ay:0.1,az:0.1,gx:0,gy:0,gz:0,pitchDeg:4,rollDeg:2),
             IMUSample(timestamp:1.1,ax:0.2,ay:3.85,az:0.3,gx:3,gy:2,gz:1,pitchDeg:25,rollDeg:10),
@@ -314,7 +314,7 @@ final class ProtectionHealthTests: XCTestCase {
         var now = 0.0
         let feed = MotionFeed(uptime: { now }, automaticHealthChecks: false)
         let detector = FoGDetector()
-        let queue = EventSyncManager(databasePath: NSTemporaryDirectory() + "gap-\(UUID()).sqlite", startPeriodicDrain: false)
+        let queue = makeTestEventSyncManager(databasePath: NSTemporaryDirectory() + "gap-\(UUID()).sqlite", startPeriodicDrain: false)
         detector.eventSync = queue
         feed.attach(fogDetector: detector, fallDetector: FallDetector())
         let source = ControlledMotionSource()
@@ -342,7 +342,7 @@ final class ProtectionHealthTests: XCTestCase {
         let source = ControlledMotionSource()
         let audio = AudioCueEngine(playbackEnabled: false)
         let fall = FallAlertCoordinator(screen: NoopScreenController(), dialer: RecordingPhoneDialer(),
-            sync: EventSyncManager(databasePath: NSTemporaryDirectory() + "health-\(UUID()).sqlite", startPeriodicDrain: false),
+            sync: makeTestEventSyncManager(databasePath: NSTemporaryDirectory() + "health-\(UUID()).sqlite", startPeriodicDrain: false),
             locationProvider: MockLocationProvider(), speechListener: MockSpeechCheckInListener())
         let keepAlive = RecordingKeepAlive()
         let model = WalkingModel(motion: feed, fallAlert: fall, location: MockLocationProvider(),

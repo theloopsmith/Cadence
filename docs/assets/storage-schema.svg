@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1380" height="2509" style="width:100%;height:auto;display:block" viewBox="0 0 1380 2509" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1380" height="2389" style="width:100%;height:auto;display:block" viewBox="0 0 1380 2389" role="img" aria-labelledby="title desc">
 <title id="title">Cadence declared storage schema</title><desc id="desc">Fresh-database tables and actual SQL foreign keys generated from the checked-in DDL. Patient identifiers on observation tables are logical ownership keys, not users-table foreign keys.</desc>
-<rect width="1380" height="2509" fill="#0c0e0f"/>
+<rect width="1380" height="2389" fill="#0c0e0f"/>
 <g font-family="Helvetica,Arial,sans-serif" fill="#edf0ef"><text x="35" y="48" font-size="30">Cadence · declared storage schema</text>
 <text x="35" y="80" font-size="14" fill="#a6adb0">Generated from db.py + fall_durability.py. PK = primary key; arrows below are actual SQL foreign keys.</text>
 <rect x="35" y="115" width="420" height="274" rx="14" fill="#141819" stroke="#465a4e"/>
@@ -86,7 +86,7 @@
 <text x="951" y="717" font-size="13" font-family="monospace">speech_active_modifier : INTEGER</text>
 <text x="951" y="737" font-size="13" font-family="monospace">cue_bpm : INTEGER</text>
 <text x="951" y="757" font-size="13" font-family="monospace">recovery_latency_sec : REAL</text>
-<rect x="35" y="913" width="420" height="294" rx="14" fill="#141819" stroke="#465a4e"/>
+<rect x="35" y="913" width="420" height="274" rx="14" fill="#141819" stroke="#465a4e"/>
 <text x="51" y="942" font-size="19" fill="#b9edc9">handwriting_logs</text>
 <text x="51" y="966" font-size="13" font-family="monospace">PK id : INTEGER</text>
 <text x="51" y="986" font-size="13" font-family="monospace">patient_id : TEXT</text>
@@ -97,9 +97,8 @@
 <text x="51" y="1086" font-size="13" font-family="monospace">final_stroke_height_px : REAL</text>
 <text x="51" y="1106" font-size="13" font-family="monospace">opencv_cc_decay_pct : REAL</text>
 <text x="51" y="1126" font-size="13" font-family="monospace">sam_3_1_decay_pct : REAL</text>
-<text x="51" y="1146" font-size="13" font-family="monospace">micrographia_detected : INTEGER</text>
-<text x="51" y="1166" font-size="13" font-family="monospace">deskew_angle_deg : REAL</text>
-<text x="51" y="1186" font-size="13" font-family="monospace">source_context : TEXT</text>
+<text x="51" y="1146" font-size="13" font-family="monospace">deskew_angle_deg : REAL</text>
+<text x="51" y="1166" font-size="13" font-family="monospace">source_context : TEXT</text>
 <rect x="485" y="913" width="420" height="154" rx="14" fill="#141819" stroke="#465a4e"/>
 <text x="501" y="942" font-size="19" fill="#b9edc9">login_attempts</text>
 <text x="501" y="966" font-size="13" font-family="monospace">PK username_hash : TEXT</text>
@@ -107,7 +106,7 @@
 <text x="501" y="1006" font-size="13" font-family="monospace">locked_until : REAL</text>
 <text x="501" y="1026" font-size="13" font-family="monospace">expires_at : REAL</text>
 <text x="501" y="1046" font-size="13" font-family="monospace">revision : TEXT</text>
-<rect x="935" y="913" width="420" height="294" rx="14" fill="#141819" stroke="#465a4e"/>
+<rect x="935" y="913" width="420" height="194" rx="14" fill="#141819" stroke="#465a4e"/>
 <text x="951" y="942" font-size="19" fill="#b9edc9">medication_logs</text>
 <text x="951" y="966" font-size="13" font-family="monospace">PK id : INTEGER</text>
 <text x="951" y="986" font-size="13" font-family="monospace">patient_id : TEXT</text>
@@ -116,88 +115,78 @@
 <text x="951" y="1046" font-size="13" font-family="monospace">event_type : TEXT</text>
 <text x="951" y="1066" font-size="13" font-family="monospace">medication_name : TEXT</text>
 <text x="951" y="1086" font-size="13" font-family="monospace">scheduled_time_utc : TEXT</text>
-<text x="951" y="1106" font-size="13" font-family="monospace">detected_foods_json : TEXT</text>
-<text x="951" y="1126" font-size="13" font-family="monospace">plate_detected : INTEGER</text>
-<text x="951" y="1146" font-size="13" font-family="monospace">plate_area_ratio : REAL</text>
-<text x="951" y="1166" font-size="13" font-family="monospace">estimated_protein_grams : REAL</text>
-<text x="951" y="1186" font-size="13" font-family="monospace">conflict_detected : INTEGER</text>
-<rect x="35" y="1242" width="420" height="174" rx="14" fill="#141819" stroke="#465a4e"/>
-<text x="51" y="1271" font-size="19" fill="#b9edc9">medication_retractions</text>
-<text x="51" y="1295" font-size="13" font-family="monospace">PK id : INTEGER</text>
-<text x="51" y="1315" font-size="13" font-family="monospace">patient_id : TEXT</text>
-<text x="51" y="1335" font-size="13" font-family="monospace">event_uuid : TEXT</text>
-<text x="51" y="1355" font-size="13" font-family="monospace">retracted_event_uuid : TEXT</text>
-<text x="51" y="1375" font-size="13" font-family="monospace">timestamp_utc : TEXT</text>
-<text x="51" y="1395" font-size="13" font-family="monospace">reason : TEXT</text>
-<rect x="485" y="1242" width="420" height="494" rx="14" fill="#141819" stroke="#465a4e"/>
-<text x="501" y="1271" font-size="19" fill="#b9edc9">motor_exams</text>
-<text x="501" y="1295" font-size="13" font-family="monospace">PK id : INTEGER</text>
-<text x="501" y="1315" font-size="13" font-family="monospace">patient_id : TEXT</text>
-<text x="501" y="1335" font-size="13" font-family="monospace">exam_uuid : TEXT</text>
-<text x="501" y="1355" font-size="13" font-family="monospace">timestamp_utc : TEXT</text>
-<text x="501" y="1375" font-size="13" font-family="monospace">medication_state_label : TEXT</text>
-<text x="501" y="1395" font-size="13" font-family="monospace">minutes_since_last_dose : INTEGER</text>
-<text x="501" y="1415" font-size="13" font-family="monospace">voice_mean_dbfs : REAL</text>
-<text x="501" y="1435" font-size="13" font-family="monospace">voice_stability_db : REAL</text>
-<text x="501" y="1455" font-size="13" font-family="monospace">voice_score : REAL</text>
-<text x="501" y="1475" font-size="13" font-family="monospace">handwriting_opencv_decay_pct : REAL</text>
-<text x="501" y="1495" font-size="13" font-family="monospace">handwriting_sam_decay_pct : REAL</text>
-<text x="501" y="1515" font-size="13" font-family="monospace">handwriting_score : REAL</text>
-<text x="501" y="1535" font-size="13" font-family="monospace">walk_cadence_spm : REAL</text>
-<text x="501" y="1555" font-size="13" font-family="monospace">walk_mean_fi : REAL</text>
-<text x="501" y="1575" font-size="13" font-family="monospace">walk_fog_count : INTEGER</text>
-<text x="501" y="1595" font-size="13" font-family="monospace">gait_score : REAL</text>
-<text x="501" y="1615" font-size="13" font-family="monospace">composite_motor_score : REAL</text>
-<text x="501" y="1635" font-size="13" font-family="monospace">clinical_summary : TEXT</text>
-<text x="501" y="1655" font-size="13" font-family="monospace">voice_status : TEXT</text>
-<text x="501" y="1675" font-size="13" font-family="monospace">handwriting_status : TEXT</text>
-<text x="501" y="1695" font-size="13" font-family="monospace">walk_status : TEXT</text>
-<text x="501" y="1715" font-size="13" font-family="monospace">measurement_source : TEXT</text>
-<rect x="935" y="1242" width="420" height="114" rx="14" fill="#141819" stroke="#465a4e"/>
-<text x="951" y="1271" font-size="19" fill="#b9edc9">patient_wipes</text>
-<text x="951" y="1295" font-size="13" font-family="monospace">PK id : INTEGER</text>
-<text x="951" y="1315" font-size="13" font-family="monospace">patient_id : TEXT</text>
-<text x="951" y="1335" font-size="13" font-family="monospace">wiped_at_utc : TEXT</text>
-<rect x="35" y="1771" width="420" height="294" rx="14" fill="#141819" stroke="#465a4e"/>
-<text x="51" y="1800" font-size="19" fill="#b9edc9">reality_checks</text>
-<text x="51" y="1824" font-size="13" font-family="monospace">PK id : INTEGER</text>
-<text x="51" y="1844" font-size="13" font-family="monospace">patient_id : TEXT</text>
-<text x="51" y="1864" font-size="13" font-family="monospace">event_uuid : TEXT</text>
-<text x="51" y="1884" font-size="13" font-family="monospace">timestamp_utc : TEXT</text>
-<text x="51" y="1904" font-size="13" font-family="monospace">user_query : TEXT</text>
-<text x="51" y="1924" font-size="13" font-family="monospace">sam_verified : INTEGER</text>
-<text x="51" y="1944" font-size="13" font-family="monospace">sam_masks_json : TEXT</text>
-<text x="51" y="1964" font-size="13" font-family="monospace">living_subject_present : INTEGER</text>
-<text x="51" y="1984" font-size="13" font-family="monospace">chosen_inanimate_label : TEXT</text>
-<text x="51" y="2004" font-size="13" font-family="monospace">template_id : TEXT</text>
-<text x="51" y="2024" font-size="13" font-family="monospace">spoken_response : TEXT</text>
-<text x="51" y="2044" font-size="13" font-family="monospace">latency_ms : INTEGER</text>
-<rect x="485" y="1771" width="420" height="74" rx="14" fill="#141819" stroke="#465a4e"/>
-<text x="501" y="1800" font-size="19" fill="#b9edc9">schema_migrations</text>
-<text x="501" y="1824" font-size="13" font-family="monospace">PK name : TEXT</text>
-<rect x="935" y="1771" width="420" height="94" rx="14" fill="#141819" stroke="#465a4e"/>
-<text x="951" y="1800" font-size="19" fill="#b9edc9">server_identity</text>
-<text x="951" y="1824" font-size="13" font-family="monospace">PK singleton : INTEGER</text>
-<text x="951" y="1844" font-size="13" font-family="monospace">server_id : TEXT</text>
-<rect x="35" y="2100" width="420" height="174" rx="14" fill="#141819" stroke="#465a4e"/>
-<text x="51" y="2129" font-size="19" fill="#b9edc9">users</text>
-<text x="51" y="2153" font-size="13" font-family="monospace">PK id : INTEGER</text>
-<text x="51" y="2173" font-size="13" font-family="monospace">username : TEXT</text>
-<text x="51" y="2193" font-size="13" font-family="monospace">password_hash : TEXT</text>
-<text x="51" y="2213" font-size="13" font-family="monospace">role : TEXT</text>
-<text x="51" y="2233" font-size="13" font-family="monospace">patient_id : TEXT</text>
-<text x="51" y="2253" font-size="13" font-family="monospace">created_at_utc : TEXT</text>
-<rect x="485" y="2100" width="420" height="194" rx="14" fill="#141819" stroke="#465a4e"/>
-<text x="501" y="2129" font-size="19" fill="#b9edc9">voice_logs</text>
-<text x="501" y="2153" font-size="13" font-family="monospace">PK id : INTEGER</text>
-<text x="501" y="2173" font-size="13" font-family="monospace">patient_id : TEXT</text>
-<text x="501" y="2193" font-size="13" font-family="monospace">event_uuid : TEXT</text>
-<text x="501" y="2213" font-size="13" font-family="monospace">timestamp_utc : TEXT</text>
-<text x="501" y="2233" font-size="13" font-family="monospace">window_mean_dbfs : REAL</text>
-<text x="501" y="2253" font-size="13" font-family="monospace">baseline_dbfs : REAL</text>
-<text x="501" y="2273" font-size="13" font-family="monospace">nudge_triggered : INTEGER</text>
-<text x="35" y="2364" font-size="14" fill="#a6adb0">caregiver_alerts.fall_event_uuid → fall_events.event_uuid</text>
-<text x="35" y="2386" font-size="14" fill="#a6adb0">fall_attempts.event_uuid → fall_events.event_uuid</text>
-<text x="35" y="2408" font-size="14" fill="#a6adb0">fall_clear_jobs.event_uuid → fall_events.event_uuid</text>
-<text x="35" y="2430" font-size="14" fill="#a6adb0">fall_jobs.event_uuid → fall_events.event_uuid</text>
+<rect x="35" y="1222" width="420" height="174" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="51" y="1251" font-size="19" fill="#b9edc9">medication_retractions</text>
+<text x="51" y="1275" font-size="13" font-family="monospace">PK id : INTEGER</text>
+<text x="51" y="1295" font-size="13" font-family="monospace">patient_id : TEXT</text>
+<text x="51" y="1315" font-size="13" font-family="monospace">event_uuid : TEXT</text>
+<text x="51" y="1335" font-size="13" font-family="monospace">retracted_event_uuid : TEXT</text>
+<text x="51" y="1355" font-size="13" font-family="monospace">timestamp_utc : TEXT</text>
+<text x="51" y="1375" font-size="13" font-family="monospace">reason : TEXT</text>
+<rect x="485" y="1222" width="420" height="394" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="501" y="1251" font-size="19" fill="#b9edc9">motor_exams</text>
+<text x="501" y="1275" font-size="13" font-family="monospace">PK id : INTEGER</text>
+<text x="501" y="1295" font-size="13" font-family="monospace">patient_id : TEXT</text>
+<text x="501" y="1315" font-size="13" font-family="monospace">exam_uuid : TEXT</text>
+<text x="501" y="1335" font-size="13" font-family="monospace">timestamp_utc : TEXT</text>
+<text x="501" y="1355" font-size="13" font-family="monospace">minutes_since_last_dose : INTEGER</text>
+<text x="501" y="1375" font-size="13" font-family="monospace">voice_mean_dbfs : REAL</text>
+<text x="501" y="1395" font-size="13" font-family="monospace">voice_stability_db : REAL</text>
+<text x="501" y="1415" font-size="13" font-family="monospace">handwriting_opencv_decay_pct : REAL</text>
+<text x="501" y="1435" font-size="13" font-family="monospace">handwriting_sam_decay_pct : REAL</text>
+<text x="501" y="1455" font-size="13" font-family="monospace">walk_cadence_spm : REAL</text>
+<text x="501" y="1475" font-size="13" font-family="monospace">walk_mean_fi : REAL</text>
+<text x="501" y="1495" font-size="13" font-family="monospace">walk_fog_count : INTEGER</text>
+<text x="501" y="1515" font-size="13" font-family="monospace">clinical_summary : TEXT</text>
+<text x="501" y="1535" font-size="13" font-family="monospace">voice_status : TEXT</text>
+<text x="501" y="1555" font-size="13" font-family="monospace">handwriting_status : TEXT</text>
+<text x="501" y="1575" font-size="13" font-family="monospace">walk_status : TEXT</text>
+<text x="501" y="1595" font-size="13" font-family="monospace">measurement_source : TEXT</text>
+<rect x="935" y="1222" width="420" height="114" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="951" y="1251" font-size="19" fill="#b9edc9">patient_wipes</text>
+<text x="951" y="1275" font-size="13" font-family="monospace">PK id : INTEGER</text>
+<text x="951" y="1295" font-size="13" font-family="monospace">patient_id : TEXT</text>
+<text x="951" y="1315" font-size="13" font-family="monospace">wiped_at_utc : TEXT</text>
+<rect x="35" y="1651" width="420" height="294" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="51" y="1680" font-size="19" fill="#b9edc9">reality_checks</text>
+<text x="51" y="1704" font-size="13" font-family="monospace">PK id : INTEGER</text>
+<text x="51" y="1724" font-size="13" font-family="monospace">patient_id : TEXT</text>
+<text x="51" y="1744" font-size="13" font-family="monospace">event_uuid : TEXT</text>
+<text x="51" y="1764" font-size="13" font-family="monospace">timestamp_utc : TEXT</text>
+<text x="51" y="1784" font-size="13" font-family="monospace">user_query : TEXT</text>
+<text x="51" y="1804" font-size="13" font-family="monospace">sam_verified : INTEGER</text>
+<text x="51" y="1824" font-size="13" font-family="monospace">sam_masks_json : TEXT</text>
+<text x="51" y="1844" font-size="13" font-family="monospace">living_subject_present : INTEGER</text>
+<text x="51" y="1864" font-size="13" font-family="monospace">chosen_inanimate_label : TEXT</text>
+<text x="51" y="1884" font-size="13" font-family="monospace">template_id : TEXT</text>
+<text x="51" y="1904" font-size="13" font-family="monospace">spoken_response : TEXT</text>
+<text x="51" y="1924" font-size="13" font-family="monospace">latency_ms : INTEGER</text>
+<rect x="485" y="1651" width="420" height="74" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="501" y="1680" font-size="19" fill="#b9edc9">schema_migrations</text>
+<text x="501" y="1704" font-size="13" font-family="monospace">PK name : TEXT</text>
+<rect x="935" y="1651" width="420" height="94" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="951" y="1680" font-size="19" fill="#b9edc9">server_identity</text>
+<text x="951" y="1704" font-size="13" font-family="monospace">PK singleton : INTEGER</text>
+<text x="951" y="1724" font-size="13" font-family="monospace">server_id : TEXT</text>
+<rect x="35" y="1980" width="420" height="174" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="51" y="2009" font-size="19" fill="#b9edc9">users</text>
+<text x="51" y="2033" font-size="13" font-family="monospace">PK id : INTEGER</text>
+<text x="51" y="2053" font-size="13" font-family="monospace">username : TEXT</text>
+<text x="51" y="2073" font-size="13" font-family="monospace">password_hash : TEXT</text>
+<text x="51" y="2093" font-size="13" font-family="monospace">role : TEXT</text>
+<text x="51" y="2113" font-size="13" font-family="monospace">patient_id : TEXT</text>
+<text x="51" y="2133" font-size="13" font-family="monospace">created_at_utc : TEXT</text>
+<rect x="485" y="1980" width="420" height="194" rx="14" fill="#141819" stroke="#465a4e"/>
+<text x="501" y="2009" font-size="19" fill="#b9edc9">voice_logs</text>
+<text x="501" y="2033" font-size="13" font-family="monospace">PK id : INTEGER</text>
+<text x="501" y="2053" font-size="13" font-family="monospace">patient_id : TEXT</text>
+<text x="501" y="2073" font-size="13" font-family="monospace">event_uuid : TEXT</text>
+<text x="501" y="2093" font-size="13" font-family="monospace">timestamp_utc : TEXT</text>
+<text x="501" y="2113" font-size="13" font-family="monospace">window_mean_dbfs : REAL</text>
+<text x="501" y="2133" font-size="13" font-family="monospace">baseline_dbfs : REAL</text>
+<text x="501" y="2153" font-size="13" font-family="monospace">nudge_triggered : INTEGER</text>
+<text x="35" y="2244" font-size="14" fill="#a6adb0">caregiver_alerts.fall_event_uuid → fall_events.event_uuid</text>
+<text x="35" y="2266" font-size="14" fill="#a6adb0">fall_attempts.event_uuid → fall_events.event_uuid</text>
+<text x="35" y="2288" font-size="14" fill="#a6adb0">fall_clear_jobs.event_uuid → fall_events.event_uuid</text>
+<text x="35" y="2310" font-size="14" fill="#a6adb0">fall_jobs.event_uuid → fall_events.event_uuid</text>
 </g></svg>

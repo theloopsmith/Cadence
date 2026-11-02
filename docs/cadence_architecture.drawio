@@ -343,7 +343,7 @@
         <mxCell id="c4" value="&lt;b&gt;EventSyncManager outbox&lt;/b&gt;&lt;br/&gt;row = endpoint + payload + owner(hash of JWT sub + patient) + destination + data_generation + attempt. Drain: fetch /device/connection → learn generation → retire older rows (terminal, NOT delivered) → send fall rows first → ack only the exact payload revision. 401/403 → onUnauthorized, row kept." style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0369A1;fontColor=#0F172A;fontSize=11;align=left;verticalAlign=top;spacingLeft=8;spacingRight=8;spacingTop=4;strokeWidth=1.5;" vertex="1" parent="1">
           <mxGeometry x="40" y="230" width="420" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="c5" value="&lt;b&gt;Auth and deployment&lt;/b&gt;&lt;br/&gt;scrypt login budgets; scoped JWTs; account inference quota 30/min + separate check-in transcription quota 60/min (process-local). Static tokens have no built-in values. Public demo: durable secret, static tokens off, simulated transport only, removed experimental scoring and pinned Meta IDs. Caddy HTTPS + one Uvicorn worker." style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontColor=#0F172A;fontSize=11;align=left;verticalAlign=top;spacingLeft=8;spacingRight=8;spacingTop=4;strokeWidth=1.5;" vertex="1" parent="1">
+        <mxCell id="c5" value="&lt;b&gt;Auth and deployment&lt;/b&gt;&lt;br/&gt;scrypt login budgets; scoped JWTs; account inference quota 30/min + separate check-in transcription quota 60/min (process-local). No bundled phone tokens; backend env path is absolute. Public demo: durable secret, static tokens off, simulated transport only, expiring judge accounts, removed research columns and pinned Meta IDs. Caddy HTTPS + one Uvicorn worker." style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontColor=#0F172A;fontSize=11;align=left;verticalAlign=top;spacingLeft=8;spacingRight=8;spacingTop=4;strokeWidth=1.5;" vertex="1" parent="1">
           <mxGeometry x="580" y="100" width="420" height="110" as="geometry" />
         </mxCell>
         <mxCell id="c6" value="&lt;b&gt;Write boundary&lt;/b&gt;&lt;br/&gt;every insert runs under BEGIN IMMEDIATE with require_data_generation(patient, header). A wipe deletes + appends patient_wipes in the same transaction → a write either commits before the wipe or gets 409 data_generation_changed. Server recovery writes at the current generation." style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#15803D;fontColor=#0F172A;fontSize=11;align=left;verticalAlign=top;spacingLeft=8;spacingRight=8;spacingTop=4;strokeWidth=1.5;" vertex="1" parent="1">
@@ -401,7 +401,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="cadence-schema" name="5 Storage schema">
-    <mxGraphModel page="1" pageWidth="1380" pageHeight="2509" grid="1">
+    <mxGraphModel page="1" pageWidth="1380" pageHeight="2389" grid="1">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -435,38 +435,38 @@
         <mxCell id="schema-fog_events" value="&lt;b&gt;fog_events&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;event_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;duration_sec : REAL&lt;br/&gt;peak_freeze_index : REAL&lt;br/&gt;locomotor_band_power : REAL&lt;br/&gt;freeze_band_power : REAL&lt;br/&gt;sampled_hz : REAL&lt;br/&gt;arming_mode : TEXT&lt;br/&gt;speech_active_modifier : INTEGER&lt;br/&gt;cue_bpm : INTEGER&lt;br/&gt;recovery_latency_sec : REAL" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
           <mxGeometry x="935" y="464" width="420" height="314" as="geometry" />
         </mxCell>
-        <mxCell id="schema-handwriting_logs" value="&lt;b&gt;handwriting_logs&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;event_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;letter_boxes_json : TEXT&lt;br/&gt;initial_stroke_height_px : REAL&lt;br/&gt;final_stroke_height_px : REAL&lt;br/&gt;opencv_cc_decay_pct : REAL&lt;br/&gt;sam_3_1_decay_pct : REAL&lt;br/&gt;micrographia_detected : INTEGER&lt;br/&gt;deskew_angle_deg : REAL&lt;br/&gt;source_context : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="35" y="913" width="420" height="294" as="geometry" />
+        <mxCell id="schema-handwriting_logs" value="&lt;b&gt;handwriting_logs&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;event_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;letter_boxes_json : TEXT&lt;br/&gt;initial_stroke_height_px : REAL&lt;br/&gt;final_stroke_height_px : REAL&lt;br/&gt;opencv_cc_decay_pct : REAL&lt;br/&gt;sam_3_1_decay_pct : REAL&lt;br/&gt;deskew_angle_deg : REAL&lt;br/&gt;source_context : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
+          <mxGeometry x="35" y="913" width="420" height="274" as="geometry" />
         </mxCell>
         <mxCell id="schema-login_attempts" value="&lt;b&gt;login_attempts&lt;/b&gt;&lt;br/&gt;PK username_hash : TEXT&lt;br/&gt;attempts : INTEGER&lt;br/&gt;locked_until : REAL&lt;br/&gt;expires_at : REAL&lt;br/&gt;revision : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
           <mxGeometry x="485" y="913" width="420" height="154" as="geometry" />
         </mxCell>
-        <mxCell id="schema-medication_logs" value="&lt;b&gt;medication_logs&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;event_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;event_type : TEXT&lt;br/&gt;medication_name : TEXT&lt;br/&gt;scheduled_time_utc : TEXT&lt;br/&gt;detected_foods_json : TEXT&lt;br/&gt;plate_detected : INTEGER&lt;br/&gt;plate_area_ratio : REAL&lt;br/&gt;estimated_protein_grams : REAL&lt;br/&gt;conflict_detected : INTEGER" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="935" y="913" width="420" height="294" as="geometry" />
+        <mxCell id="schema-medication_logs" value="&lt;b&gt;medication_logs&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;event_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;event_type : TEXT&lt;br/&gt;medication_name : TEXT&lt;br/&gt;scheduled_time_utc : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
+          <mxGeometry x="935" y="913" width="420" height="194" as="geometry" />
         </mxCell>
         <mxCell id="schema-medication_retractions" value="&lt;b&gt;medication_retractions&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;event_uuid : TEXT&lt;br/&gt;retracted_event_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;reason : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="35" y="1242" width="420" height="174" as="geometry" />
+          <mxGeometry x="35" y="1222" width="420" height="174" as="geometry" />
         </mxCell>
-        <mxCell id="schema-motor_exams" value="&lt;b&gt;motor_exams&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;exam_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;medication_state_label : TEXT&lt;br/&gt;minutes_since_last_dose : INTEGER&lt;br/&gt;voice_mean_dbfs : REAL&lt;br/&gt;voice_stability_db : REAL&lt;br/&gt;voice_score : REAL&lt;br/&gt;handwriting_opencv_decay_pct : REAL&lt;br/&gt;handwriting_sam_decay_pct : REAL&lt;br/&gt;handwriting_score : REAL&lt;br/&gt;walk_cadence_spm : REAL&lt;br/&gt;walk_mean_fi : REAL&lt;br/&gt;walk_fog_count : INTEGER&lt;br/&gt;gait_score : REAL&lt;br/&gt;composite_motor_score : REAL&lt;br/&gt;clinical_summary : TEXT&lt;br/&gt;voice_status : TEXT&lt;br/&gt;handwriting_status : TEXT&lt;br/&gt;walk_status : TEXT&lt;br/&gt;measurement_source : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="485" y="1242" width="420" height="494" as="geometry" />
+        <mxCell id="schema-motor_exams" value="&lt;b&gt;motor_exams&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;exam_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;minutes_since_last_dose : INTEGER&lt;br/&gt;voice_mean_dbfs : REAL&lt;br/&gt;voice_stability_db : REAL&lt;br/&gt;handwriting_opencv_decay_pct : REAL&lt;br/&gt;handwriting_sam_decay_pct : REAL&lt;br/&gt;walk_cadence_spm : REAL&lt;br/&gt;walk_mean_fi : REAL&lt;br/&gt;walk_fog_count : INTEGER&lt;br/&gt;clinical_summary : TEXT&lt;br/&gt;voice_status : TEXT&lt;br/&gt;handwriting_status : TEXT&lt;br/&gt;walk_status : TEXT&lt;br/&gt;measurement_source : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
+          <mxGeometry x="485" y="1222" width="420" height="394" as="geometry" />
         </mxCell>
         <mxCell id="schema-patient_wipes" value="&lt;b&gt;patient_wipes&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;wiped_at_utc : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="935" y="1242" width="420" height="114" as="geometry" />
+          <mxGeometry x="935" y="1222" width="420" height="114" as="geometry" />
         </mxCell>
         <mxCell id="schema-reality_checks" value="&lt;b&gt;reality_checks&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;event_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;user_query : TEXT&lt;br/&gt;sam_verified : INTEGER&lt;br/&gt;sam_masks_json : TEXT&lt;br/&gt;living_subject_present : INTEGER&lt;br/&gt;chosen_inanimate_label : TEXT&lt;br/&gt;template_id : TEXT&lt;br/&gt;spoken_response : TEXT&lt;br/&gt;latency_ms : INTEGER" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="35" y="1771" width="420" height="294" as="geometry" />
+          <mxGeometry x="35" y="1651" width="420" height="294" as="geometry" />
         </mxCell>
         <mxCell id="schema-schema_migrations" value="&lt;b&gt;schema_migrations&lt;/b&gt;&lt;br/&gt;PK name : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="485" y="1771" width="420" height="74" as="geometry" />
+          <mxGeometry x="485" y="1651" width="420" height="74" as="geometry" />
         </mxCell>
         <mxCell id="schema-server_identity" value="&lt;b&gt;server_identity&lt;/b&gt;&lt;br/&gt;PK singleton : INTEGER&lt;br/&gt;server_id : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="935" y="1771" width="420" height="94" as="geometry" />
+          <mxGeometry x="935" y="1651" width="420" height="94" as="geometry" />
         </mxCell>
         <mxCell id="schema-users" value="&lt;b&gt;users&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;username : TEXT&lt;br/&gt;password_hash : TEXT&lt;br/&gt;role : TEXT&lt;br/&gt;patient_id : TEXT&lt;br/&gt;created_at_utc : TEXT" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="35" y="2100" width="420" height="174" as="geometry" />
+          <mxGeometry x="35" y="1980" width="420" height="174" as="geometry" />
         </mxCell>
         <mxCell id="schema-voice_logs" value="&lt;b&gt;voice_logs&lt;/b&gt;&lt;br/&gt;PK id : INTEGER&lt;br/&gt;patient_id : TEXT&lt;br/&gt;event_uuid : TEXT&lt;br/&gt;timestamp_utc : TEXT&lt;br/&gt;window_mean_dbfs : REAL&lt;br/&gt;baseline_dbfs : REAL&lt;br/&gt;nudge_triggered : INTEGER" vertex="1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDF4;strokeColor=#15803D;fontColor=#0F172A;fontSize=13;align=left;verticalAlign=top;spacing=12;">
-          <mxGeometry x="485" y="2100" width="420" height="194" as="geometry" />
+          <mxGeometry x="485" y="1980" width="420" height="194" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

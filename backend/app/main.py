@@ -591,8 +591,8 @@ async def analyze_handwriting_endpoint(
             patient_id, event_uuid, timestamp_utc, letter_boxes_json,
             initial_stroke_height_px, final_stroke_height_px,
             opencv_cc_decay_pct, sam_3_1_decay_pct,
-            micrographia_detected, deskew_angle_deg, source_context
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            deskew_angle_deg, source_context
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(event_uuid) DO NOTHING
         """,
         (
@@ -604,7 +604,6 @@ async def analyze_handwriting_endpoint(
             res["final_stroke_height_px"],
             res["opencv_cc_decay_pct"],
             res["sam_3_1_decay_pct"],
-            0,  # Inert compatibility value for the legacy NOT NULL column.
             res["deskew_angle_deg"],
             payload.source_context,
         ),

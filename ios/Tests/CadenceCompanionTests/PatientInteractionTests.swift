@@ -158,7 +158,7 @@ final class DoseLogModelTests: XCTestCase {
     private func makeModel(transport: RecordingJSONTransport = RecordingJSONTransport(), now: Date) -> (DoseLogModel, DiaryStore, EventSyncManager) {
         let diary = DiaryStore(directory: URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("dose-\(UUID().uuidString)"))
-        let sync = EventSyncManager(
+        let sync = makeTestEventSyncManager(
             databasePath: NSTemporaryDirectory() + "dose-\(UUID().uuidString).sqlite",
             startPeriodicDrain: false
         )
@@ -239,7 +239,7 @@ final class CheckInWindowTests: XCTestCase {
     }
 
     func testAnsweringLateInTheWindowStillCancels() async {
-        let sync = EventSyncManager(
+        let sync = makeTestEventSyncManager(
             databasePath: NSTemporaryDirectory() + "late-\(UUID().uuidString).sqlite",
             startPeriodicDrain: false
         )

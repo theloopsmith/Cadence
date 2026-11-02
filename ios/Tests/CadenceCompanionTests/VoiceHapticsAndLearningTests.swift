@@ -69,7 +69,7 @@ final class VoiceDoseAssistantTests: XCTestCase {
     private func make(now: Date = Date()) -> (VoiceDoseAssistant, MockTranscriptListener, SpokenLog, DoseLogModel) {
         let diary = DiaryStore(directory: URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("vd-\(UUID().uuidString)"))
-        let sync = EventSyncManager(
+        let sync = makeTestEventSyncManager(
             databasePath: NSTemporaryDirectory() + "vd-\(UUID().uuidString).sqlite", startPeriodicDrain: false
         )
         let schedule = MedicationSchedule(medicationName: "Levodopa", doseTimes: [DoseTime(hour: 0, minute: 0)])

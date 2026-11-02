@@ -29,7 +29,7 @@ One explicit run calls the existing Meta intent endpoint, writes a labeled synth
 - `backend/app/static/walkthrough/desk.jpg`
 - Other retained scene assets: `coatstand.jpg`, `safety_floor.jpg`, `together.jpg`, `motor-voice.jpg`, `writing-first.jpg`, `writing-second.jpg`, `writing-complete.jpg`, `handwriting-capture.jpg`. All are in the same directory and exact server allowlist.
 
-The retained generated-asset prompts are below. The coat-stand and safety-floor scene provenance still needs owner rights confirmation before final submission; their presence in the repository is not proof of rights.
+The retained generated-asset prompts are below. On November 2, 2026, Harshal Vaidya confirmed that `coatstand.jpg` and `safety_floor.jpg` were generated using ChatGPT. They are static fictional illustrations, not patient photos, physical-device captures or evidence of measured behavior. No image generator is called at runtime. See [submission declarations](SUBMISSION_DECLARATIONS.md) for asset scope and outstanding organizer confirmation.
 
 Original raster artwork was generated with the built-in `image_gen` tool during development and encoded as JPEG for delivery. This introduces no OpenAI model call at app/page runtime. Originals remain in the local generated-images directory. The page uses only same-origin images/CSS/JS, the existing per-response script nonce, and an exact allowlist for image delivery; unknown image names return 404. No provider credentials are embedded in assets.
 

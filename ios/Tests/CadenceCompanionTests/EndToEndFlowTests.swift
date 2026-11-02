@@ -14,7 +14,7 @@ final class EndToEndFlowTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         dbPath = NSTemporaryDirectory() + "cadence-e2e-\(UUID().uuidString).sqlite"
-        sync = EventSyncManager(
+        sync = makeTestEventSyncManager(
             transport: StubTransport(), databasePath: dbPath, startPeriodicDrain: false
         )
         screen = NoopScreenController()

@@ -18,7 +18,7 @@ final class ProtectionKeepAliveTests: XCTestCase {
         let keepAlive = RecordingKeepAlive()
         let fall = FallAlertCoordinator(
             screen: NoopScreenController(), dialer: RecordingPhoneDialer(),
-            sync: EventSyncManager(
+            sync: makeTestEventSyncManager(
                 databasePath: NSTemporaryDirectory() + "ka-\(UUID().uuidString).sqlite", startPeriodicDrain: false
             ),
             locationProvider: MockLocationProvider(), speechListener: MockSpeechCheckInListener()
@@ -51,7 +51,7 @@ final class ProtectionKeepAliveTests: XCTestCase {
         let keepAlive = RecordingKeepAlive()
         let fall = FallAlertCoordinator(
             screen: NoopScreenController(), dialer: RecordingPhoneDialer(),
-            sync: EventSyncManager(
+            sync: makeTestEventSyncManager(
                 databasePath: NSTemporaryDirectory() + "ka-\(UUID().uuidString).sqlite", startPeriodicDrain: false
             ),
             locationProvider: MockLocationProvider(), speechListener: MockSpeechCheckInListener()

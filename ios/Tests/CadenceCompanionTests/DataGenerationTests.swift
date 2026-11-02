@@ -53,7 +53,7 @@ final class DataGenerationTests: XCTestCase {
     private let url = "http://localhost:8000"
     private let token = "generation-test-owner"
     private func queue(_ transport: GenerationTransport, path: String? = nil) -> EventSyncManager {
-        let queue = EventSyncManager(transport: transport,
+        let queue = makeTestEventSyncManager(transport: transport,
             databasePath: path ?? NSTemporaryDirectory()+"generation-\(UUID()).sqlite", startPeriodicDrain: false)
         queue.configureSession(baseURL: url, bearerToken: token, replaceTransport: false)
         return queue

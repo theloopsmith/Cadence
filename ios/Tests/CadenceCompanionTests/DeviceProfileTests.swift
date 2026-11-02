@@ -44,7 +44,7 @@ final class DeviceProfileTests: XCTestCase {
     }
     private func settings(_ profile: DeviceProfile, defaults: UserDefaults? = nil, store: InMemoryTokenStore = InMemoryTokenStore()) -> AppSettings {
         AppSettings(defaults: defaults ?? UserDefaults(suiteName: "profile-defaults-\(UUID())")!,
-            sync: EventSyncManager(databasePath: profile.directory.appendingPathComponent("queue.sqlite").path, startPeriodicDrain: false),
+            sync: makeTestEventSyncManager(databasePath: profile.directory.appendingPathComponent("queue.sqlite").path, startPeriodicDrain: false),
             developerMode: false, tokenStore: store, defaultToken: "", profile: profile)
     }
 
@@ -84,7 +84,7 @@ final class DeviceProfileTests: XCTestCase {
         let profile = DeviceProfile(root: root())
         let defaults = UserDefaults(suiteName: "profile-logout-\(UUID())")!
         let store = InMemoryTokenStore()
-        let queue = EventSyncManager(databasePath: profile.directory.appendingPathComponent("queue.sqlite").path, startPeriodicDrain: false)
+        let queue = makeTestEventSyncManager(databasePath: profile.directory.appendingPathComponent("queue.sqlite").path, startPeriodicDrain: false)
         let app = AppSettings(defaults: defaults, sync: queue, tokenStore: store, defaultToken: "fixture-development-key", profile: profile)
         XCTAssertEqual(app.deviceToken, "fixture-development-key")
         app.deviceToken = ""
@@ -152,7 +152,7 @@ final class DeviceProfileTests: XCTestCase {
     func testResetWaitsForInflightUploadAndThenPermanentlySuspendsOldProducers() async throws {
         let started = expectation(description: "upload started")
         let transport = HeldProfileUpload(started)
-        let queue = EventSyncManager(transport: transport, databasePath: root().path+".sqlite", startPeriodicDrain: false)
+        let queue = makeTestEventSyncManager(transport: transport, databasePath: root().path+".sqlite", startPeriodicDrain: false)
         queue.configureSession(baseURL: "https://example.test", bearerToken: token(), replaceTransport: false)
         _ = queue.saveLocalImmediate(eventUUID: "inflight", endpoint: "/fixture", payload: [:])
         let upload = Task { await queue.drainPendingEvents() }

@@ -17,6 +17,7 @@ apt-get install -y python3-venv python3-pip caddy curl
 id cadence >/dev/null 2>&1 || useradd --system --home-dir /var/lib/cadence --create-home --shell /usr/sbin/nologin cadence
 install -d -o cadence -g cadence -m 750 /opt/cadence/releases /var/lib/cadence/data
 install -d -o root -g cadence -m 750 /etc/cadence
+install -d -o cadence -g cadence -m 700 /var/lib/cadence/backups
 release="/opt/cadence/releases/$(date -u +%Y%m%dT%H%M%S)-$$"
 install -d -o cadence -g cadence "$release"
 tar -xzf "$bundle" -C "$release" --no-same-owner
@@ -37,6 +38,20 @@ from app.auth import validate_security_settings, create_user_sync
 from app.db import init_db_sync, fetch_one_sync
 os.umask(0o077)
 validate_security_settings()
+# A private, consistent snapshot makes the column-removal migration recoverable.
+from pathlib import Path
+import sqlite3
+from datetime import datetime, timezone
+source = Path(os.environ['SQLITE_DB_PATH'])
+if source.exists():
+    with sqlite3.connect(source) as db:
+        columns = {r[1] for r in db.execute('PRAGMA table_info(motor_exams)')}
+        if 'composite_motor_score' in columns:
+            directory = source.parent.parent / 'backups'
+            directory.mkdir(mode=0o700, exist_ok=True)
+            target = directory / ('before-retired-columns-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f') + '.sqlite')
+            with sqlite3.connect(target) as backup:
+                db.backup(backup)
 init_db_sync()
 os.chmod(os.environ['SQLITE_DB_PATH'], 0o600)
 for username, role, password_key in (

@@ -12,7 +12,7 @@ private final class HeldExamSubmitter: ExamSubmitting {
 @MainActor
 final class ExamValidityTests: XCTestCase {
     private func queue() -> EventSyncManager {
-        EventSyncManager(databasePath: NSTemporaryDirectory()+"valid-exam-\(UUID()).sqlite", startPeriodicDrain: false)
+        makeTestEventSyncManager(databasePath: NSTemporaryDirectory()+"valid-exam-\(UUID()).sqlite", startPeriodicDrain: false)
     }
 
     func testSecondPartialExamCannotReuseAnyPreviousMeasurement() async {

@@ -151,7 +151,7 @@ final class WearStateOnFallCheckInTests: XCTestCase {
 
     private func makeCoordinator(wear: FixedWearState) -> (FallAlertCoordinator, EventSyncManager) {
         self.wear = wear
-        let sync = EventSyncManager(
+        let sync = makeTestEventSyncManager(
             databasePath: NSTemporaryDirectory() + "wear-\(UUID().uuidString).sqlite",
             startPeriodicDrain: false
         )

@@ -196,7 +196,7 @@ final class WalkingModelTests: XCTestCase {
         let feed = MotionFeed()
         let fall = FallAlertCoordinator(
             screen: NoopScreenController(), dialer: RecordingPhoneDialer(),
-            sync: EventSyncManager(
+            sync: makeTestEventSyncManager(
                 databasePath: NSTemporaryDirectory() + "walk-\(UUID().uuidString).sqlite",
                 startPeriodicDrain: false
             ),

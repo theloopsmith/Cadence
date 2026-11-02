@@ -32,7 +32,7 @@ final class DoseRetractionTests: XCTestCase {
         let diary = DiaryStore(directory: URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("retract-diary-\(UUID().uuidString)"))
         let transport = MockSyncTransport()
-        let sync = EventSyncManager(
+        let sync = makeTestEventSyncManager(
             transport: transport,
             databasePath: NSTemporaryDirectory() + "retract-sync-\(UUID().uuidString).sqlite",
             startPeriodicDrain: false
@@ -161,7 +161,7 @@ final class DoseRetractionTests: XCTestCase {
     }
 
     func testPurgeEventsCreatedBeforeWipeTimestamp() {
-        let sync = EventSyncManager(
+        let sync = makeTestEventSyncManager(
             databasePath: NSTemporaryDirectory() + "wipe-purge-\(UUID().uuidString).sqlite",
             startPeriodicDrain: false
         )

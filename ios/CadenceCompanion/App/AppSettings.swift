@@ -78,10 +78,9 @@ public final class AppSettings: ObservableObject {
         didSet { defaults.set(signedInUsername, forKey: scoped(Key.signedInUsername)) }
     }
 
-    /// The shared development token, available so the app
-    /// works against a local server before anyone signs in.
+    /// No bundled credential. Local and cloud servers both require sign-in.
     public nonisolated static var developmentToken: String {
-        return "cadence-dev-device-writer-token-2026"
+        return ""
     }
 
     /// Server address baked into the build (`CadenceServerURL` in Info.plist),

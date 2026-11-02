@@ -26,7 +26,7 @@ Cadence is an accessibility prototype. It does not diagnose, recommend medicatio
 
 The web tour is illustrative: **motor check → medication → walking → surroundings → care**. Its separate judge panel can run live Meta inference and save labeled synthetic records.
 
-Use **1-Click Judge Sign-In**, or `demo-reviewer` / `cadence-demo-2026` for the read-only dashboard. The walkthrough’s live panel uses `demo-wearer` / `cadence-demo-2026` for sandbox writes and limited inference. These temporary public accounts are for judging only; do not enter personal or clinical data. They require manual retirement after judging. [Deployment and access details](docs/GOOGLE_CLOUD_DEMO.md).
+Use **1-Click Judge Sign-In**, or `demo-reviewer` / `cadence-demo-2026` for the read-only dashboard. The walkthrough’s live panel uses `demo-wearer` / `cadence-demo-2026` for sandbox writes and limited inference. These temporary public accounts are for judging only; do not enter personal or clinical data. They expire, including previously issued tokens, at **2026-11-10 08:00 UTC**. [Deployment and access details](docs/GOOGLE_CLOUD_DEMO.md).
 
 ## Architecture
 
@@ -79,7 +79,7 @@ Live SAM + Muse analysis is recorded for an approved [iPhone photo](docs/verific
 
 These checks do not establish live DAT capture, audible physical-glasses output, locked-screen continuity or real caregiver delivery. Organizer scope/contribution-date approval and the final submission package remain pending. Experimental scoring, medication-state inference and protein estimation have been removed; simulated task sources are labeled throughout reports.
 
-[Documentation index](docs/README.md) · [Verification log and remaining checks](docs/VERIFICATION_LOG.md) · [Static artwork provenance](docs/WALKTHROUGH_DESIGN.md)
+[Submission declarations](docs/SUBMISSION_DECLARATIONS.md) · [Documentation index](docs/README.md) · [Verification log and remaining checks](docs/VERIFICATION_LOG.md) · [Static artwork provenance](docs/WALKTHROUGH_DESIGN.md)
 
 ## License
 

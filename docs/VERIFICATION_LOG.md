@@ -41,7 +41,7 @@ The phone saves candidate events locally and binds its outbox to account, destin
 3. Verify locked-screen/background behavior before claiming continuity. Everyday conversation currently requires the foreground. Native Hey Meta invocation and conversational barge-in are not integrated.
 4. Conduct a separately configured, consenting caregiver delivery/acknowledgment drill before claiming real delivery. Never induce a fall or provoke a freeze for testing.
 5. Verify actual notification delivery, backup/restore, incident retention and physical signal thresholds. Current metrics/heuristics are not clinically calibrated.
-6. Finish the accessible demo video, contributor/representative declaration, asset-rights confirmation and original-contribution statement. Retire the public judging accounts and invalidate tokens afterward; automatic account expiry is not configured.
+6. Finish the accessible demo video and actual portal submission. Review the contributor, artwork and contribution declarations; organizer scope/media decisions and any required pre-event-work confirmation remain pending. Public judging accounts and their JWTs expire at 2026-11-10 08:00 UTC.
 
 ## Scope and positioning (Oct 29)
 
@@ -101,3 +101,15 @@ Removed the feature flag and all conditional research execution. Deleted the mot
 Old SQLite columns are retained solely for compatibility with installed databases; new observations do not populate scores/state/nutrition estimates. The old NOT NULL handwriting classification column receives an inert compatibility value, which is never exposed or interpreted. Unconditional projections exclude legacy findings from responses. An obsolete environment variable cannot restore removed code. Regression coverage checks route/schema absence, legacy-value projection and ordinary measurement/logging paths. Historical verification entries above describe earlier versions; this removal supersedes their flag-based boundary.
 
 Local verification: 246 backend tests, 430 silent Swift tests and 30 JavaScript checks passed; the native iOS Simulator build with Meta DAT, generated-diagram freshness, documentation links and diff checks passed. Tests for deleted formulas were removed; task validity, legacy-data upgrades, permission boundaries, durable recovery and factual measurements remain tested. Physical-device acceptance is separate.
+
+## Submission closeout — November 2
+
+The prior review's 260-test count is historical; tests for removed experimental calculations were intentionally retired. This closeout passes 250 backend tests, 431 silent Swift tests and 31 JavaScript checks, plus native iOS compilation with Meta DAT, diagram freshness and documentation checks.
+
+Removed the three shipped development-token literals: AppSettings, EventSyncManager and HomeMotorExamManager now default to no credential. Tests inject their own explicit fixture sessions; a regression checks production defaults remain empty. Only a non-authenticating hash is retained to recognize old profile partitions. Account-bound queues and JWT sign-in remain intact. Backend .env loading is anchored to backend/ and verified from a repository-root working directory.
+
+The active database now removes retired research columns transactionally from motor, handwriting and meal tables; observation values, IDs, indexes, server identity and account data are preserved. This supersedes the earlier inert-column compatibility decision. The installer snapshots legacy SQLite data privately before this migration. Simulated task statuses now read simulated at every public status position, including TaskEvidence; device measurements retain measured. Dashboard cells and comparisons require matching task status/source evidence, with missing and contradictory evidence withheld.
+
+The public sandbox judging accounts and all their JWTs expire at 2026-11-10 08:00 UTC (midnight Pacific, after the November 9 closing day). Tests cover cutoff enforcement for existing tokens and new login, with ordinary accounts unaffected. Only the primary HTTPS origin is advertised to judges; the unreliable IP-derived fallback was removed from instructions.
+
+Harshal Vaidya confirmed sole human contribution and representative identity and confirmed both disputed scene assets were generated with ChatGPT. [Submission declarations](SUBMISSION_DECLARATIONS.md) record those confirmations and the actual first-commit timestamp, AI development assistance, asset terms and limits. The website discloses ChatGPT-generated scenes. Organizer permission for offline-generated media and any contribution-boundary interpretation remain pending; no approval or portal submission was invented. Physical DAT/audio/background/threshold and caregiver-delivery gates remain open and claims remain explicitly scoped.
