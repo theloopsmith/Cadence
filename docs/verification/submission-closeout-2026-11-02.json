@@ -1,0 +1,31 @@
+{
+  "checked_at_utc": "2026-11-02T08:48:56.759118+00:00",
+  "origin": "https://cadence-companion.duckdns.org",
+  "cloud_checks": {
+    "https_and_authenticated_report": true,
+    "anonymous_and_static_token_rejected": true,
+    "reader_write_rejected": true,
+    "original_jwts_server_identity_and_synthetic_record_preserved": true,
+    "retired_research_columns_absent": true,
+    "foreign_keys_valid": true,
+    "private_pre_migration_backup_exists": true,
+    "judge_jwt_capped_at_utc": "2026-11-10T08:00:00Z",
+    "chatgpt_generated_scene_disclosure_visible": true
+  },
+  "local_checks": {
+    "backend_tests_passed": 250,
+    "swift_tests_passed": 431,
+    "javascript_checks_passed": 31,
+    "native_ios_build_passed": true,
+    "isolated_browser_security_passed": true,
+    "unexpected_browser_requests": 0,
+    "expiry_rejects_preexisting_tokens_and_new_login": true
+  },
+  "limits": [
+    "No physical DAT capture/audio or background continuity verification.",
+    "No real caregiver delivery or threshold-validation claim.",
+    "Organizer permission for offline-generated media and scope remains unconfirmed.",
+    "Expiry rejection was tested with an isolated past cutoff; live judging access remains available until its future cutoff.",
+    "No private input photos, JWTs, credentials or records are included."
+  ]
+}

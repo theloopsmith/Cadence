@@ -24,7 +24,7 @@ async function main() {
       buckets_24h:[{label_hhmm:payload,fog_count:1}],
       reality_checks:[{user_query:payload,spoken_response:payload}],
       medication_logs:[{timestamp_utc:payload,event_type:payload}],
-      motor_exams:[{timestamp_utc:payload,voice_mean_dbfs:null,voice_stability_db:null,handwriting_opencv_decay_pct:null,walk_cadence_spm:0,walk_fog_count:0}]};
+      motor_exams:[{timestamp_utc:payload,measurement_source:"device",task_evidence:{voice:{status:"unavailable",measurement_source:"device"},handwriting:{status:"unavailable",measurement_source:"device"},walk:{status:"measured",measurement_source:"device"}},voice_mean_dbfs:null,voice_stability_db:null,handwriting_opencv_decay_pct:null,walk_cadence_spm:0,walk_fog_count:0}]};
     await context.route('**/*', async route => {
       const url = new URL(route.request().url());
       if (url.origin !== 'http://cadence.test') { unexpected.push(url.href); return route.abort(); }
