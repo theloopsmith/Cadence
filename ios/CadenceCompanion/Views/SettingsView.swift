@@ -242,8 +242,11 @@ struct SettingsView: View, Equatable {
             footer: { Text("Show connection tools, local data reset, photo source and testing tools.") }
             if settings.developerModeEnabled {
                 connectionToolsSection
-                glassesSection
                 Section("Developer tools") {
+                    NavigationLink("Photo source") {
+                        Form { glassesSection }
+                            .navigationTitle("Photo source")
+                    }
                     ForEach(DeveloperArea.allCases) { area in
                         NavigationLink(area.rawValue) { DeveloperView(app: app, area: area) }
                     }
