@@ -30,8 +30,8 @@ public enum DiaryEventKind: String, Codable, CaseIterable {
 
     public var word: String {
         switch self {
-        case .protectionOn: return "Protection on"
-        case .protectionOff: return "Protection off"
+        case .protectionOn: return "Walking support on"
+        case .protectionOff: return "Walking support off"
         case .cue: return "Beat played"
         case .doseTaken: return "Dose taken"
         case .checkInAnswered: return "Check-in answered"

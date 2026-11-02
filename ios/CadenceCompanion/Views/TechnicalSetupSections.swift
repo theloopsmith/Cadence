@@ -80,7 +80,7 @@ struct TechnicalSetupSections: View {
         Section {
             if !app.motion.isRunning {
                 InlineNotice(
-                    text: "Turn on protection on the Today screen first. Recording uses the same motion sensors.",
+                    text: "Turn on walking support on the Today screen first. Recording uses the same motion sensors.",
                     color: CadenceTheme.accent,
                     systemName: "info.circle.fill"
                 )

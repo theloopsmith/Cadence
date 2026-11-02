@@ -674,7 +674,7 @@ public final class CadenceAppModel: ObservableObject {
             return walking.headline
         case .stopProtection:
             settings.protectionEnabled = false; walking.setProtection(enabled: false)
-            return "Walking protection and its cues are stopped."
+            return "Walking support and its cues are stopped."
         case .diary:
             return (try? diary.plainFacts(for: Date()).joined(separator: ". ")) ?? "I couldn't read today's diary. Please check your phone's storage."
         default: return "What would you like help with?"

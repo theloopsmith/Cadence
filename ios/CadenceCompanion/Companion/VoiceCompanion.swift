@@ -48,8 +48,8 @@ public enum CompanionIntent: String, CaseIterable, Codable {
         if has(["undo dose", "undo medication", "undo my last dose"]) { return .undoDose }
         if DoseVoiceIntent.isUncertain(raw), has(["medication", "medicine", "pill", "pills", "dose"]) { return .medication }
         if has(["i took my medication", "i took my medicine", "i took my pill", "i have taken my medication", "log my dose", "record my dose"]) { return .logDose }
-        if has(["stop walking cues", "stop the beat", "stop protection"]) { return .stopProtection }
-        if has(["start walking cues", "start protection", "help me walk"]) { return .startProtection }
+        if has(["stop walking cues", "stop the beat", "stop protection", "stop walking support", "turn walking support off"]) { return .stopProtection }
+        if has(["start walking cues", "start protection", "help me walk", "start walking support", "turn walking support on"]) { return .startProtection }
         if has(["use this photo", "use photo", "save this photo"]) { return .usePhoto }
         if has(["retry", "try again", "retry this photo"]) { return .retry }
         if has(["retake", "take another photo"]) { return .retake }
@@ -423,8 +423,8 @@ public final class VoiceCompanion: ObservableObject {
             case .undoDose: question = "Would you like me to undo your last dose record? Say yes or no."
             case .caregiver: question = "Shall I open a call to your caregiver? Your phone may ask you to confirm the call. Say yes or no."
             case .emergency: question = "Shall I open a call to emergency services? Your phone may ask you to confirm the call. Say yes or no."
-            case .startProtection: question = "Would you like me to turn on walking protection? Say yes or no."
-            default: question = "Would you like me to stop walking cues and protection? Say yes or no."
+            case .startProtection: question = "Would you like me to turn on walking support? Say yes or no."
+            default: question = "Would you like me to turn off walking support and stop its cues? Say yes or no."
             }
             say(question); return
         }

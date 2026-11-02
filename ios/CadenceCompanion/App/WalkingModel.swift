@@ -9,8 +9,8 @@ public final class WalkingModel: ObservableObject {
     @Published public private(set) var isProtectionRequested = false
     @Published public private(set) var protectionProblem: String?
     @Published public private(set) var isCueing = false
-    @Published public private(set) var headline = "Protection is off"
-    @Published public private(set) var detail = "Turn on protection to listen for freezes while you walk."
+    @Published public private(set) var headline = "Walking support is off"
+    @Published public private(set) var detail = "Turn on walking support for rhythmic cues when walking gets difficult."
     @Published public private(set) var isDemoRunning = false
     @Published public private(set) var demoProgress = 0.0
     @Published public private(set) var lastDemoSummary: String?
@@ -96,7 +96,7 @@ public final class WalkingModel: ObservableObject {
             } else {
                 keepAlive.stop()
                 headline = source.isAvailable
-                    ? "Protection could not start"
+                    ? "Walking support could not start"
                     : "Motion sensors are not available on this device"
                 detail = label == "iPhone"
                     ? "Cadence listens through your iPhone's motion sensors. Keep the phone in a pocket while you walk."
@@ -127,7 +127,7 @@ public final class WalkingModel: ObservableObject {
         } else if motion.health == .starting {
             protectionProblem = "Waiting for fresh motion samples."
         } else if motion.health != .healthy {
-            protectionProblem = "Motion input stopped. Protection is unavailable. Reconnect the device or retry protection."
+            protectionProblem = "Motion input stopped. Walking support is unavailable. Reconnect the device or retry walking support."
         } else if !audio.isAudioAvailable {
             protectionProblem = audio.audioProblem ?? "Audio cues are unavailable. Tap Retry audio."
         } else if !keepAlive.isActive {
@@ -137,7 +137,7 @@ public final class WalkingModel: ObservableObject {
         }
         isProtectionOn = protectionProblem == nil
         if let protectionProblem {
-            headline = !motion.isRunning ? "Motion sensors are not available" : (motion.health == .starting ? "Protection is starting" : "Protection is unavailable")
+            headline = !motion.isRunning ? "Motion sensors are not available" : (motion.health == .starting ? "Walking support is starting" : "Walking support is unavailable")
             detail = protectionProblem
         } else {
             refreshText(armingMode: motion.armingMode, cueing: isCueing, running: true)
@@ -221,16 +221,16 @@ public final class WalkingModel: ObservableObject {
     /// Which device is sensing motion right now, for the status line.
     public var sourceSentence: String {
         guard let label = motion.activeSourceLabel else { return "" }
-        return label == "iPhone" ? "Motion protection: iPhone (in pocket)." : "Motion protection: \(label) (head motion)."
+        return label == "iPhone" ? "Motion source: iPhone (in pocket)." : "Motion source: \(label) (head motion)."
     }
 
     private func refreshText(armingMode: String, cueing: Bool, running: Bool) {
         guard running || isDemoRunning else {
-            headline = "Protection is off"
-            detail = "Turn on protection to listen for freezes while you walk."
+            headline = "Walking support is off"
+            detail = "Turn on walking support for rhythmic cues when walking gets difficult."
             return
         }
-        headline = cueing ? "Beat playing" : (isDemoRunning ? "Demo playing" : "Protection is on")
+        headline = cueing ? "Beat playing" : (isDemoRunning ? "Demo playing" : "Walking support is on")
         detail = detailForTesting(armingMode: armingMode, cueing: cueing)
     }
 

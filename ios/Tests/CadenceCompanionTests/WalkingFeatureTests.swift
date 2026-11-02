@@ -209,7 +209,7 @@ final class WalkingModelTests: XCTestCase {
     /// The headline is plain language, not detector state names.
     func testStatusTextIsPlainLanguage() {
         let (model, feed) = makeModel()
-        XCTAssertEqual(model.headline, "Protection is off")
+        XCTAssertEqual(model.headline, "Walking support is off")
         XCTAssertFalse(model.headline.lowercased().contains("fog"))
 
         feed.attach(fogDetector: model.fogDetector, fallDetector: model.fallAlert.detector)

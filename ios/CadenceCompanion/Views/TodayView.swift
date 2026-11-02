@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Walking protection is the first action. Device diagnostics expand separately;
+/// Walking support is the first action. Device diagnostics expand separately;
 /// the help footer is inset into this scroll view so it cannot cover its content.
 struct TodayView: View {
     @ObservedObject var app: CadenceAppModel
@@ -137,9 +137,11 @@ struct TodayView: View {
 
     private var protectionCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Walking protection")
+            Text("Walking support")
                 .font(.title2.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
+            Text("Rhythmic cues when walking gets difficult.")
+                .font(.subheadline).foregroundColor(.secondary)
             StatusBadge(
                 systemImage: walking.isCueing ? "metronome.fill" : (walking.isProtectionOn ? "shield.fill" : "shield.slash"),
                 word: walking.headline,
@@ -154,7 +156,7 @@ struct TodayView: View {
                     walking.setProtection(enabled: true)
                 }
             }) {
-                Label(walking.isDemoRunning ? "Stop walking demo" : walking.isProtectionRequested ? "Turn protection off" : "Turn protection on",
+                Label(walking.isDemoRunning ? "Stop walking demo" : walking.isProtectionRequested ? "Turn walking support off" : "Turn walking support on",
                       systemImage: walking.isProtectionRequested || walking.isDemoRunning ? "stop.fill" : "shield")
             }
             .accessibilityHint("Controls walking cues. An active fall check-in stays active.")
@@ -168,12 +170,12 @@ struct TodayView: View {
                 Text(walking.sourceSentence).font(.footnote).foregroundColor(.secondary)
             }
             if walking.isProtectionRequested && !walking.isProtectionOn {
-                InlineNotice(text: walking.protectionProblem ?? audio.audioProblem ?? "Walking protection needs attention.",
+                InlineNotice(text: walking.protectionProblem ?? audio.audioProblem ?? "Walking support needs attention.",
                              color: CadenceTheme.caution, systemName: "exclamationmark.triangle")
                 GuardedButton(size: .big, style: .tinted(CadenceTheme.caution), action: {
                     walking.retryAudio()
                     walking.setProtection(enabled: true)
-                }) { Label("Retry protection", systemImage: "arrow.clockwise") }
+                }) { Label("Retry walking support", systemImage: "arrow.clockwise") }
                 .disabled(audio.isInterrupted)
             }
         }

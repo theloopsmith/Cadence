@@ -192,7 +192,7 @@ struct SettingsView: View, Equatable {
                     else { app.companion.stop() }
                 }
             ))
-            Text("Optional: listen automatically while Cadence is open. Nearby conversation may be picked up. Leave this off to start conversations with Talk to Cadence. Spoken task guidance and walking protection are separate.").font(.footnote)
+            Text("Optional: listen automatically while Cadence is open. Nearby conversation may be picked up. Leave this off to start conversations with Talk to Cadence. Spoken task guidance and walking support are separate.").font(.footnote)
             Button("Automatically use the best installed voice") {
                 settings.preferredVoiceIdentifier = nil
                 AudioCueEngine.shared.refreshVoiceSelection()

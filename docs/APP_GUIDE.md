@@ -2,7 +2,7 @@
 
 ## Connect the app
 
-Install the app using `ios/App/CadenceCompanionApp.xcodeproj`. Today, My routine and Settings are the root tabs. Today begins with walking protection; glasses/audio details expand separately. Settings remains in the bottom tab bar.
+Install the app using `ios/App/CadenceCompanionApp.xcodeproj`. Today, My routine and Settings are the root tabs. Today begins with walking support; glasses/audio details expand separately. Settings remains in the bottom tab bar.
 
 For a local backend, run `python3 scripts/run_phone_backend.py` from the repository root and leave the Mac awake on the iPhone's Wi-Fi. In **Settings → Advanced → Show developer tools → Find my Mac server**, choose your Mac, then use **Connection → Connect and sign in** using the private `.local/phone-login.txt`. Allow Local Network access. If discovery fails, enter the address printed by the launcher and open its `/health` URL in iPhone Safari. Never enter `localhost` for a server running on the Mac.
 
@@ -20,7 +20,7 @@ The displayed input/output routes reflect the route iOS actually selected. Physi
 
 ## Voice companion
 
-Tap **Talk to Cadence** on Today to start a conversation, and **Pause listening** to stop. Continuous listening is off by default; upgrading from the former automatic mode requires a fresh opt-in once. Optional **Settings → Hands-free voice companion** starts listening while foregrounded; a one-session Talk tap does not enable automatic startup. Backgrounding pauses everyday conversation. Unknown speech no longer triggers spoken menu repetition; two unrelated turns pause listening quietly. Idle general conversation pauses after 40 seconds, while an active task retains its listening window. Confirmation expiry pauses without taking the action. During a task, address “Cadence” explicitly for free-form model interpretation; ordinary task commands still work. This is not a dedicated wake-word detector, and recognized commands can still be picked up from nearby conversation. Walking protection and its safety check-ins are independent of this listening preference.
+Tap **Talk to Cadence** on Today to start a conversation, and **Pause listening** to stop. Continuous listening is off by default; upgrading from the former automatic mode requires a fresh opt-in once. Optional **Settings → Hands-free voice companion** starts listening while foregrounded; a one-session Talk tap does not enable automatic startup. Backgrounding pauses everyday conversation. Unknown speech no longer triggers spoken menu repetition; two unrelated turns pause listening quietly. Idle general conversation pauses after 40 seconds, while an active task retains its listening window. Confirmation expiry pauses without taking the action. During a task, address “Cadence” explicitly for free-form model interpretation; ordinary task commands still work. This is not a dedicated wake-word detector, and recognized commands can still be picked up from nearby conversation. Walking support and its safety check-ins are independent of this listening preference.
 
 Try:
 
