@@ -24,6 +24,13 @@ struct TodayView: View {
                     homeHeader
                     protectionCard
                         .card(padding: 20)
+                    if !simple {
+                        checksCard
+                    } else {
+                        simpleChecksCard
+                    }
+                    SectionHeader(title: "Your routine")
+                    medicationCard
                     VoiceCompanionBar(app: app, compact: true)
                         .card(padding: 20)
 
@@ -57,14 +64,6 @@ struct TodayView: View {
                         InlineNotice(text: notice, color: CadenceTheme.caution, systemName: "arrow.triangle.2.circlepath")
                     }
                     if let error = doses.saveError { Text(error).foregroundColor(CadenceTheme.caution) }
-                    SectionHeader(title: "Your routine")
-                    medicationCard
-                    if !simple {
-                        checksCard
-                    } else {
-                        // In simple mode, offer the motor check directly
-                        simpleChecksCard
-                    }
                     deviceDetails
                 }
                 .padding(.horizontal, 20)
