@@ -61,8 +61,8 @@ def test_judge_retirement_caps_new_tokens_and_rejects_existing_tokens(monkeypatc
     monkeypatch.setattr(settings,'cadence_env','public_demo')
     monkeypatch.setattr(settings,'jwt_secret','x'*40)
     monkeypatch.setattr(settings,'demo_accounts_expire_at_utc',datetime.now(timezone.utc)+timedelta(minutes=5))
-    auth.create_user_sync('demo-wearer','fixture password long enough','device_writer',settings.cadence_default_patient_id)
-    issued=auth.authenticate_sync('demo-wearer','fixture password long enough')
+    auth.create_user_sync('demo-reviewer','fixture password long enough','clinician_reader',settings.cadence_default_patient_id)
+    issued=auth.authenticate_sync('demo-reviewer','fixture password long enough')
     claims=jwt.decode(issued.access_token,settings.jwt_secret,algorithms=['HS256'])
     assert claims['exp'] <= int(settings.demo_accounts_expire_at_utc.timestamp())
     ordinary=auth.issue_token('ordinary-account','device_writer',settings.cadence_default_patient_id)
@@ -70,4 +70,14 @@ def test_judge_retirement_caps_new_tokens_and_rejects_existing_tokens(monkeypatc
     assert auth.decode_token(issued.access_token) is None
     assert auth.decode_token(ordinary) is not None
     with pytest.raises(auth.AuthError,match='expired'):
-        auth.authenticate_sync('demo-wearer','fixture password long enough')
+        auth.authenticate_sync('demo-reviewer','fixture password long enough')
+
+
+def test_public_demo_retires_writer_login_and_existing_token(monkeypatch):
+    monkeypatch.setattr(settings, "cadence_env", "development")
+    token = auth.issue_token("demo-wearer", "device_writer", settings.cadence_default_patient_id)
+    assert auth.decode_token(token) is not None
+    monkeypatch.setattr(settings, "cadence_env", "public_demo")
+    assert auth.decode_token(token) is None
+    with pytest.raises(auth.AuthError, match="live judge tiles"):
+        auth.authenticate_sync("demo-wearer", "old public password")

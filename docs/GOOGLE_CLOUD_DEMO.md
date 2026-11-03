@@ -7,11 +7,8 @@ Target project: `ultra-concord-513321-q3`. This deploys a synthetic/demo environ
 - Public domain: `https://cadence-companion.duckdns.org`
 - Interactive Smart Glasses Walkthrough: <https://cadence-companion.duckdns.org/walkthrough> (alias: `/demo`)
 - Caregiver/reviewer dashboard: <https://cadence-companion.duckdns.org/dashboard>
-- Phone server origin: `https://cadence-companion.duckdns.org`
-- Published sandbox evaluation access: `demo-reviewer` / `cadence-demo-2026` for read-only review; `demo-wearer` / `cadence-demo-2026` for synthetic writes and limited live inference. These temporary credentials are intended only for the judging window. They are not production credentials; do not submit personal/clinical data. Both accounts and their issued JWTs stop authenticating at **2026-11-18 08:00 UTC (November 18, midnight Pacific)**. `DEMO_ACCOUNTS_EXPIRE_AT_UTC` controls this cutoff; ordinary accounts are unaffected. JWTs also retain their individual signed expiration: extending the account cutoff does not extend a previously issued token. Sign in again when needed.
-- In the iPhone app, open **Settings → Connection**, choose **Use hosted demo**, enter the phone account, and tap **Connect and sign in**. Developer options are not required. A new server/account is a separate profile: preserve/export existing local records before any deliberate local reset. Do not bypass the account-bound queue guard or repoint another wearer's pending records.
-- For a fresh demo build, Xcode's `CADENCE_SERVER_URL` build setting can provide this origin through the existing Info.plist setting. Existing saved server preferences take precedence; no phone's profile was changed during deployment.
-- Public TLS, anonymous/static-token rejection, both account roles, reader write rejection, a live Muse Spark Open classification, and persistence of a synthetic record/server identity/original JWTs across a service restart all passed. Physical iPhone/glasses use and real caregiver delivery remain unverified; delivery is intentionally simulated.
+- Published evaluation access: `demo-reviewer` / `cadence-demo-2026` for the read-only dashboard. The dashboard account, its tokens, and the public live tiles close at **2026-11-18 08:00 UTC (November 18, midnight Pacific)**. `DEMO_ACCOUNTS_EXPIRE_AT_UTC` sets that cutoff.
+- The public `demo-wearer` writer account is retired, including previously issued tokens. Use a separately provisioned writer account for iPhone testing.
 
 ## Layout
 
@@ -20,7 +17,9 @@ Target project: `ultra-concord-513321-q3`. This deploys a synthetic/demo environ
 - Static IPv4 address and automatic HTTPS via Caddy. The default hostname uses the address under `sslip.io`; an owned hostname can be supplied instead. Certificate issuance and DNS must be verified before sharing.
 - Dedicated VPC, only public TCP 80/443, SSH reachable through Google's IAP source range. No Google service account is attached to the VM.
 - `public_demo` startup requires a persistent signing secret, disabled static development tokens, enabled simulated transports, no Twilio credentials, disabled research metrics, and the reviewed Meta model IDs. Interactive API docs/schema are unavailable on the public demo.
-- `demo-wearer` is the iPhone writer account; `demo-reviewer` is the read-only dashboard account. Both bind to `hackathon-demo`. Deployment credential state and the signing key remain in ignored `.local/gcp-demo/` files. The published evaluation passwords above are intentionally public and must remain confined to the sandbox; provider keys and signing secrets are never published.
+- The read-only dashboard binds to `hackathon-demo`. Provider keys and the signing key remain private.
+
+The judge endpoint accepts one fixed action, with the sample chosen by the backend. Its defaults are **1,000 tile runs per UTC day**, **8 runs per minute per IP**, and **4 simultaneous runs** on the single-worker VM. Set `JUDGE_DEMO_DAILY_RUNS`, `JUDGE_DEMO_RUNS_PER_IP_MINUTE`, or `JUDGE_DEMO_MAX_CONCURRENT` before deployment to override them. SQLite atomically reserves a daily slot before inference and keeps the count across restarts. Every admitted attempt counts. A surroundings run can make up to eight provider requests, so the daily cap measures tile runs rather than API requests or dollars. Rejections return HTTP 429 with `Retry-After`.
 
 Ordinary paid-inference routes share a 30-request/minute sliding window per authenticated account (per configured bearer for local static tokens). Re-signing in does not reset the account budget. Responses return 429 and Retry-After before provider work. Urgent fall-check-in transcription has a separate bounded 60/minute account budget; non-inference event ingestion stays outside these inference quotas. The limiter is process-local, resets on restart and is not a provider spending cap; use one worker and provider-side budgets.
 
@@ -47,14 +46,9 @@ Cloud resources consume trial credit, including compute, IPv4 and storage. This 
 
 ## Acceptance before sharing
 
-1. Confirm public `/health` and `/dashboard` load over valid HTTPS.
-2. Verify login with the demo accounts; check that anonymous access to patient API data and shared development tokens fails, and reviewer writes fail.
-3. Make one synthetic Meta question request and verify the selected model without uploading patient records.
-4. Restart the service, then verify the same credentials, data and authenticated access still work.
-5. Test the iPhone against the new address. Its existing Mac-bound local profile is intentionally not migrated or erased. Follow the app's profile-boundary guidance; export/preserve existing local records before choosing a reset or separate demo profile/build.
-6. Keep caregiver delivery visibly simulated. Real Twilio requires a separately configured and authorized environment.
-
-The live results above record acceptance for the current deployment. Future redeploys still need these checks; a successful local test suite or source bundle alone is not evidence of a working cloud deployment.
+1. Confirm public HTTPS and read-only dashboard access.
+2. Check that the retired writer and anonymous patient data access are rejected.
+3. Run a fixed sample from **For Judges** and confirm live model output.
 
 Use the reusable smoke checker with the actual HTTPS origin:
 
@@ -64,7 +58,7 @@ backend/.venv/bin/python scripts/verify_cloud_demo.py https://HOSTNAME
 backend/.venv/bin/python scripts/verify_cloud_demo.py https://HOSTNAME --after-restart
 ```
 
-The initial pass checks TLS, authentication, role enforcement and a live Meta classification, then writes one `SYNTHETIC DEPLOYMENT CHECK` dose to the isolated demo patient. It saves a private baseline in ignored `.local/gcp-demo/acceptance.json`; this contains JWTs and must not be shared. The restart pass reuses those original tokens and verifies the same server identity and saved record. Neither pass displays credentials or deletes records. This automated check does not verify iPhone/glasses audio, camera behavior or real caregiver delivery.
+The checker verifies fixed-input inference, writer retirement, and read-only dashboard access. It saves the reviewer token in ignored `.local/gcp-demo/judge-acceptance.json` for the restart check. Keep that file private.
 
 ## Operational commands
 

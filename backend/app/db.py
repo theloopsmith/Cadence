@@ -260,6 +260,12 @@ CREATE TABLE IF NOT EXISTS patient_wipes (
     wiped_at_utc TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_patient_wipes_patient_ts ON patient_wipes(patient_id, wiped_at_utc);
+
+CREATE TABLE IF NOT EXISTS judge_demo_quota (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    utc_day TEXT NOT NULL,
+    admitted_runs INTEGER NOT NULL CHECK (admitted_runs >= 0)
+);
 """
 
 

@@ -16,7 +16,7 @@ The story is illustrative. It never writes data on scroll, runs a real motor exa
 
 **For Judges** offers four independent tiles for live medication intent, surroundings, handwriting photo quality, and voice transcription. The photo tiles use illustrated images. The transcription tile uses a short synthetic WAV clip. Each tile displays its own provider output or fallback. Photo previews and transcripts do not write diary entries.
 
-The first tile uses the sandbox writer account bound to `hackathon-demo`. Tokens stay in browser memory. Actions have a bounded deadline, and sign-out cancels pending requests.
+The tiles call a public endpoint that accepts only an action name and supplies its own sample. A persistent daily quota, a per-IP limit, and a concurrency limit apply before model inference.
 
 ## Source and visual assets
 

@@ -176,8 +176,14 @@ def _judge_deadline(subject: str, patient_id: str) -> Optional[int]:
     return None
 
 
+def _is_retired_demo_writer(subject: str) -> bool:
+    return settings.cadence_env.strip().lower() == "public_demo" and subject == "demo-wearer"
+
+
 def authenticate_sync(username: str, password: str) -> IssuedToken:
     username = username.strip()
+    if _is_retired_demo_writer(username):
+        raise AuthError("Use the live judge tiles or the read-only dashboard.")
     revision = _reserve_attempt(username)
     row = fetch_one_sync(
         "SELECT username, password_hash, role, patient_id FROM users WHERE username = ?", (username,)
@@ -229,7 +235,7 @@ def decode_token(token: str) -> Optional[Dict[str, str]]:
         )
     except jwt.PyJWTError:
         return None
-    if claims.get("role") not in ROLES:
+    if claims.get("role") not in ROLES or _is_retired_demo_writer(claims["sub"]):
         return None
     deadline = _judge_deadline(claims["sub"], claims["pid"])
     if deadline is not None and int(time.time()) >= deadline:

@@ -55,7 +55,6 @@ if source.exists():
 init_db_sync()
 os.chmod(os.environ['SQLITE_DB_PATH'], 0o600)
 for username, role, password_key in (
-    ('demo-wearer', 'device_writer', 'DEMO_WRITER_PASSWORD'),
     ('demo-reviewer', 'clinician_reader', 'DEMO_READER_PASSWORD'),
 ):
     existing = fetch_one_sync('SELECT role,patient_id FROM users WHERE username=?', (username,))

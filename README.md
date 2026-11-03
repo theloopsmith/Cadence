@@ -26,7 +26,7 @@ Cadence is an accessibility prototype. It does not diagnose, recommend medicatio
 
 The web tour is illustrative: **motor check → medication → walking → surroundings → care**. Its separate judge panel can run live Meta inference and save labeled synthetic records.
 
-Use **1-Click Judge Sign-In**, or `demo-reviewer` / `cadence-demo-2026` for the read-only dashboard. The walkthrough’s live panel uses `demo-wearer` / `cadence-demo-2026` for sandbox writes and limited inference. These temporary public accounts are for judging only; do not enter personal or clinical data. They expire, including previously issued tokens, at **2026-11-18 08:00 UTC**. [Deployment and access details](docs/GOOGLE_CLOUD_DEMO.md).
+Use **1-Click Judge Sign-In**, or `demo-reviewer` / `cadence-demo-2026` for the read-only dashboard. The live tiles accept only predefined samples and require no sign-in. The temporary dashboard account and live demo expire at **2026-11-18 08:00 UTC**. [Deployment and access details](docs/GOOGLE_CLOUD_DEMO.md).
 
 ## Architecture
 

@@ -556,142 +556,36 @@
     if ($('photoViewer').open) $('photoViewer').close();
   });
 
-  // Optional live proof is an explicit, separately authenticated action.
-  // Tokens are kept in memory, not URLs, localStorage or persistent browser storage.
-  let token = null;
-  let busy = false;
-  let sessionRevision = 0;
-  let controller = null;
+  let judgeBusy = false;
   const liveStatus = $('liveStatus');
-  const loginForm = $('loginForm');
   const judgeActions = ['judgeIntent', 'judgeSurroundings', 'judgeWriting', 'judgeVoice'];
-  const judgeLabels = Object.fromEntries(judgeActions.map(id => [id, $(id).textContent]));
-  const signOutButton = $('signOut');
   $('judgeLink').addEventListener('click', () => {
     pausePlayback();
     silence();
     $('liveDetails').open = true;
   });
 
-  async function apiCall(path, payload, revision, authenticated = true) {
-    if (revision !== sessionRevision) throw new Error('The sign-in session changed.');
-    const headers = {'Content-Type': 'application/json'};
-    if (authenticated) {
-      if (!token) throw new Error('Please sign in with the demo-wearer account.');
-      headers.Authorization = 'Bearer ' + token;
-    }
-    const response = await fetch(path, {
-      method: payload === undefined ? 'GET' : 'POST', headers,
-      body: payload === undefined ? undefined : JSON.stringify(payload),
-      signal: controller.signal, redirect: 'error'
+  async function runJudgeAction(action, signal) {
+    const response = await fetch('/api/v1/judge-demo/' + action, {
+      method: 'POST', signal, redirect: 'error'
     });
-    const data = await response.json().catch(() => ({}));
-    if (revision !== sessionRevision) throw new Error('The sign-in session changed.');
+    const data = await response.json();
     if (!response.ok) {
-      if (response.status === 401 && authenticated) {
-        token = null;
-        loginForm.hidden = false;
-        signOutButton.hidden = true;
-      }
-      const detail = typeof data.detail === 'string' ? data.detail : typeof data.message === 'string' ? data.message : `Request failed (HTTP ${response.status}).`;
-      throw new Error(detail);
+      throw new Error(data.detail || data.message || 'The live demo could not finish.');
     }
     return data;
   }
 
-  async function loadJudgeSample(name, signal) {
-    const sample = await fetch('/assets/walkthrough/' + name, {signal, redirect: 'error'});
-    if (!sample.ok) throw new Error('Could not load the demo sample.');
-    const blob = await sample.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  function addResult(results, text) {
-    const item = document.createElement('li');
-    item.textContent = text;
-    results.appendChild(item);
-  }
-  function refreshControls() {
-    $('signInSubmitBtn').disabled = busy;
-    for (const id of judgeActions) $(id).disabled = busy;
-  }
-
-  async function signIn(username, password) {
-    if (busy) return;
-    busy = true;
-    controller = new AbortController();
-    const operation = controller;
-    const deadline = window.setTimeout(() => operation.abort(), 20000);
-    const revision = ++sessionRevision;
-    liveStatus.textContent = 'Signing in securely…';
-    refreshControls();
-    try {
-      const data = await apiCall('/api/v1/auth/login', {username, password}, revision, false);
-      if (data.role !== 'device_writer' || !data.access_token) throw new Error('This check needs the demo-wearer account, not the read-only reviewer account.');
-      token = data.access_token;
-      const identity = await apiCall('/api/v1/device/connection', undefined, revision);
-      if (identity.patient_id !== 'hackathon-demo') {
-        token = null;
-        throw new Error('Only the isolated hackathon-demo profile can run these actions.');
-      }
-      loginForm.hidden = true;
-      signOutButton.hidden = false;
-      liveStatus.textContent = 'Signed in to the isolated demo profile. Choose a tile when you’re ready.';
-    } catch (error) {
-      token = null;
-      loginForm.hidden = false;
-      liveStatus.textContent = error.name === 'AbortError' ? 'Sign-in canceled.' : error.message;
-    } finally {
-      window.clearTimeout(deadline);
-      busy = false;
-      refreshControls();
-    }
-  }
-
-  loginForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (busy) return;
-    const password = $('passwordInput').value;
-    $('passwordInput').value = '';
-    await signIn($('usernameInput').value.trim(), password);
-  });
-
-  signOutButton.addEventListener('click', () => {
-    ++sessionRevision;
-    if (controller) controller.abort();
-    token = null;
-    busy = false;
-    loginForm.hidden = false;
-    signOutButton.hidden = true;
-    for (const id of judgeActions) {
-      $(id).textContent = judgeLabels[id];
-      $(id + 'Results').replaceChildren();
-    }
-    liveStatus.textContent = 'Signed out.';
-    refreshControls();
-  });
-
   const judgeRuns = {
-    async judgeIntent(revision, signal, report) {
-      const intent = await apiCall('/api/v1/companion/interpret', {
-        text: 'Did I log my morning medication today?', history: []
-      }, revision);
+    async judgeIntent(signal, report) {
+      const intent = await runJudgeAction('intent', signal);
       report(intent.source === 'meta_open_weights'
         ? 'Live intent · ' + intent.intent + ' · ' + intent.model + ' via ' + intent.provider
         : 'Live interpretation was unavailable. Cadence used its local fallback.');
     },
 
-    async judgeSurroundings(revision, signal, report) {
-      const photo = await apiCall('/api/v1/reality-check', {
-        event_uuid: crypto.randomUUID(), preview_only: true,
-        user_query: 'What objects can you identify in this illustrated photo?',
-        image_base64: await loadJudgeSample('coatstand.jpg', signal)
-      }, revision);
+    async judgeSurroundings(signal, report) {
+      const photo = await runJudgeAction('surroundings', signal);
       if (!photo.analysis_status) throw new Error('No photo result was returned.');
       const evidence = photo.model_evidence || {};
       const proposal = evidence.proposal || {};
@@ -705,16 +599,8 @@
       if (photo.spoken_response) report(photo.spoken_response);
     },
 
-    async judgeWriting(revision, signal, report) {
-      const payload = {
-        event_uuid: crypto.randomUUID(), check_photo_quality: true, preview_only: true,
-        image_base64: await loadJudgeSample('handwriting-capture.jpg', signal)
-      };
-      let writing = await apiCall('/api/v1/handwriting/analyze', payload, revision);
-      if (writing.photo_quality?.status === 'unavailable') {
-        report('Waiting for Muse. Retrying once…');
-        writing = await apiCall('/api/v1/handwriting/analyze', payload, revision);
-      }
+    async judgeWriting(signal, report) {
+      const writing = await runJudgeAction('handwriting', signal);
       const quality = writing.photo_quality || {};
       report(quality.model
         ? 'Photo quality · ' + quality.model + ' via ' + quality.provider + ' · ' + quality.status.replaceAll('_', ' ')
@@ -722,10 +608,8 @@
       if (quality.advice) report(quality.advice);
     },
 
-    async judgeVoice(revision, signal, report) {
-      const voice = await apiCall('/api/v1/speech/transcribe', {
-        purpose: 'companion', audio_base64: await loadJudgeSample('judge-voice.wav', signal)
-      }, revision);
+    async judgeVoice(signal, report) {
+      const voice = await runJudgeAction('voice', signal);
       report(voice.available && voice.transcript
         ? 'Muse Voice Transcribe · “' + voice.transcript + '”'
         : 'Muse Voice Transcribe did not return a transcript.');
@@ -735,36 +619,32 @@
   for (const id of judgeActions) {
     const button = $(id);
     button.addEventListener('click', async () => {
-      if (busy) return;
-      if (!token) await signIn('demo-wearer', 'cadence-demo-2026');
-      if (!token || busy) return;
-      busy = true;
-      const revision = sessionRevision;
-      controller = new AbortController();
-      const operation = controller;
-      const deadline = window.setTimeout(() => operation.abort(), id === 'judgeWriting' ? 60000 : 45000);
+      if (judgeBusy) return;
+      judgeBusy = true;
+      const operation = new AbortController();
+      const deadline = window.setTimeout(() => operation.abort(), 35000);
       const results = $(id + 'Results');
+      const label = button.textContent;
       button.textContent = 'Running…';
       results.replaceChildren();
       liveStatus.textContent = 'Running selected action…';
-      refreshControls();
+      for (const action of judgeActions) $(action).disabled = true;
+      const report = message => {
+        const item = document.createElement('li');
+        item.textContent = message;
+        results.appendChild(item);
+      };
       try {
-        await judgeRuns[id](revision, operation.signal, message => {
-          if (revision === sessionRevision) addResult(results, message);
-        });
-        if (revision === sessionRevision) liveStatus.textContent = 'Action finished. Choose any tile to run again.';
+        await judgeRuns[id](operation.signal, report);
+        liveStatus.textContent = 'Action finished. Choose any tile to run again.';
       } catch (error) {
-        if (revision === sessionRevision) {
-          addResult(results, error.name === 'AbortError' ? 'The request timed out. Try again.' : error.message);
-          liveStatus.textContent = 'Action could not finish.';
-        }
+        report(error.name === 'AbortError' ? 'The request timed out. Try again.' : error.message);
+        liveStatus.textContent = 'Action could not finish.';
       } finally {
         window.clearTimeout(deadline);
-        if (revision === sessionRevision) {
-          button.textContent = judgeLabels[id];
-          busy = false;
-          refreshControls();
-        }
+        button.textContent = label;
+        judgeBusy = false;
+        for (const action of judgeActions) $(action).disabled = false;
       }
     });
   }

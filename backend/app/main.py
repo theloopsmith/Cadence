@@ -54,6 +54,7 @@ from app.security import (
 from app.responses import observation_projection, ExamHistoryResponse, NeurologistReportResponse, RealityCheckResponse, DroppedEventResponse
 from app.rate_limit import consume_inference, require_metered_writer
 from app.errors import install_error_handlers
+from app.judge_demo import judge_demo
 from app.services.dose_clock import parse_utc
 from app.services.plain_language import describe_task_metrics
 from app.services.diary_engine import build_24h_diary_timeline
@@ -90,6 +91,7 @@ app = FastAPI(
     openapi_url=None if settings.is_production or settings.cadence_env == "public_demo" else "/openapi.json",
 )
 install_error_handlers(app)
+app.add_api_route("/api/v1/judge-demo/{action}", judge_demo, methods=["POST"])
 
 STATIC_DIR = Path(__file__).parent / "static"
 

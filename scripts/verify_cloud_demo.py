@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Verify the isolated cloud demo; print checks, never passwords or JWTs.
 
-Uses only the private deployment credentials. The initial pass writes one
-clearly labeled synthetic dose. --after-restart checks that same record and
-the original tokens without issuing replacement tokens.
+Uses the private reviewer credential and a fixed public model preview.
+--after-restart verifies the original read-only token.
 """
 import argparse
 import json
 import os
 import ssl
 from pathlib import Path
-import uuid
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -24,14 +22,14 @@ def verify(base: str, after_restart: bool):
     if not base.startswith('https://'):
         raise ValueError('A public HTTPS origin is required.')
     base = base.rstrip('/')
-    state_path = DIRECTORY / 'acceptance.json'
+    state_path = DIRECTORY / 'judge-acceptance.json'
     tls = ssl.create_default_context(cafile=certifi.where())
 
-    def request(path, expected=200, token=None, payload=None):
+    def request(path, expected=200, token=None, payload=None, post=False):
         headers = {'Content-Type': 'application/json'}
         if token:
             headers['Authorization'] = 'Bearer ' + token
-        req = Request(base + path, headers=headers,
+        req = Request(base + path, headers=headers, method="POST" if post or payload is not None else "GET",
                       data=json.dumps(payload).encode() if payload is not None else None)
         try:
             with urlopen(req, timeout=30, context=tls) as response:
@@ -54,40 +52,29 @@ def verify(base: str, after_restart: bool):
             raise RuntimeError('Restart baseline belongs to a different server.')
     else:
         credentials = dotenv_values(DIRECTORY / 'accounts.env')
-        state = {'origin': base, 'event_uuid': 'cloud-smoke-' + str(uuid.uuid4())}
-        for key, username, role in [('writer', 'demo-wearer', 'device_writer'),
-                                    ('reader', 'demo-reviewer', 'clinician_reader')]:
-            result = request('/api/v1/auth/login', payload={
-                'username': username,
-                'password': credentials['DEMO_' + key.upper() + '_PASSWORD'],
-            })
-            assert result['role'] == role
-            state[key] = result['access_token']
-    connection = request('/api/v1/device/connection', token=state['writer'])
-    if connection['patient_id'] != 'hackathon-demo':
-        raise RuntimeError('Refusing to write outside the isolated demo patient.')
+        result = request('/api/v1/auth/login', payload={
+            'username': 'demo-reviewer', 'password': credentials['DEMO_READER_PASSWORD'],
+        })
+        assert result['role'] == 'clinician_reader'
+        state = {'origin': base, 'reader': result['access_token']}
+        request('/api/v1/auth/login', expected=401, payload={
+            'username': 'demo-wearer', 'password': 'cadence-demo-2026',
+        })
+        request('/api/v1/judge-demo/intent', expected=400, payload={'text': 'Unexpected input'})
+        result = request('/api/v1/judge-demo/intent', post=True)
+        assert result.get('source') == 'meta_open_weights', 'Live Meta classification did not complete'
+        print('PASS: retired writer, fixed demo input and live Meta classification')
     request('/api/v1/companion/interpret', expected=403, token=state['reader'],
             payload={'text': 'What can you do?', 'history': []})
+    report = request('/api/v1/report/neurologist', token=state['reader'])
+    assert report['patient_id'] == 'hackathon-demo'
     if not after_restart:
-        state['server_id'] = connection['server_id']
-        result = request('/api/v1/companion/interpret', token=state['writer'],
-                         payload={'text': 'Catch me up on my pill log from this morning', 'history': []})
-        if result.get('source') != 'meta_open_weights':
-            raise RuntimeError('Live Meta model classification did not complete.')
-        print('PASS: live Meta model classification (' + result['model'] + ')')
-        request('/api/v1/medication/dose', token=state['writer'], payload={
-            'event_uuid': state['event_uuid'], 'medication_name': 'SYNTHETIC DEPLOYMENT CHECK',
-        })
         fd = os.open(state_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, 'w') as handle:
             json.dump(state, handle)
         state_path.chmod(0o600)
-    assert connection['server_id'] == state['server_id'], 'Server identity changed'
-    report = request('/api/v1/report/neurologist', token=state['reader'])
-    assert report['patient_id'] == 'hackathon-demo'
-    assert any(row['event_uuid'] == state['event_uuid'] for row in report['medication_logs'])
-    print('PASS: scoped login, reader write rejection, synthetic record and server identity' +
-          (' survive restart using the original JWTs' if after_restart else ''))
+    print('PASS: scoped reviewer access and writer API rejection' +
+          (' using the original JWT after restart' if after_restart else ''))
 
 
 if __name__ == '__main__':

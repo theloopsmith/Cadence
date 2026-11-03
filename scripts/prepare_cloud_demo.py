@@ -23,6 +23,10 @@ def prepare(hostname: str):
     existing = dotenv_values(env_path) if env_path.exists() else {}
     source = dotenv_values(ROOT / 'backend/.env')
     values = {name: os.environ.get(name, source.get(name)) for name in PROVIDER_FIELDS}
+    for name in ('JUDGE_DEMO_DAILY_RUNS', 'JUDGE_DEMO_RUNS_PER_IP_MINUTE', 'JUDGE_DEMO_MAX_CONCURRENT'):
+        value = os.environ.get(name, existing.get(name))
+        if value is not None:
+            values[name] = value
     values.update({
         'CADENCE_ENV': 'public_demo', 'JWT_SECRET': existing.get('JWT_SECRET') or secrets.token_urlsafe(48),
         'ALLOW_STATIC_TOKENS': 'false', 'DEMO_MODE': 'true',
@@ -43,8 +47,7 @@ def prepare(hostname: str):
     write(env_path, ''.join(f'{k}={shlex.quote(str(v))}\n' for k, v in values.items() if v is not None))
     accounts = directory / 'accounts.env'
     if not accounts.exists():
-        write(accounts, ''.join(f'{name}={shlex.quote(secrets.token_urlsafe(24))}\n'
-              for name in ('DEMO_WRITER_PASSWORD', 'DEMO_READER_PASSWORD')))
+        write(accounts, f'DEMO_READER_PASSWORD={shlex.quote(secrets.token_urlsafe(24))}\n')
     print(f'Prepared private deployment files in {directory}. Credential values were not printed.')
 
 

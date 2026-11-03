@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     sqlite_db_path: str = str(Path(__file__).resolve().parent.parent / "cadence_clinical.db")
     # Shared quota across ordinary paid inference routes; process-local, not a billing cap.
     inference_requests_per_minute: int = Field(default=30, ge=1, le=1000)
+    judge_demo_daily_runs: int = Field(default=1000, ge=1, le=10000)
+    judge_demo_runs_per_ip_minute: int = Field(default=8, ge=1, le=60)
+    judge_demo_max_concurrent: int = Field(default=4, ge=1, le=16)
 
     @field_validator("sqlite_db_path")
     @classmethod

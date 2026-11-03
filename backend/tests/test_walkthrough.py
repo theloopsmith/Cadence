@@ -48,7 +48,8 @@ def test_walkthrough_javascript_asset():
     assert "javascript" in response.headers["content-type"]
     assert "localStorage.setItem" not in response.text
     assert "sessionStorage.setItem" not in response.text
-    assert "apiCall" in response.text
+    assert "/api/v1/judge-demo/" in response.text
+    assert "/api/v1/auth/login" not in response.text
 
 
 def test_walkthrough_styles_and_allowlisted_images():
