@@ -600,7 +600,11 @@
     },
 
     async judgeWriting(signal, report) {
-      const writing = await runJudgeAction('handwriting', signal);
+      let writing = await runJudgeAction('handwriting', signal);
+      if (writing.photo_quality?.status === 'unavailable') {
+        report('Waiting for Muse. Retrying once…');
+        writing = await runJudgeAction('handwriting', signal);
+      }
       const quality = writing.photo_quality || {};
       report(quality.model
         ? 'Photo quality · ' + quality.model + ' via ' + quality.provider + ' · ' + quality.status.replaceAll('_', ' ')
@@ -622,7 +626,7 @@
       if (judgeBusy) return;
       judgeBusy = true;
       const operation = new AbortController();
-      const deadline = window.setTimeout(() => operation.abort(), 35000);
+      const deadline = window.setTimeout(() => operation.abort(), id === 'judgeWriting' ? 65000 : 35000);
       const results = $(id + 'Results');
       const label = button.textContent;
       button.textContent = 'Running…';

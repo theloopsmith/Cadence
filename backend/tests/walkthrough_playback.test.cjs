@@ -335,6 +335,7 @@ test('judge tiles send only a bodyless action and show a quota rejection', async
     assert.equal(options.body, undefined);
     assert.equal(options.headers, undefined);
     if (url.endsWith('/handwriting')) {
+      if (calls.length === 2) return {ok:true, json:async () => ({photo_quality:{status:'unavailable'}})};
       return {ok:false, json:async () => ({detail:"Today's live demo quota is used up."})};
     }
     return {ok:true, json:async () => ({available:true, transcript:'Start my motor check.'})};
@@ -343,7 +344,7 @@ test('judge tiles send only a bodyless action and show a quota rejection', async
   assert.equal(app.requests(), 0);
   await app.click(app.get('judgeVoice'));
   await app.click(app.get('judgeWriting'));
-  assert.deepEqual(calls, ['/api/v1/judge-demo/voice', '/api/v1/judge-demo/handwriting']);
+  assert.deepEqual(calls, ['/api/v1/judge-demo/voice', '/api/v1/judge-demo/handwriting', '/api/v1/judge-demo/handwriting']);
   assert.match(app.get('judgeVoiceResults').children[0].textContent, /Start my motor check/);
-  assert.match(app.get('judgeWritingResults').children[0].textContent, /quota is used up/);
+  assert.match(app.get('judgeWritingResults').children[1].textContent, /quota is used up/);
 });
