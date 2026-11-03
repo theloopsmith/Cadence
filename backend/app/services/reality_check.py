@@ -136,11 +136,11 @@ def render_grounded_template(
     user_query: Optional[str] = None,
 ) -> str:
     if template_id == "CONFIRM_LIVING_SUBJECT" and label:
-        return f"The photo check suggests a {label}. This may be mistaken; I cannot verify the whole scene."
+        return f"It looks like a {label} in this photo."
     if template_id == "REASSURE_SHADOW_OR_LIGHT" and label:
-        return f"The photo check suggests a {label} in this photo. This may be mistaken; I cannot confirm whether someone else is present."
+        return f"It looks like a {label} in this photo."
     if template_id == "REASSURE_OBJECT_ON_SEAT" and label:
-        return f"The photo check suggests a {label} in this photo. This may be mistaken; I cannot confirm whether someone else is present."
+        return f"It looks like a {label} in this photo."
     if template_id == "UNVERIFIED_LIGHTING_FALLBACK":
         return (
             "I couldn't complete the photo check. The image service may be unavailable. "
@@ -318,9 +318,15 @@ async def run_reality_check_pipeline(
         living = list(dict.fromkeys(str(m['label']) for m in living_masks))
         labels = objects[:2] + living[:1] if objects and living else (objects or living)[:3]
         words = labels[0] if len(labels) == 1 else ', '.join(labels[:-1]) + ' and ' + labels[-1]
-        spoken = "The photo check suggests " + words + ". These detections may be mistaken; I cannot verify the whole scene."
+        spoken = "This photo appears to show " + words + "."
     elif targets and not (relevant_inanimate or relevant_living):
         spoken = "I couldn't get a supported match for " + ', '.join(sorted(targets)) + ". That does not mean it is absent. Try another photo of the area you want to check."
+    # Speak limitations when relevant to the question or an incomplete check,
+    # rather than attaching the same disclaimer to every successful label.
+    if named_living_labels(user_query) and not relevant_living:
+        spoken += " I cannot confirm whether someone or a pet is present."
+    if re.search(r"\b(safe|safely|danger|dangerous|hazard|hazards)\b", user_query.lower()):
+        spoken += " I cannot determine whether an area is safe from a photo."
     if verified_masks and not sam_res.get("sam_verified"):
         spoken += " Some object checks did not finish."
     if not verified_masks and not sam_res.get("sam_verified"):

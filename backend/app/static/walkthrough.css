@@ -1201,6 +1201,7 @@ h1, h2, h3, p {
    LIVE DEVELOPER / JUDGE CONSOLE
    ========================================================================== */
 .live-section {
+  scroll-margin-top: 90px;
   padding-bottom: 80px;
   background: var(--bg-canvas);
 }
@@ -1641,3 +1642,18 @@ footer .brand {
 .chapter { display: block; }
 .chapter-sticky { margin-block: 0; }
 html, body { overflow-anchor: none; }
+
+.judge-sample {
+  width: min(100%, 240px);
+  margin: 18px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.judge-sample img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin-bottom: 6px;
+}

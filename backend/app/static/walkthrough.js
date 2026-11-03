@@ -567,8 +567,14 @@
   const runButton = $('runSequence');
   const signOutButton = $('signOut');
   const results = $('liveResults');
+  $('judgeLink').addEventListener('click', () => {
+    pausePlayback();
+    silence();
+    $('liveDetails').open = true;
+  });
 
   async function apiCall(path, payload, revision, authenticated = true) {
+    if (revision !== sessionRevision) throw new Error('The sign-in session changed.');
     const headers = {'Content-Type': 'application/json'};
     if (authenticated) {
       if (!token) throw new Error('Please sign in with the demo-wearer account.');
@@ -600,21 +606,11 @@
   }
   function refreshControls() {
     $('signInSubmitBtn').disabled = busy;
-    runButton.disabled = busy || !token;
-    runButton.textContent = busy && token ? 'Running…' : 'Run demo sequence ↗';
+    runButton.disabled = busy;
+    runButton.textContent = busy ? 'Running…' : 'Run live demo ↗';
   }
 
-  const oneClickLiveBtn = $('oneClickLiveBtn');
-  if (oneClickLiveBtn) {
-    oneClickLiveBtn.addEventListener('click', () => {
-      $('usernameInput').value = 'demo-wearer';
-      $('passwordInput').value = 'cadence-demo-2026';
-      loginForm.dispatchEvent(new Event('submit', {cancelable: true}));
-    });
-  }
-
-  loginForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
+  async function signIn(username, password) {
     if (busy) return;
     busy = true;
     controller = new AbortController();
@@ -623,10 +619,8 @@
     const revision = ++sessionRevision;
     liveStatus.textContent = 'Signing in securely…';
     refreshControls();
-    const password = $('passwordInput').value;
-    $('passwordInput').value = '';
     try {
-      const data = await apiCall('/api/v1/auth/login', {username: $('usernameInput').value.trim(), password}, revision, false);
+      const data = await apiCall('/api/v1/auth/login', {username, password}, revision, false);
       if (data.role !== 'device_writer' || !data.access_token) throw new Error('This check needs the demo-wearer account, not the read-only reviewer account.');
       token = data.access_token;
       const identity = await apiCall('/api/v1/device/connection', undefined, revision);
@@ -639,12 +633,21 @@
       liveStatus.textContent = 'Signed in to the isolated demo profile. Run the sequence when you’re ready.';
     } catch (error) {
       token = null;
+      loginForm.hidden = false;
       liveStatus.textContent = error.name === 'AbortError' ? 'Sign-in canceled.' : error.message;
     } finally {
       window.clearTimeout(deadline);
       busy = false;
       refreshControls();
     }
+  }
+
+  loginForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    const password = $('passwordInput').value;
+    $('passwordInput').value = '';
+    await signIn($('usernameInput').value.trim(), password);
   });
 
   signOutButton.addEventListener('click', () => {
@@ -660,7 +663,9 @@
   });
 
   runButton.addEventListener('click', async () => {
-    if (busy || !token) return;
+    if (busy) return;
+    if (!token) await signIn('demo-wearer', 'cadence-demo-2026');
+    if (!token) return;
     busy = true;
     const revision = sessionRevision;
     controller = new AbortController();
@@ -668,14 +673,46 @@
     const deadline = window.setTimeout(() => operation.abort(), 45000);
     refreshControls();
     results.replaceChildren();
-    liveStatus.textContent = 'Running a real request and two synthetic record writes…';
-    const runId = 'walkthrough-' + crypto.randomUUID();
-    const now = new Date().toISOString();
+    liveStatus.textContent = 'Asking Meta to interpret a sample medication question…';
     try {
+      const runId = 'walkthrough-' + crypto.randomUUID();
+      const now = new Date().toISOString();
       const intent = await apiCall('/api/v1/companion/interpret', {text: 'Did I log my morning medication today?', history: []}, revision);
       addResult(intent.source === 'meta_open_weights'
-        ? 'Meta model interpreted the request: ' + intent.intent + ' · ' + intent.model
+        ? 'Meta model interpreted the request: ' + intent.intent + ' · ' + intent.model + (intent.provider ? ' via ' + intent.provider : '')
         : 'Model interpretation was unavailable; the backend returned its local fallback. No patient answer was invented.');
+      liveStatus.textContent = 'Checking an illustrated photo with live Meta inference…';
+      let photoStatus = 'unavailable';
+      try {
+        const sample = await fetch('/assets/walkthrough/coatstand.jpg', {signal: operation.signal, redirect: 'error'});
+        if (!sample.ok) throw new Error('Could not load the illustrated sample.');
+        const blob = await sample.blob();
+        const encoded = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        const photo = await apiCall('/api/v1/reality-check', {
+          event_uuid: runId + '-photo', timestamp_utc: now,
+          user_query: 'Illustrated judge sample: What objects can you identify in this photo?', image_base64: encoded
+        }, revision);
+        const evidence = photo.model_evidence || {};
+        const proposal = evidence.proposal || {};
+        const segmentation = evidence.segmentation || {};
+        photoStatus = photo.analysis_status || 'unavailable';
+        addResult(proposal.source === 'meta_open_weights' && proposal.model
+          ? 'Photo search terms proposed by ' + proposal.model + ' via ' + proposal.provider + '.'
+          : 'Photo search used preset terms.');
+        addResult(segmentation.source === 'meta_model_api' && segmentation.model
+          ? 'Meta segmentation · ' + segmentation.model + ' · ' + photoStatus.replaceAll('_', ' ') + '.'
+          : 'Live segmentation was unavailable.');
+        if (photo.spoken_response) addResult('Illustrated photo · ' + photo.spoken_response);
+      } catch (error) {
+        if (revision !== sessionRevision || operation.signal.aborted || !token) throw error;
+        addResult('Photo check could not finish: ' + error.message);
+      }
+      liveStatus.textContent = 'Saving synthetic records and checking the dashboard…';
       await apiCall('/api/v1/medication/dose', {event_uuid: runId + '-dose', timestamp_utc: now, medication_name: 'SYNTHETIC WALKTHROUGH DOSE'}, revision);
       addResult('Saved one clearly labeled synthetic dose to the demo diary.');
       await apiCall('/api/v1/events/fog', {event_uuid: runId + '-walk', timestamp_utc: now, duration_sec: 5,
@@ -686,7 +723,11 @@
       if (!report.medication_logs.some((item) => item.event_uuid === runId + '-dose') ||
           !report.fog_events.some((item) => item.event_uuid === runId + '-walk')) throw new Error('Could not verify both saved records in the report. Please check the dashboard.');
       addResult('Read both saved records back from the real care dashboard API.');
-      liveStatus.textContent = 'Sequence complete. The real backend recorded this demo day. No caregiver was contacted.';
+      const liveIntent = intent.source === 'meta_open_weights';
+      const completePhoto = ['identified', 'no_supported_match'].includes(photoStatus);
+      liveStatus.textContent = liveIntent && completePhoto
+        ? 'Live demo complete. Both synthetic records were verified in the dashboard.'
+        : 'Synthetic records verified. Some model steps returned partial results or a fallback.';
     } catch (error) {
       if (revision === sessionRevision) liveStatus.textContent = error.name === 'AbortError' ? 'Sequence stopped. Records already saved are kept.' : 'Sequence stopped: ' + error.message + ' Records already saved are kept; running again creates a new demo sequence.';
     } finally {

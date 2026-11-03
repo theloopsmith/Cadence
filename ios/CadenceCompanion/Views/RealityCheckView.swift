@@ -370,6 +370,9 @@ public struct RealityCheckView: View {
                 .foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Text("Photo detections can be wrong or miss things. This check does not establish that an area is safe.")
+                .font(.footnote).foregroundColor(.secondary)
+
             if let warning = app.diaryWarning {
                 Text("Photo checked; local diary needs attention. " + warning).font(.footnote).foregroundColor(CadenceTheme.caution)
             }

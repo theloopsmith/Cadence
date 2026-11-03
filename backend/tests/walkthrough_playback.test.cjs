@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
-function setup({allowAutoplay = false} = {}) {
+function setup({allowAutoplay = false, request} = {}) {
   let now = 0, nextId = 1, requests = 0;
   const scrolls = [];
   const timers = new Map(), frames = new Map(), events = new Map();
@@ -84,7 +84,14 @@ function setup({allowAutoplay = false} = {}) {
     window:win,document:doc,performance:{now:() => now},
     SpeechSynthesisUtterance:class {constructor(text){this.text=text;}},
     AbortController,crypto:{randomUUID:() => 'test-uuid'},
-    fetch:() => {requests++;throw new Error('Unexpected network request');}
+    FileReader: class {
+      readAsDataURL() { this.result = 'data:image/jpeg;base64,c2FtcGxl'; this.onload(); }
+    },
+    fetch:(url, options) => {
+      requests++;
+      if (request) return request(url, options);
+      throw new Error('Unexpected network request');
+    }
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../app/static/walkthrough.js'),'utf8'),context);
   const flush = async () => {await Promise.resolve();await Promise.resolve();};
@@ -318,4 +325,48 @@ test('full-day playback advances from the motor exam into medication next', asyn
   assert.equal(env.chapters[1].dataset.running,'true');
   assert.equal(env.get('journeyPlayer').hidden,false);
   assert.equal(env.requests(),0);
+});
+
+test('judges run live model requests and verify synthetic records with one click', async () => {
+  const calls = [];
+  const responses = {
+    '/api/v1/auth/login': {role:'device_writer', access_token:'fixture'},
+    '/api/v1/device/connection': {patient_id:'hackathon-demo'},
+    '/api/v1/companion/interpret': {source:'meta_open_weights', model:'fixture-muse', provider:'baseten', intent:'medication'},
+    '/api/v1/reality-check': {
+      analysis_status:'identified', spoken_response:'Possible coat rack.',
+      model_evidence: {
+        proposal:{source:'meta_open_weights', model:'fixture-muse', provider:'baseten'},
+        segmentation:{source:'meta_model_api', model:'fixture-sam'}
+      }
+    },
+    '/api/v1/medication/dose': {},
+    '/api/v1/events/fog': {},
+    '/api/v1/report/neurologist': {
+      medication_logs:[{event_uuid:'walkthrough-test-uuid-dose'}],
+      fog_events:[{event_uuid:'walkthrough-test-uuid-walk'}]
+    }
+  };
+  const app = setup({request: async (url, options) => {
+    calls.push(url);
+    if (url.endsWith('coatstand.jpg')) return {ok:true, blob:async () => ({})};
+    assert.ok(Object.hasOwn(responses, url));
+    if (url === '/api/v1/reality-check') {
+      const body = JSON.parse(options.body);
+      assert.equal(body.image_base64, 'c2FtcGxl');
+      assert.equal(body.simulated_sam_masks, undefined);
+      assert.match(body.user_query, /Illustrated judge sample/);
+    }
+    return {ok:true, json:async () => responses[url]};
+  }});
+  await app.click(app.get('judgeLink'));
+  assert.equal(app.requests(), 0);
+  await app.click(app.get('runSequence'));
+  assert.deepEqual(calls, [
+    '/api/v1/auth/login', '/api/v1/device/connection', '/api/v1/companion/interpret',
+    '/assets/walkthrough/coatstand.jpg', '/api/v1/reality-check',
+    '/api/v1/medication/dose', '/api/v1/events/fog', '/api/v1/report/neurologist'
+  ]);
+  assert.match(app.get('liveStatus').textContent, /Live demo complete/);
+  assert.ok(app.get('liveResults').children.some(item => item.textContent.includes('fixture-sam')));
 });

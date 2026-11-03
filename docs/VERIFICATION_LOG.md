@@ -136,3 +136,8 @@ A reported repeated person reply exposed deterministic living-subject priority: 
 This is a response-logic repair, not evidence of improved model recognition accuracy. No representative labeled-image benchmark has been run. The accepted area fraction is bounding-box area, not decoded foreground-mask coverage. Existing private-photo traces demonstrate API operation only. These changes have not been deployed; physical-device and new live-image acceptance remain open.
 
 Validation for this repair: 255 backend tests, 21 walkthrough/architecture JavaScript checks and 12 Swift API/meal-flow tests passed. Documentation links, generated-diagram synchronization and whitespace checks passed. No new live image calls or physical-device checks were performed.
+
+
+### November 2 — Short photo replies
+
+Removed the repeated whole-scene disclaimer from successful spoken object labels. Replies retain tentative wording; a persistent result-card note explains fallibility and lack of safety verification. Incomplete checks, missing matches, unanswered presence questions and explicit safety questions keep contextual spoken limitations. This copy change does not establish recognition accuracy. Changes are local and not deployed.

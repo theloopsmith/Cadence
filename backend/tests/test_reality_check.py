@@ -94,7 +94,7 @@ def test_requested_small_object_survives_without_becoming_a_general_scene_claim(
     result=asyncio.run(run_reality_check_pipeline("Can you identify the lamp?",None,simulated_sam_masks=[mask]))
     assert result["chosen_inanimate_label"] == "lamp"
     assert result["verified_masks"][0]["grounding_rule"] == "explicit_requested_object"
-    assert "cannot confirm whether someone else is present" in result["spoken_response"]
+    assert result["spoken_response"] == "It looks like a lamp in this photo."
 
 
 def test_small_object_exception_requires_explicit_request_confidence_and_box_support():
