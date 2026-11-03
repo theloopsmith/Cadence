@@ -156,8 +156,8 @@ public final class DeveloperToolsModel: ObservableObject {
             guard !Task.isCancelled, !app.settings.restartRequired, app.settings.deviceToken == client.bearerToken,
                   app.settings.api.baseURL == client.baseURL else { return }
             lastEnvironmentCheck = result
-            AudioCueEngine.shared.speakPrompt(result.spokenResponse, priority: 2)
-            app.recordDiary(.environmentCheck, detail: result.spokenResponse)
+            AudioCueEngine.shared.speakPrompt(result.presentationResponse, priority: 2)
+            app.recordDiary(.environmentCheck, detail: result.presentationResponse)
             lastMessage = nil
         } catch {
             lastMessage = "Couldn't check the room: \(describe(error))"

@@ -113,7 +113,7 @@ public struct MotorExamView: View {
             }
             .sheet(isPresented: $showGlassesCamera) {
                 GlassesCameraView(glasses: app.glasses, voice: app.companion, captureWhenReady: automaticVoiceCapture, title: "Handwriting photo") { jpeg in
-                    analyzeHandwriting(jpeg: jpeg)
+                    analyzeHandwriting(jpeg: jpeg, simulatedCapture: app.isUsingMockGlasses)
                 }
             }
             .cameraPresentation(
@@ -443,8 +443,14 @@ public struct MotorExamView: View {
         .card()
     }
 
-    private func analyzeHandwriting(jpeg: Data) {
+    private func analyzeHandwriting(jpeg: Data, simulatedCapture: Bool = false) {
         guard exam.currentStep == .task2PromptedHandwriting else { return }
+        if simulatedCapture {
+            handwritingStatus = "Simulated photo. Take a real photo or skip this step."
+            checkHandwritingPhotoQuality = false
+            app.companion.say("Simulated photo. Take a real photo or skip this step.")
+            return
+        }
         let session = exam.examSessionID
         let checkPhotoQuality = checkHandwritingPhotoQuality
         checkHandwritingPhotoQuality = false
@@ -457,7 +463,7 @@ public struct MotorExamView: View {
                 await MainActor.run {
                     guard !Task.isCancelled, exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
                     isAnalyzingHandwriting = false
-                    if result.measured, let decay = result.opencvDecayPct {
+                    if result.isDeviceMeasurement, let decay = result.opencvDecayPct {
                         exam.measurements.handwritingOpencvDecayPct = decay
                         exam.measurements.handwritingSamDecayPct = result.sam31DecayPct
                         exam.measurements.handwritingMeasured = true
@@ -465,7 +471,13 @@ public struct MotorExamView: View {
                         exam.advanceToTimedWalk()
                     } else {
                         // Stay on this step: an unreadable photo is not a result.
-                        handwritingStatus = result.photoQuality?.advice ?? "Couldn't read enough of the line. Try another photo with the whole line in view, or skip."
+                        if result.isSimulated {
+                            handwritingStatus = "Simulated handwriting result. Take a real photo or skip this step."
+                        } else if result.measured {
+                            handwritingStatus = "This server did not identify the measurement source. Update the backend or skip this step."
+                        } else {
+                            handwritingStatus = result.photoQuality?.advice ?? "Couldn't read enough of the line. Try another photo with the whole line in view, or skip."
+                        }
                         app.companion.say(handwritingStatus!)
                     }
                 }

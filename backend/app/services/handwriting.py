@@ -127,7 +127,7 @@ def analyze_handwriting_opencv(
 # service fields stay private until deliberately added to this public contract.
 OBSERVATION_FIELDS = frozenset(("event_uuid", "measured", "initial_stroke_height_px",
     "final_stroke_height_px", "opencv_cc_decay_pct", "sam_3_1_decay_pct",
-    "deskew_angle_deg", "letter_boxes", "spoken_response", "photo_quality"))
+    "deskew_angle_deg", "letter_boxes", "spoken_response", "photo_quality", "measurement_source", "measurement_status"))
 
 def handwriting_response(result: Dict[str, Any]) -> Dict[str, Any]:
     return {key: value for key, value in result.items() if key in OBSERVATION_FIELDS}

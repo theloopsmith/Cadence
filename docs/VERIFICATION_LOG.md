@@ -149,3 +149,12 @@ The review used older revisions. The deployed judge tiles now call a fixed-input
 The active schema migration evidence records `retired_research_columns_absent: true`. See the [deployment evidence](verification/submission-closeout-2026-11-02.json). The older flag and compatibility-column descriptions above apply to historical versions.
 
 The local follow-up disables the Fireworks intent fallback in public-demo mode and adds a regression test. The backend suite passed 262 tests. Native simulated-result presentation, organizer scope confirmation, and the portal track and submission status are still open.
+
+
+### November 2 — Muse fallback and phone simulation provenance
+
+The public backend was restarted with the Muse-only intent configuration. On the public VM, an isolated request to the deployed `/api/v1/companion/interpret` handler with the Baseten key absent returned `local_fallback`. The probe rejected any outbound provider call. The live service kept its configured keys, and the existing read-only judge token still worked after restart.
+
+Handwriting responses now distinguish device measurements, simulated results, and unavailable results. Swift uses explicit provenance to accept a handwriting measurement and labels simulated SAM results in the interface and speech. Demo exams stay out of local measured trends. Older records without a source remain on disk but are excluded from comparisons because their source cannot be established. The local backend suite passed 262 tests and the Swift package passed 440 tests.
+
+The owner confirmed the Indie Developer entry shows Submitted and attested that the synced folder was never shared. The portal receipt and listed participants remain unverified. The organizer scope question has not been sent.

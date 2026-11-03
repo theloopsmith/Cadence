@@ -91,6 +91,8 @@ def test_default_handwriting_contract_withholds_research_fields(client, monkeypa
     assert response.status_code == 200
     body = response.json()
     assert body["measured"] is measured
+    assert body["measurement_source"] == "simulated"
+    assert body["measurement_status"] == ("simulated" if measured else "unavailable")
     assert description in body["spoken_response"]
     assert "handwriting_score" not in body
     assert "micrographia_detected" not in body

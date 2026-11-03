@@ -12,6 +12,8 @@
 
 ## Build for Your World
 
+Competition track: **Indie Developer** (owner confirmed).
+
 Cadence helps people living with Parkinson’s carry out everyday routines by voice. The project combines guided tasks, local walking cues, confirmed photo descriptions, and an activity diary in one flow. The repository records the Cadence app, backend, and walkthrough work. It reuses Meta models and the DAT SDK, Apple system speech and sensing, OpenCV, SQLite, and other established dependencies. See the [submission declarations](docs/SUBMISSION_DECLARATIONS.md) for scope and provenance.
 
 ## What it does

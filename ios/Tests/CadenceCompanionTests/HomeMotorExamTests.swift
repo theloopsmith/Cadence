@@ -214,7 +214,9 @@ final class HomeMotorExamTests: XCTestCase {
         XCTAssertEqual(stub.submittedBodies.count, 1)
         XCTAssertEqual(mgr.currentStep, .completed)
         XCTAssertFalse(summary.contains("76.4"), "no score in the summary: \(summary)")
-        XCTAssertTrue(summary.contains("steps a minute"), summary)
+        XCTAssertEqual(summary, "Simulated motor check saved.")
+        XCTAssertNil(mgr.lastRecord)
+        XCTAssertTrue(mgr.history.measuredRecords().allSatisfy { $0.measurementSource == "device" })
     }
 
     /// Task 1 vowel phonation recording via VoiceMonitor populates voice measurements

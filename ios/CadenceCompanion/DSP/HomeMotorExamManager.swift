@@ -63,7 +63,8 @@ public struct HomeMotorExamMeasurements {
             voiceMeanDbfs: valid.voiceMeasured ? voiceMeanDbfs : nil,
             handwritingDecayPct: valid.handwritingMeasured ? handwritingOpencvDecayPct : nil,
             walkStepsPerMinute: valid.walkMeasured ? walkCadenceSpm : nil,
-            walkFreezes: valid.walkMeasured ? walkFogCount : nil
+            walkFreezes: valid.walkMeasured ? walkFogCount : nil,
+            measurementSource: valid.measurementSource
         )
     }
 }
@@ -298,10 +299,12 @@ public final class HomeMotorExamManager: ObservableObject {
         }
 
         let record = snapshot.record(at: Date())
-        previousRecord = history.latest()
-        lastRecord = record
-        do { try history.append(record) }
-        catch { historyPersistenceWarning = "This phone's task history could not be saved. Keep the app open and try again." }
+        if snapshot.measurementSource == "device" {
+            previousRecord = history.latest()
+            lastRecord = record
+            do { try history.append(record) }
+            catch { historyPersistenceWarning = "This phone's task history could not be saved. Keep the app open and try again." }
+        }
 
         let submission: HomeMotorExamResult?
         do { submission = try await submitter.submit(examJSON: body, bearerToken: token) }
@@ -315,7 +318,7 @@ public final class HomeMotorExamManager: ObservableObject {
         if let result = submission {
             guard examSessionID == session, deviceBearerToken == token, backendBaseURL == base else { return nil }
             lastResult = result
-            lastResultSummary = TaskMetricsSummary.diaryDetail(record)
+            lastResultSummary = snapshot.measurementSource == "simulated" ? "Simulated motor check saved." : TaskMetricsSummary.diaryDetail(record)
             currentStep = .completed
             return result
         }
@@ -376,6 +379,7 @@ public final class HomeMotorExamManager: ObservableObject {
         let result = await completeExam(examUUID: examUUID)
         let detail = lastRecord.map(TaskMetricsSummary.diaryDetail) ?? "Motor check done"
         if result != nil {
+            if seeded != nil { return "Simulated motor check saved." }
             return "Motor check saved — \(detail)"
         }
         return lastResultSummary ?? "The check could not be saved. Please try again."

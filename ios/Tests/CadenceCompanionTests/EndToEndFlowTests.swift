@@ -126,7 +126,8 @@ final class EndToEndFlowTests: XCTestCase {
         XCTAssertEqual(mgr.currentStep, .completed)
         XCTAssertEqual(mgr.lastResult?.examUUID, "exam-e2e-1")
         XCTAssertFalse(summary.contains("WEARING_OFF"))
-        XCTAssertTrue(summary.contains("22% smaller"), summary)
+        XCTAssertEqual(summary, "Simulated motor check saved.")
+        XCTAssertNil(mgr.lastRecord)
         XCTAssertEqual(sync.pendingCount(), 0, "a successful exam must not be queued for retry")
     }
 }

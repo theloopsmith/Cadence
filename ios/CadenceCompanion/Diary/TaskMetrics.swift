@@ -4,6 +4,7 @@ import Foundation
 /// measured; nothing is ever filled in for it.
 public struct TaskMetricsRecord: Codable, Equatable {
     public var date: Date
+    public var measurementSource: String?
     public var voiceMeanDbfs: Double?
     public var handwritingDecayPct: Double?
     public var walkStepsPerMinute: Double?
@@ -14,9 +15,11 @@ public struct TaskMetricsRecord: Codable, Equatable {
         voiceMeanDbfs: Double?,
         handwritingDecayPct: Double?,
         walkStepsPerMinute: Double?,
-        walkFreezes: Int?
+        walkFreezes: Int?,
+        measurementSource: String = "device"
     ) {
         self.date = date
+        self.measurementSource = measurementSource
         self.voiceMeanDbfs = voiceMeanDbfs
         self.handwritingDecayPct = handwritingDecayPct
         self.walkStepsPerMinute = walkStepsPerMinute
@@ -144,7 +147,11 @@ public struct TaskMetricsHistory {
     }
 
     public func latest() -> TaskMetricsRecord? {
-        all().last
+        measuredRecords().last
+    }
+
+    public func measuredRecords() -> [TaskMetricsRecord] {
+        all().filter { $0.measurementSource == "device" }
     }
 
     public func append(_ record: TaskMetricsRecord) throws {

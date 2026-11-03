@@ -579,9 +579,13 @@ async def analyze_handwriting_endpoint(
         simulated_sam_decay_pct=payload.simulated_sam_decay_pct,
     )
 
+    simulated = payload.simulated_letter_heights_px is not None or payload.simulated_sam_decay_pct is not None
+    res["measurement_source"] = "simulated" if simulated else ("device" if img_bytes else "unverified")
+    res["measurement_status"] = ("simulated" if simulated else "measured") if res["measured"] else "unavailable"
+
     if payload.check_photo_quality:
         review = None
-        if img_bytes and payload.simulated_letter_heights_px is None and payload.simulated_sam_decay_pct is None:
+        if img_bytes and not simulated:
             deadline = (
                 RequestDeadlineContext(total_budget_sec=25)
                 if payload.preview_only else RequestDeadlineContext()
@@ -640,6 +644,8 @@ async def analyze_handwriting_endpoint(
         f"{'smaller' if shrink < 0 else 'larger'} than at the start."
         if abs(shrink) >= 5 else "Letter size stayed about the same across the line."
     )
+    if simulated:
+        spoken = "Simulated handwriting result. " + spoken
     return handwriting_response({"event_uuid": payload.event_uuid, **res, "spoken_response": spoken})
 
 

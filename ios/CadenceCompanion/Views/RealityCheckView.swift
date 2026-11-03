@@ -356,7 +356,7 @@ public struct RealityCheckView: View {
             HStack {
                 StatusPill(
                     text: result.statusTitle,
-                    color: result.samVerified && !result.detectedLabels.isEmpty ? CadenceTheme.calm : CadenceTheme.caution,
+                    color: !result.isSimulated && result.samVerified && !result.detectedLabels.isEmpty ? CadenceTheme.calm : CadenceTheme.caution,
                     filled: true
                 )
                 Spacer()

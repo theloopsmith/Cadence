@@ -50,6 +50,23 @@ final class CadenceAPIClientTests: XCTestCase {
         return try XCTUnwrap(object as? [String: Any])
     }
 
+    func testSimulationProvenanceIsVisibleAndCannotCountAsHandwritingMeasurement() throws {
+        let photo = try JSONDecoder().decode(RealityCheckResult.self, from: Data("""
+        {"event_uuid":"demo-photo","sam_verified":true,"living_subject_present":false,
+         "template_id":"demo","spoken_response":"Possible coat.","verified_masks":[],"latency_ms":5,
+         "model_evidence":{"segmentation":{"source":"simulated"}}}
+        """.utf8))
+        XCTAssertEqual(photo.statusTitle, "Simulated photo result")
+        XCTAssertTrue(photo.presentationResponse.hasPrefix("Simulated photo result."))
+
+        let writing = try JSONDecoder().decode(HandwritingResult.self, from: Data("""
+        {"event_uuid":"demo-writing","measured":true,"opencv_cc_decay_pct":-10,
+         "measurement_source":"simulated","measurement_status":"simulated","spoken_response":"Sample"}
+        """.utf8))
+        XCTAssertTrue(writing.isSimulated)
+        XCTAssertFalse(writing.isDeviceMeasurement)
+    }
+
     /// The reality check is only grounded when the backend sees the photo.
     func testRealityCheckSendsThePhotoAndTheQuestion() async throws {
         let transport = RecordingJSONTransport()

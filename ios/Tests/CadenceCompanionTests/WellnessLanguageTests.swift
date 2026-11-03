@@ -93,7 +93,17 @@ final class TaskMetricsHistoryTests: XCTestCase {
         try store.append(first)
         try store.append(second)
         XCTAssertEqual(store.latest()?.walkStepsPerMinute, 104)
-        XCTAssertEqual(store.all().count, 2)
+        var legacy = second
+        legacy.date = Date(timeIntervalSince1970: 300)
+        legacy.measurementSource = nil
+        try store.append(legacy)
+        var simulated = second
+        simulated.date = Date(timeIntervalSince1970: 400)
+        simulated.measurementSource = "simulated"
+        try store.append(simulated)
+        XCTAssertEqual(store.all().count, 4)
+        XCTAssertEqual(store.measuredRecords(), [first, second])
+        XCTAssertEqual(store.latest(), second)
     }
 }
 

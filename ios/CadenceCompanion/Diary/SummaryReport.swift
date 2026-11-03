@@ -161,7 +161,7 @@ public struct SummaryReportBuilder {
             )
         }
 
-        let history = metrics.all()
+        let history = metrics.measuredRecords()
         let motorChecks = history.enumerated().compactMap { index, record -> SummaryReport.MotorCheck? in
             guard record.date >= firstDay, record.date <= rangeEnd else { return nil }
             let previous = index > 0 ? history[index - 1] : nil

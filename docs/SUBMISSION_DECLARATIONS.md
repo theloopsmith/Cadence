@@ -1,6 +1,6 @@
 # Submission declarations
 
-Updated November 2, 2026. This records owner confirmations and repository evidence; it is not an organizer eligibility ruling or a record of a submitted form.
+Updated November 2, 2026. This records owner confirmations and repository evidence; It does not serve as an organizer ruling or a portal receipt.
 
 ## Contributor and representative
 
@@ -30,4 +30,6 @@ Organizer confirmation is still needed for scope/contribution-date questions and
 
 ## Access and completion
 
-The read-only reviewer account and live judge tiles close at 2026-11-18 08:00 UTC. The public writer login and previously issued writer tokens have already been retired. The remaining submission work is the actual three-minute video, final owner review of declarations and asset/input rights, any required organizer reply, and submission through the organizer's portal. This repository does not establish that the portal form has been submitted or accepted.
+The read-only reviewer account and live judge tiles close at 2026-11-18 08:00 UTC. The public writer login and previously issued writer tokens have already been retired. The remaining submission work is the actual three-minute video, final owner review of declarations and asset/input rights, any required organizer reply, and submission through the organizer's portal. On November 2, 2026, Harshal reported that the portal shows **Submitted** in the **Indie Developer** track. The portal receipt and the representative/contributor fields have not been independently checked.
+
+Harshal attests that the iCloud folder containing the local backend environment file was never shared. No credential rotation was triggered by the folder-sharing review.

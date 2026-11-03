@@ -60,7 +60,16 @@ public struct URLSessionJSONTransport: JSONTransporting {
 public struct RealityCheckResult: Decodable {
     public let analysisStatus: String?
     public let searchedConcepts: [String]?
+    public let modelEvidence: ModelEvidence?
+    public struct ModelEvidence: Decodable {
+        public let segmentation: Segmentation?
+        public struct Segmentation: Decodable {
+            public let source: String?
+        }
+    }
+    public var isSimulated: Bool { modelEvidence?.segmentation?.source == "simulated" }
     public var statusTitle: String {
+        if isSimulated { return "Simulated photo result" }
         switch analysisStatus {
         case "unavailable": return "Photo check unavailable"
         case "partial": return "Partial photo observations"
@@ -78,8 +87,9 @@ public struct RealityCheckResult: Decodable {
     public var presentationResponse: String {
         let legacySuffix = " I cannot verify the whole scene."
         let hasMatch = analysisStatus == "identified" || (analysisStatus == nil && !verifiedMasks.isEmpty)
-        guard hasMatch, spokenResponse.hasSuffix(legacySuffix) else { return spokenResponse }
-        return String(spokenResponse.dropLast(legacySuffix.count))
+        let response = hasMatch && spokenResponse.hasSuffix(legacySuffix)
+            ? String(spokenResponse.dropLast(legacySuffix.count)) : spokenResponse
+        return isSimulated ? "Simulated photo result. " + response : response
     }
 
     public let verifiedMasks: [DetectedMask]
@@ -88,6 +98,7 @@ public struct RealityCheckResult: Decodable {
     public var detectedLabels: [String] { verifiedMasks.reduce(into: []) { labels, mask in if !labels.contains(mask.label) { labels.append(mask.label) } } }
 
     enum CodingKeys: String, CodingKey {
+        case modelEvidence = "model_evidence"
         case analysisStatus = "analysis_status"
         case searchedConcepts = "searched_concepts"
         case eventUUID = "event_uuid"
@@ -120,6 +131,12 @@ public struct ServerConnectionInfo: Decodable {
 public struct HandwritingResult: Decodable {
     public let eventUUID: String
     public let measured: Bool
+    public let measurementSource: String?
+    public let measurementStatus: String?
+    public var isSimulated: Bool { measurementSource == "simulated" || measurementStatus == "simulated" }
+    public var isDeviceMeasurement: Bool {
+        measured && measurementSource == "device" && measurementStatus == "measured"
+    }
     public let opencvDecayPct: Double?
     public let sam31DecayPct: Double?
     public let spokenResponse: String
@@ -132,6 +149,8 @@ public struct HandwritingResult: Decodable {
     enum CodingKeys: String, CodingKey {
         case eventUUID = "event_uuid"
         case measured
+        case measurementSource = "measurement_source"
+        case measurementStatus = "measurement_status"
         case opencvDecayPct = "opencv_cc_decay_pct"
         case sam31DecayPct = "sam_3_1_decay_pct"
         case spokenResponse = "spoken_response"

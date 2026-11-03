@@ -188,7 +188,7 @@ struct DeveloperView: View {
             Button("Use iPhone camera instead") { cameraPurpose = .environment }.disabled(tools.isBusy)
             if let result = tools.lastEnvironmentCheck {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(result.spokenResponse).font(.body)
+                    Text(result.presentationResponse).font(.body)
                     Text("Seen: \(result.detectedLabels.isEmpty ? "nothing in the list" : result.detectedLabels.joined(separator: ", ")) · \(result.latencyMs) ms")
                         .font(.footnote).foregroundColor(.secondary)
                 }
