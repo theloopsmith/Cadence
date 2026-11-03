@@ -15,7 +15,7 @@
 - **Guided motor check:** a voice sample, a slowly dictated handwritten sentence and an optional short walk. Skipped or unavailable tasks stay distinct from measurements.
 - **Medication routine:** reminders of a saved prescribed schedule, factual history questions, and dose logging after explicit confirmation. Meal logging shares a timestamp; optional reviewed photos and notes stay on the phone.
 - **Walking support:** local motion processing triggers bounded rhythmic cues. Walking protection on/off is the first action on Today.
-- **Surroundings:** review a glasses photo, confirm its use, then hear a bounded description grounded in detected objects.
+- **Surroundings:** review a glasses photo, confirm its use, then hear tentative object labels from the photo check. Detections can be wrong; this does not verify a scene or its safety.
 - **Care connection:** possible-fall check-ins, an account-bound offline queue, and a read-only diary/dashboard that separates queued alerts, provider acceptance and human acknowledgment.
 
 Say “start a motor exam,” “help with my medication,” “check my surroundings,” or “I need help.” The foreground companion guides the current task and asks for separate confirmation before sensitive actions. [App setup and voice guide](docs/APP_GUIDE.md).
@@ -76,6 +76,8 @@ CI also runs silent walkthrough/math checks, an isolated dashboard browser-secur
 ## Evidence and limits
 
 Live SAM + Muse analysis is recorded for an approved [iPhone photo](docs/verification/real-photo-meta-2026-11-01.json) and an [exported glasses photo](docs/verification/glasses-photo-meta-2026-11-01.json). Separate traces cover [Meta intent interpretation](docs/verification/muse-intent-live-2026-11-01.json) and [Muse transcription](docs/verification/muse-transcribe-live-2026-10-29.json). Private photos are not published.
+
+Photo traces demonstrate that the APIs ran, not recognition accuracy. The prototype searches at most six concepts per photo and filters segmentation boxes; these heuristics have not been evaluated on a representative image set. A returned box, including one without a confidence value, is not proof of the object’s identity.
 
 These checks do not establish live DAT capture, audible physical-glasses output, locked-screen continuity or real caregiver delivery. Organizer scope/contribution-date approval and the final submission package remain pending. Experimental scoring, medication-state inference and protein estimation have been removed; simulated task sources are labeled throughout reports.
 

@@ -63,8 +63,8 @@
 <text x="432" y="732" font-size="24" fill="#edf2ef" font-weight="600">Constrained interpretation</text>
 <text x="432" y="768" font-size="18" fill="#edf2ef" font-weight="600">Muse Spark Open</text>
 <text x="432" y="800" font-size="12" fill="#b6c1be" font-weight="400">meta-models/muse-spark-open-1026</text>
-<text x="432" y="838" font-size="14" fill="#b6c1be" font-weight="400">Intent / image search terms / verified label</text>
-<text x="432" y="864" font-size="14" fill="#b6c1be" font-weight="400">SAM independently verifies image proposals</text>
+<text x="432" y="838" font-size="14" fill="#b6c1be" font-weight="400">Intent / image search terms / candidate label</text>
+<text x="432" y="864" font-size="14" fill="#b6c1be" font-weight="400">SAM searches concepts; accuracy unbenchmarked</text>
 <rect x="788" y="668" width="460" height="218" rx="16" fill="#151a19" stroke="#3d5149"/>
 <text x="810" y="699" font-size="12" fill="#9fcdba" font-weight="600">REPORTING / CARE CONNECTION</text>
 <text x="810" y="732" font-size="24" fill="#edf2ef" font-weight="600">Evidence before claims</text>

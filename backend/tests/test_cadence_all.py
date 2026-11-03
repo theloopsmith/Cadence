@@ -81,7 +81,7 @@ def test_end_to_end_api_pipelines_and_rbac():
         )
         assert fog_ok.status_code == 200
 
-        # Reality Check: SAM detects coat on chair (no person) -> grounded to 'coat'
+        # Reality Check: prioritize the named chair over a higher-confidence coat candidate.
         rc_ok = client.post(
             "/api/v1/reality-check",
             headers=device_headers,
@@ -97,8 +97,8 @@ def test_end_to_end_api_pipelines_and_rbac():
         assert rc_ok.status_code == 200
         rc_data = rc_ok.json()
         assert rc_data["living_subject_present"] is False
-        assert rc_data["chosen_inanimate_label"] == "coat"
-        assert "coat" in rc_data["spoken_response"]
+        assert rc_data["chosen_inanimate_label"] == "chair"
+        assert "chair" in rc_data["spoken_response"]
 
         # Fall Event with GPS & Post-Dispatch Cancel -> All-Clear SMS
         fall_ok = client.post(

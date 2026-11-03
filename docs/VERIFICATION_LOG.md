@@ -127,3 +127,12 @@ The old button mixed the shared on-device transcript with rolling six-second Mus
 QuestionDictation waits for explicit permission, companion microphone teardown and the speech echo window. Preparing and Listening reflect different states. The typed question is retained until actual speech arrives. Done or four quiet seconds completes the editable draft; there is no automatic photo submission. Startup/no-speech failures are bounded and visible. Permission prompts do not count as background cancellation. Generation fences reject stale permissions and transcripts; camera, sign-in, leaving/backgrounding, reset and safety-check transitions stop dictation. Safety preemption and teardown are covered by mocked tests.
 
 All 439 silent Swift tests passed, including eight dedicated dictation regressions. The native iOS Simulator target built with Meta DAT; documentation and whitespace checks passed. Physical glasses microphone quality and word-recognition acceptance remain pending on the updated app build. No backend deployment or real caregiver contact was needed for this native repair.
+
+
+### November 2 — Photo response relevance and accuracy claims (review branch)
+
+A reported repeated person reply exposed deterministic living-subject priority: any accepted person/dog/cat box suppressed object descriptions. Replies now include both object and living candidates for general questions and prioritize matching named objects. Unrelated detections cannot turn an unanswered named-object question into an identified result. Partial concept failures are spoken explicitly. Labels remain tentative even when SAM omits confidence. Public copy, app labels and architecture wording distinguish concept-search results from verified identity; the illustrated web reply no longer invents a spatial relationship.
+
+This is a response-logic repair, not evidence of improved model recognition accuracy. No representative labeled-image benchmark has been run. The accepted area fraction is bounding-box area, not decoded foreground-mask coverage. Existing private-photo traces demonstrate API operation only. These changes have not been deployed; physical-device and new live-image acceptance remain open.
+
+Validation for this repair: 255 backend tests, 21 walkthrough/architecture JavaScript checks and 12 Swift API/meal-flow tests passed. Documentation links, generated-diagram synchronization and whitespace checks passed. No new live image calls or physical-device checks were performed.

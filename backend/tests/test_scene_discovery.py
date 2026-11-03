@@ -63,6 +63,53 @@ def test_partial_sam_failure_keeps_a_grounded_object_without_certifying_scene(mo
     assert result['analysis_status'] == 'partial' and result['sam_verified'] is False
     assert result['chosen_inanimate_label'] == 'lamp'
     assert 'cannot confirm' in result['spoken_response']
+    assert 'did not finish' in result['spoken_response']
+
+
+def test_person_detection_does_not_hide_requested_object(monkeypatch):
+    monkeypatch.setattr(baseten_client, 'choose_reality_check_slot', AsyncMock(return_value=None))
+    masks = [{'label':'person', 'area_ratio':.6},
+             {'label':'lamp', 'confidence':.85, 'area_ratio':.05}]
+    result = asyncio.run(run_reality_check_pipeline('What is the lamp?', None, simulated_sam_masks=masks))
+    assert result['living_subject_present'] is True  # Evidence is retained, not erased.
+    assert result['chosen_inanimate_label'] == 'lamp'
+    assert 'suggests a lamp' in result['spoken_response']
+    assert 'may be mistaken' in result['spoken_response']
+
+
+def test_general_description_includes_objects_even_when_person_detected(monkeypatch):
+    monkeypatch.setattr(baseten_client, 'choose_reality_check_slot', AsyncMock(return_value=None))
+    masks = [{'label':'person', 'confidence':.99, 'area_ratio':.5},
+             {'label':'sofa', 'confidence':.9, 'area_ratio':.3},
+             {'label':'pillow', 'confidence':.85, 'area_ratio':.1}]
+    result = asyncio.run(run_reality_check_pipeline('What is around me?', None, simulated_sam_masks=masks))
+    assert all(label in result['spoken_response'] for label in ('person','sofa','pillow'))
+    assert 'I can identify' not in result['spoken_response']
+    assert 'may be mistaken' in result['spoken_response']
+
+
+def test_missing_requested_object_is_not_replaced_by_unrelated_person(monkeypatch):
+    select = AsyncMock(return_value=None)
+    monkeypatch.setattr(baseten_client, 'choose_reality_check_slot', select)
+    masks = [{'label':'person','area_ratio':.5}, {'label':'chair','area_ratio':.2}]
+    result = asyncio.run(run_reality_check_pipeline('Where is the lamp?', None, simulated_sam_masks=masks))
+    assert result['chosen_inanimate_label'] is None
+    assert 'supported match for lamp' in result['spoken_response']
+    assert 'does not mean it is absent' in result['spoken_response']
+    assert 'suggests person' not in result['spoken_response']
+    select.assert_not_awaited()
+
+
+@pytest.mark.parametrize('include_cat', [True, False])
+def test_named_pet_question_is_not_answered_with_a_person(include_cat):
+    masks = [{'label':'person', 'confidence':.99, 'area_ratio':.5}]
+    if include_cat:
+        masks.append({'label':'cat', 'confidence':.85, 'area_ratio':.1})
+    result = asyncio.run(run_reality_check_pipeline('Can you see my cat?', None, simulated_sam_masks=masks))
+    assert result['living_subject_present'] is True
+    assert ('suggests a cat' if include_cat else 'supported match for cat') in result['spoken_response']
+    assert result['analysis_status'] == ('identified' if include_cat else 'no_supported_match')
+    assert 'person' not in result['spoken_response']
 
 
 @pytest.mark.parametrize('answer', ['["sofa"]', '["invented object"]', 'Here is a sofa', '{"label":"sofa"}', '["sofa", "table", "lamp", "bed"]'])

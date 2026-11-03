@@ -40,10 +40,8 @@ INANIMATE_VOCAB = {
     "laptop", "computer", "monitor", "keyboard", "sink", "counter", "pen",
 }
 
-# Inanimate labels that stand upright in a room rather than resting on a seat.
-# A coat rack in low light is one of the most common Parkinson's hallucination
-# triggers, so it gets its own reassurance template instead of being described
-# as something "on the seat".
+# Legacy template IDs distinguish fixtures from objects; neither is reassurance
+# about whether a person is present or whether the scene is safe.
 UPRIGHT_FIXTURE_LABELS = {
     "coat rack", "lamp", "curtain", "plant", "shadow", "door", "wall", "window", "mirror", "cabinet", "shelf", "bookshelf"
 }
@@ -59,6 +57,14 @@ MAX_CONCEPTS_PER_PHOTO = 6
 def named_inanimate_labels(user_query: str) -> List[str]:
     return [label for label in sorted(INANIMATE_VOCAB, key=len, reverse=True)
             if re.search(r"(?<!\w)" + re.escape(label) + r"s?(?!\w)", user_query.lower())]
+
+
+def named_living_labels(user_query: str) -> set[str]:
+    words = set(re.findall(r"\w+", user_query.lower()))
+    labels = {label for label in ALWAYS_ASK_LIVING if words & {label, label + "s"}}
+    if words & {"people", "human", "humans", "someone", "anyone", "somebody", "anybody", "child", "man", "woman"}:
+        labels.add("person")
+    return labels
 
 
 def reality_check_concepts(user_query: str, proposed: Optional[List[str]] = None) -> List[str]:
@@ -130,11 +136,11 @@ def render_grounded_template(
     user_query: Optional[str] = None,
 ) -> str:
     if template_id == "CONFIRM_LIVING_SUBJECT" and label:
-        return f"I can identify a {label} in this photo. I cannot verify the whole scene."
+        return f"The photo check suggests a {label}. This may be mistaken; I cannot verify the whole scene."
     if template_id == "REASSURE_SHADOW_OR_LIGHT" and label:
-        return f"I can identify a {label} in this photo. I cannot confirm whether someone else is present."
+        return f"The photo check suggests a {label} in this photo. This may be mistaken; I cannot confirm whether someone else is present."
     if template_id == "REASSURE_OBJECT_ON_SEAT" and label:
-        return f"I can identify a {label} in this photo. I cannot confirm whether someone else is present."
+        return f"The photo check suggests a {label} in this photo. This may be mistaken; I cannot confirm whether someone else is present."
     if template_id == "UNVERIFIED_LIGHTING_FALLBACK":
         return (
             "I couldn't complete the photo check. The image service may be unavailable. "
@@ -164,7 +170,7 @@ async def run_reality_check_pipeline(
     deadline: Optional[RequestDeadlineContext] = None,
 ) -> Dict[str, Any]:
     """
-    Executes the Verifiable Hallucination Reality Check pipeline:
+    Executes a bounded, fallible photo-label pipeline:
       1. SAM 3.1 masks filtered by confidence >= 0.65 & area_ratio >= 0.015 -> L_sam
       2. Deterministic Grounding Gate: locks inanimate slot strictly to L_inanimate,sam
       3. Baseten muse-spark-open-1026 slot selection + deny-list validation
@@ -256,13 +262,20 @@ async def run_reality_check_pipeline(
         m for m in verified_masks if str(m.get("label", "")).lower() in INANIMATE_VOCAB
     ]
 
-    if living_masks:
-        top_living = str(living_masks[0]["label"]).lower()
+    # A living detection must not suppress the requested object or all other
+    # scene evidence. SAM answers a prompted noun; a returned box is not proof
+    # that this noun is correct, even when no confidence value is supplied.
+    living_requested = named_living_labels(user_query) if not requested else set()
+    targets = requested or living_requested
+    relevant_living = [m for m in living_masks if not targets or m["label"] in targets]
+    relevant_inanimate = [m for m in inanimate_masks if not targets or m["label"] in targets]
+    if relevant_living and not relevant_inanimate:
+        top_living = str(relevant_living[0]["label"]).lower()
         template_id = "CONFIRM_LIVING_SUBJECT"
         chosen_label = None
         spoken = render_grounded_template(template_id, top_living, user_query=user_query)
     else:
-        allowed_inanimate = [str(m["label"]).lower() for m in inanimate_masks]
+        allowed_inanimate = list(dict.fromkeys(str(m["label"]).lower() for m in relevant_inanimate))
         if not allowed_inanimate:
             template_id = "REASSURE_EMPTY_SPACE"
             chosen_label = None
@@ -298,17 +311,26 @@ async def run_reality_check_pipeline(
                 chosen_label = None
                 spoken = render_grounded_template(template_id, user_query=user_query)
 
-    if inanimate_masks and not living_masks and not named_inanimate_labels(user_query):
-        labels = list(dict.fromkeys(([chosen_label] if chosen_label else []) + [str(mask['label']) for mask in inanimate_masks]))[:3]
+    if verified_masks and not targets:
+        # Include both kinds of evidence instead of repeating the first living
+        # label. Reserve room for a living candidate when objects are present.
+        objects = list(dict.fromkeys(([chosen_label] if chosen_label else []) + [str(m['label']) for m in inanimate_masks]))
+        living = list(dict.fromkeys(str(m['label']) for m in living_masks))
+        labels = objects[:2] + living[:1] if objects and living else (objects or living)[:3]
         words = labels[0] if len(labels) == 1 else ', '.join(labels[:-1]) + ' and ' + labels[-1]
-        spoken = "I can identify " + words + " in this photo. I cannot verify the whole scene."
+        spoken = "The photo check suggests " + words + ". These detections may be mistaken; I cannot verify the whole scene."
+    elif targets and not (relevant_inanimate or relevant_living):
+        spoken = "I couldn't get a supported match for " + ', '.join(sorted(targets)) + ". That does not mean it is absent. Try another photo of the area you want to check."
+    if verified_masks and not sam_res.get("sam_verified"):
+        spoken += " Some object checks did not finish."
     if not verified_masks and not sam_res.get("sam_verified"):
         template_id = "UNVERIFIED_LIGHTING_FALLBACK"
         spoken = render_grounded_template(template_id)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
+    supported_for_query = relevant_inanimate + relevant_living
     return {
-        "analysis_status": ("partial" if not sam_res.get("sam_verified") else "identified") if verified_masks else ("no_supported_match" if sam_res.get("sam_verified") else "unavailable"),
+        "analysis_status": ("partial" if not sam_res.get("sam_verified") else "identified") if supported_for_query else ("no_supported_match" if sam_res.get("sam_verified") else "unavailable"),
         "searched_concepts": concepts,
         "model_evidence": evidence,
         "sam_verified": bool(sam_res.get("sam_verified")),

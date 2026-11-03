@@ -38,7 +38,7 @@
     },
     surroundings: {
       you: ['“Help me check what’s by the door.”', '“Use this photo.”', '“What does the photo show?”'],
-      replies: ['“Let’s take a photo with your glasses.”', '“Would you like to use this photo?”', '“The photo appears to show a coat on a stand.”'],
+      replies: ['“Let’s take a photo with your glasses.”', '“Would you like to use this photo?”', '“The photo check suggests a coat and coat rack. Detections may be mistaken.”'],
       receipts: ['Photo · Waiting for your confirmation', 'Photo · Confirmed by you', 'Image description · Added to your diary']
     },
     safety: {
@@ -223,7 +223,7 @@
       {group:0,user:'“Help me check what’s by the door.”',reply:'Let’s take a photo with your glasses, then you can choose whether to use it.',receipt:'Surroundings · Waiting for a photo',visual:'camera',title:'Start with what he is looking at',detail:'The glasses provide the camera view in the real app.',image:'coatstand',duration:4500},
       {group:0,user:'“Take a photo.”',reply:'Here is the captured photo. Would you like to use it or take another?',receipt:'Glasses photo · Ready to review',visual:'photo',title:'A photo he can review',detail:'Illustrative capture · No browser camera access.',image:'coatstand',duration:4000},
       {group:1,user:'“Use this photo.”',reply:'I’ll check the image you chose.',receipt:'Photo · Confirmed by Arun',visual:'photoAccepted',title:'He decides what is used',detail:'Retake, use, or cancel. The choice stays with him.',image:'coatstand',duration:3500},
-      {group:2,user:'“What does it appear to show?”',reply:'The photo appears to show a coat on a stand near the doorway. An image can miss things.',receipt:'Image description · Ready to hear',visual:'description',title:'A grounded description',detail:'“A coat on a stand near the doorway.”',image:'coatstand',duration:5000},
+      {group:2,user:'“What does it appear to show?”',reply:'The photo check suggests a coat and coat rack. These detections may be mistaken; I cannot verify the whole scene.',receipt:'Image description · Ready to hear',visual:'description',title:'Tentative photo labels',detail:'Illustrative output · Recognition accuracy has not been benchmarked.',image:'coatstand',duration:5000},
       {group:2,user:'He can ask again, or carry on.',reply:'The description can stay in the diary. It is not a guarantee that a scene or path is safe.',receipt:'Confirmed image description · In the sample diary',visual:'saved',title:'Help without taking the choice away',detail:'His photo. His confirmation. His next step.',duration:4500}
     ],
     safety: [

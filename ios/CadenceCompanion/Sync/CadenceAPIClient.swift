@@ -63,8 +63,8 @@ public struct RealityCheckResult: Decodable {
         switch analysisStatus {
         case "unavailable": return "Photo check unavailable"
         case "partial": return "Partial photo observations"
-        case "no_supported_match": return "No verified match"
-        default: return detectedLabels.isEmpty ? "No verified match" : "Photo observations"
+        case "no_supported_match": return "No supported match"
+        default: return detectedLabels.isEmpty ? "No supported match" : "Photo observations"
         }
     }
     public let eventUUID: String

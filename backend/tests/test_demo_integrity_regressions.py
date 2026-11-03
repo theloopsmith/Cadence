@@ -72,7 +72,7 @@ def test_coat_rack_is_in_the_closed_vocabulary_and_reads_as_a_fixture():
     assert "coat rack" in res["spoken_response"]
 
 
-def test_object_resting_on_a_seat_still_uses_the_seat_template():
+def test_unrelated_coat_does_not_answer_a_question_about_a_chair():
     res = asyncio.run(
         run_reality_check_pipeline(
             user_query="Is someone sitting in that chair?",
@@ -82,9 +82,10 @@ def test_object_resting_on_a_seat_still_uses_the_seat_template():
             ],
         )
     )
-    assert res["template_id"] == "REASSURE_OBJECT_ON_SEAT"
-    assert "in this photo" in res["spoken_response"]
-    assert "cannot confirm" in res["spoken_response"]
+    assert res["analysis_status"] == "no_supported_match"
+    assert res["chosen_inanimate_label"] is None
+    assert "supported match for chair" in res["spoken_response"]
+    assert "does not mean it is absent" in res["spoken_response"]
 
 
 # --------------------------------------------------------------------------

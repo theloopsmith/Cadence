@@ -165,7 +165,7 @@ public struct RealityCheckView: View {
             IconBadge(systemName: "eye.fill", color: CadenceTheme.accent, size: 48)
             Text("Describe Surroundings")
                 .font(.title2.weight(.bold))
-            Text("Cadence describes objects it can identify in a photo when you ask. It cannot verify the whole scene or confirm that an area is safe.")
+            Text("Cadence suggests possible objects in a photo when you ask. Detections can be wrong. It cannot verify the whole scene or confirm that an area is safe.")
                 .font(.body)
                 .foregroundColor(.secondary)
         }
@@ -378,7 +378,7 @@ public struct RealityCheckView: View {
             }
             if !result.detectedLabels.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Objects identified:")
+                    Text("Possible objects:")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.secondary)
                     Text(result.detectedLabels.joined(separator: ", "))

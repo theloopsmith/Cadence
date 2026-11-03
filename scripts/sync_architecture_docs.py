@@ -89,8 +89,8 @@ def labels(config):
             'c31': 'Still unverified: physical glasses routing, locked-screen continuity and real caregiver delivery. A queued job or provider SID is not human acknowledgment.',
         },
         '3 Meta model calls': {
-            'c2': '<b>Meta model calls — bounded inputs, explicit provenance</b><br/>Public startup pins reviewed model IDs; experimental scoring and nutrition inference are removed. Muse proposes search terms; SAM must verify. Service failure and no supported match are distinct; the phone speaks bounded wording.',
-            'c4': '<b>POST /reality-check</b><br/>General question: Muse image search terms + living-subject SAM probes run concurrently; SAM then verifies object terms. Named objects skip discovery. At most 6 concepts; no absence/safety claims.',
+            'c2': '<b>Meta model calls — bounded inputs, explicit provenance</b><br/>Public startup pins reviewed model IDs; experimental scoring and nutrition inference are removed. Muse proposes search terms; SAM searches for those concepts; detections can be wrong. Service failure and no supported match are distinct; the phone speaks bounded wording.',
+            'c4': '<b>POST /reality-check</b><br/>General question: Muse image search terms + living-subject SAM probes run concurrently; SAM then searches object terms. Named objects skip discovery. At most 6 concepts; no absence/safety claims.',
             'c5': f'<b>{config["meta_sam_model"]}</b><br/>Meta /responses, one named concept per call. Parallel concepts; {config["sam_stage_budget_sec"]:g} s stage, {config["interactive_request_budget_sec"]:g} s shared budget. No free-form scene invention.',
             'c6': '<b>Decode and ground</b><br/>Boxes/masks; missing confidence is not zero. Normal area gate 1.5%. Explicitly requested small objects need confidence ≥0.8 and valid ≥16 px box sides.',
             'c7': f'<b>Exact grounded label → template</b><br/>Muse may choose one complete verified label. Low reasoning, 512 tokens; ≤{config["baseten_stage_budget_sec"]:g} s clamped by remaining budget. Invalid/late output uses deterministic evidence, never an invented label.',
@@ -211,7 +211,7 @@ def render_system(config, table_count):
     card(410,668,350,218,'BASETEN / META OPEN WEIGHTS','Constrained interpretation')
     text(432,768,'Muse Spark Open',18,'#edf2ef','600')
     text(432,800,config['baseten_model'],12)
-    lines(432,838,['Intent / image search terms / verified label','SAM independently verifies image proposals'],14)
+    lines(432,838,['Intent / image search terms / candidate label','SAM searches concepts; accuracy unbenchmarked'],14)
     card(788,668,460,218,'REPORTING / CARE CONNECTION','Evidence before claims')
     lines(810,768,['Read-only dashboard + phone PDF','Queued ≠ provider accepted ≠ acknowledged'],16)
     lines(810,830,['Public demo: caregiver transport simulated','Configured deployments: Twilio + signed callbacks'],14)
