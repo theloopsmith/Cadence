@@ -120,6 +120,7 @@ class RealityCheckRequest(CadenceModel):
     user_query: str = Field(..., min_length=2, max_length=400)
     image_base64: Optional[str] = Field(None, max_length=MAX_IMAGE_BASE64_LENGTH)
     simulated_sam_masks: Optional[List[Dict[str, Any]]] = Field(None, max_length=50)
+    preview_only: bool = False
 
 
 class HandwritingAnalyzeRequest(CadenceModel):

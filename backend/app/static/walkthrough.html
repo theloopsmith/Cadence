@@ -67,21 +67,40 @@
       <details id="liveDetails" open>
         <summary id="judgeTitle">For Judges · Run Cadence live <span aria-hidden="true">+</span></summary>
         <div class="live-content">
-          <p>Try a medication question, a surroundings check, and a handwriting photo review through the real backend. The run uses illustrated sample images and saves synthetic routine and walking records to the shared demo diary.</p>
-          <div class="live-actions"><button id="runSequence" class="pill" type="button">Run live demo ↗</button><button id="signOut" type="button" hidden>Sign out</button></div>
-          <p id="liveStatus" role="status">Ready to run with the sandbox judge account. No caregiver will be contacted.</p>
-          <div class="judge-samples">
-            <figure class="judge-sample">
-              <img src="/assets/walkthrough/coatstand.jpg" width="1536" height="1024" loading="lazy" alt="Illustrated coat rack by a doorway">
-              <figcaption>Surroundings sample</figcaption>
-            </figure>
-            <figure class="judge-sample">
+          <p>Choose a sample to run one Meta model workflow live. Photo previews and transcripts stay out of the diary.</p>
+          <div class="judge-tiles">
+            <article class="judge-tile">
+              <p class="judge-model">Muse Spark Open</p>
+              <h3>Interpret a medication question</h3>
+              <p>“Did I log my morning medication today?”</p>
+              <button id="judgeIntent" class="pill" type="button">Interpret question</button>
+              <ul id="judgeIntentResults" class="live-results" aria-live="polite"></ul>
+            </article>
+            <article class="judge-tile">
+              <p class="judge-model">Muse Spark Open + SAM 3.1</p>
+              <h3>Check surroundings</h3>
+              <img src="/assets/walkthrough/coatstand.jpg" loading="lazy" alt="Illustrated coat rack by a doorway">
+              <button id="judgeSurroundings" class="pill" type="button">Check illustrated photo</button>
+              <ul id="judgeSurroundingsResults" class="live-results" aria-live="polite"></ul>
+            </article>
+            <article class="judge-tile">
+              <p class="judge-model">Muse Spark Open</p>
+              <h3>Review handwriting photo quality</h3>
               <img src="/assets/walkthrough/handwriting-capture.jpg" loading="lazy" alt="Illustrated notebook page with the writing exercise">
-              <figcaption>Handwriting sample</figcaption>
-            </figure>
+              <button id="judgeWriting" class="pill" type="button">Review handwriting photo</button>
+              <ul id="judgeWritingResults" class="live-results" aria-live="polite"></ul>
+            </article>
+            <article class="judge-tile">
+              <p class="judge-model">Muse Voice Transcribe</p>
+              <h3>Transcribe a voice command</h3>
+              <p>Synthetic sample audio. No microphone access is needed.</p>
+              <audio controls preload="none" src="/assets/walkthrough/judge-voice.wav" aria-label="Sample voice command"></audio>
+              <button id="judgeVoice" class="pill" type="button">Transcribe sample</button>
+              <ul id="judgeVoiceResults" class="live-results" aria-live="polite"></ul>
+            </article>
           </div>
-          <ol id="liveResults" class="live-results" aria-label="Live demo results"></ol>
-          <a href="/dashboard" class="text-link">View saved records in the dashboard ↗</a>
+          <p id="liveStatus" role="status">Ready with the sandbox judge account.</p>
+          <button id="signOut" type="button" hidden>Sign out</button>
           <form id="loginForm" hidden><div class="form-row"><label>Demo username<input id="usernameInput" name="username" autocomplete="username" value="demo-wearer" required maxlength="120"></label><label>Password<input id="passwordInput" name="password" type="password" autocomplete="current-password" required></label><button class="pill" id="signInSubmitBtn" type="submit">Sign in</button></div></form>
         </div>
       </details>

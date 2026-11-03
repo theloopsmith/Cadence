@@ -327,7 +327,7 @@ test('full-day playback advances from the motor exam into medication next', asyn
   assert.equal(env.requests(),0);
 });
 
-test('judges run live model requests and verify synthetic records with one click', async () => {
+test('judge tiles run only the selected Meta action and keep separate results', async () => {
   const calls = [];
   let handwritingAttempts = 0;
   const responses = {
@@ -336,53 +336,46 @@ test('judges run live model requests and verify synthetic records with one click
     '/api/v1/companion/interpret': {source:'meta_open_weights', model:'fixture-muse', provider:'baseten', intent:'medication'},
     '/api/v1/reality-check': {
       analysis_status:'identified', spoken_response:'Possible coat rack.',
-      model_evidence: {
-        proposal:{source:'meta_open_weights', model:'fixture-muse', provider:'baseten'},
-        segmentation:{source:'meta_model_api', model:'fixture-sam'}
-      }
+      model_evidence: {segmentation:{source:'meta_model_api', model:'fixture-sam'}}
     },
     '/api/v1/handwriting/analyze': {
-      measured:true, spoken_response:'Letter size stayed about the same across the line.',
-      photo_quality:{status:'multiple_lines', advice:'Frame just the single line you wrote.', model:'fixture-muse', provider:'baseten'}
+      photo_quality:{status:'multiple_lines', advice:'Frame one line.', model:'fixture-muse', provider:'baseten'}
     },
-    '/api/v1/medication/dose': {},
-    '/api/v1/events/fog': {},
-    '/api/v1/report/neurologist': {
-      medication_logs:[{event_uuid:'walkthrough-test-uuid-dose'}],
-      fog_events:[{event_uuid:'walkthrough-test-uuid-walk'}]
-    }
+    '/api/v1/speech/transcribe': {available:true, transcript:'Start my motor check.'}
   };
   const app = setup({request: async (url, options) => {
     calls.push(url);
-    if (url.endsWith('.jpg')) return {ok:true, blob:async () => ({})};
+    if (url.startsWith('/assets/')) return {ok:true, blob:async () => ({})};
     assert.ok(Object.hasOwn(responses, url));
-    if (url === '/api/v1/reality-check') {
+    if (url === '/api/v1/reality-check' || url === '/api/v1/handwriting/analyze') {
       const body = JSON.parse(options.body);
       assert.equal(body.image_base64, 'c2FtcGxl');
-      assert.equal(body.simulated_sam_masks, undefined);
-      assert.match(body.user_query, /Illustrated judge sample/);
-    }
-    if (url === '/api/v1/handwriting/analyze') {
-      const body = JSON.parse(options.body);
-      assert.equal(body.image_base64, 'c2FtcGxl');
-      assert.equal(body.check_photo_quality, true);
       assert.equal(body.preview_only, true);
-      if (++handwritingAttempts === 1) {
-        return {ok:true, json:async () => ({photo_quality:{status:'unavailable'}})};
+      if (url.endsWith('/analyze')) {
+        assert.equal(body.check_photo_quality, true);
+        if (++handwritingAttempts === 1) {
+          return {ok:true, json:async () => ({photo_quality:{status:'unavailable'}})};
+        }
       }
     }
     return {ok:true, json:async () => responses[url]};
   }});
   await app.click(app.get('judgeLink'));
   assert.equal(app.requests(), 0);
-  await app.click(app.get('runSequence'));
-  assert.deepEqual(calls, [
-    '/api/v1/auth/login', '/api/v1/device/connection', '/api/v1/companion/interpret',
-    '/assets/walkthrough/coatstand.jpg', '/api/v1/reality-check',
-    '/assets/walkthrough/handwriting-capture.jpg', '/api/v1/handwriting/analyze', '/api/v1/handwriting/analyze',
-    '/api/v1/medication/dose', '/api/v1/events/fog', '/api/v1/report/neurologist'
+  await app.click(app.get('judgeVoice'));
+  assert.deepEqual(calls.splice(0), [
+    '/api/v1/auth/login', '/api/v1/device/connection',
+    '/assets/walkthrough/judge-voice.wav', '/api/v1/speech/transcribe'
   ]);
-  assert.match(app.get('liveStatus').textContent, /Live demo complete/);
-  assert.ok(app.get('liveResults').children.some(item => item.textContent.includes('fixture-sam')));
-  assert.ok(app.get('liveResults').children.some(item => item.textContent.includes('Handwriting photo quality · fixture-muse')));
+  await app.click(app.get('judgeIntent'));
+  assert.deepEqual(calls.splice(0), ['/api/v1/companion/interpret']);
+  await app.click(app.get('judgeSurroundings'));
+  assert.deepEqual(calls.splice(0), ['/assets/walkthrough/coatstand.jpg', '/api/v1/reality-check']);
+  await app.click(app.get('judgeWriting'));
+  assert.deepEqual(calls, [
+    '/assets/walkthrough/handwriting-capture.jpg', '/api/v1/handwriting/analyze', '/api/v1/handwriting/analyze'
+  ]);
+  assert.match(app.get('judgeVoiceResults').children[0].textContent, /Start my motor check/);
+  assert.match(app.get('judgeSurroundingsResults').children[1].textContent, /fixture-sam/);
+  assert.ok(app.get('judgeWritingResults').children.some(item => item.textContent.includes('fixture-muse')));
 });

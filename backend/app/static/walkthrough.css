@@ -1240,7 +1240,6 @@ h1, h2, h3, p {
 
 .live-content {
   padding: 6px 0 28px;
-  max-width: 760px;
 }
 
 .live-content > p {
@@ -1643,23 +1642,27 @@ footer .brand {
 .chapter-sticky { margin-block: 0; }
 html, body { overflow-anchor: none; }
 
-.judge-samples {
-  display: flex;
-  flex-wrap: wrap;
+.judge-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 16px;
+  margin: 20px 0;
 }
 
-.judge-sample {
-  width: min(100%, 240px);
-  margin: 18px 0;
-  color: var(--text-secondary);
-  font-size: 12px;
+.judge-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--border-card);
+  border-radius: 14px;
 }
 
-.judge-sample img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 10px;
-  margin-bottom: 6px;
-}
+.judge-tile h3, .judge-tile p, .judge-tile .live-results { margin: 0; }
+.judge-tile p { color: var(--text-secondary); }
+.judge-tile .judge-model { font-size: 13px; font-weight: 600; }
+.judge-tile img { width: 100%; height: 145px; object-fit: contain; border-radius: 8px; }
+.judge-tile audio { width: 100%; }
+.judge-tile .pill { margin-top: auto; }
+.judge-tile .live-results:empty { display: none; }

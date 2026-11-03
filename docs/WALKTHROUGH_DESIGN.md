@@ -14,13 +14,9 @@ The story is illustrative. It never writes data on scroll, runs a real motor exa
 
 ## Live judge run
 
-**For Judges → Run live demo** shows the medication intent, surroundings check, and handwriting photo preview. The two illustrated images appear beside the run. Muse Spark Open reviews the handwriting photo for capture quality, and OpenCV returns a separate measurement observation. The handwriting preview does not create a wearer record. The synthetic dose and walking events are saved and read back through the dashboard.
+**For Judges** offers four independent tiles for live medication intent, surroundings, handwriting photo quality, and voice transcription. The photo tiles use illustrated images. The transcription tile uses a short synthetic WAV clip. Each tile displays its own provider output or fallback. Photo previews and transcripts do not write diary entries.
 
-## Live backend proof
-
-The judge panel is collapsed below the story. Explicit sign-in is required, using a device-writer account bound to `hackathon-demo`; a clinician-reader account cannot run it. Tokens remain in browser memory and are discarded on reload/sign-out. Password inputs are cleared after submission. API redirects are rejected. Login and sequence operations have bounded deadlines; sign-out aborts in-flight requests and invalidates late responses.
-
-One explicit run calls the existing Meta intent endpoint, writes a labeled synthetic dose and walking event, then verifies both UUIDs in the authenticated report. Model fallback is displayed honestly. Partial writes remain saved if a later stage fails; a subsequent explicit run creates a new set of IDs. The panel does not call a fall, caregiver dispatch, food-advice, or fake motor-completion endpoint. The story and the real backend proof are clearly distinguished.
+The first tile uses the sandbox writer account bound to `hackathon-demo`. Tokens stay in browser memory. Actions have a bounded deadline, and sign-out cancels pending requests.
 
 ## Source and visual assets
 

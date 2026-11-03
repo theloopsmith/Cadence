@@ -11,7 +11,7 @@ def build(output: Path, root: Path = ROOT) -> list[str]:
     app = root / 'backend/app'
     paths = [p for p in sorted(app.rglob('*')) if p.is_file() and not p.is_symlink()
              and '__pycache__' not in p.parts
-             and p.suffix in {'.py', '.html', '.js', '.css', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico'}
+             and p.suffix in {'.py', '.html', '.js', '.css', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico', '.wav'}
              and not any(part.startswith('.') for part in p.relative_to(app).parts)]
     paths += [root / 'backend/requirements-lock.txt', root / 'deploy/gcp/install.sh']
     names = []

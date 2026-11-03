@@ -160,7 +160,7 @@ async def get_smart_glasses_walkthrough_shell() -> HTMLResponse:
     policy = (
         "default-src 'none'; "
         f"script-src 'nonce-{nonce}'; script-src-attr 'none'; "
-        "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self'; "
         "font-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'"
     )
     return HTMLResponse(
@@ -196,12 +196,12 @@ async def get_build_script():
 
 
 @app.get('/assets/walkthrough/{asset}')
-async def get_walkthrough_image(asset: str):
+async def get_walkthrough_asset(asset: str):
     if asset not in {'wearer.jpg', 'table.jpg', 'desk.jpg', 'hall.jpg', 'coatstand.jpg', 'safety_floor.jpg', 'together.jpg',
                      'motor-voice.jpg', 'writing-first.jpg', 'writing-second.jpg', 'writing-complete.jpg',
-                     'handwriting-capture.jpg'}:
+                     'handwriting-capture.jpg', 'judge-voice.wav'}:
         raise HTTPException(status_code=404, detail='Image not found')
-    return FileResponse(STATIC_DIR/'walkthrough'/asset, media_type='image/jpeg',
+    return FileResponse(STATIC_DIR/'walkthrough'/asset, media_type='audio/wav' if asset == 'judge-voice.wav' else 'image/jpeg',
         headers={'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=3600'})
 
 
@@ -530,29 +530,30 @@ async def reality_check_endpoint(
             detail="Reality check deadline exhausted across model pipeline.",
         )
 
-    await execute_patient_write(auth,
-        """
-        INSERT INTO reality_checks (
-            patient_id, event_uuid, timestamp_utc, user_query,
-            sam_verified, sam_masks_json, living_subject_present,
-            chosen_inanimate_label, template_id, spoken_response, latency_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(event_uuid) DO NOTHING
-        """,
-        (
-            auth.patient_id,
-            payload.event_uuid,
-            payload.timestamp_utc,
-            payload.user_query,
-            1 if res["sam_verified"] else 0,
-            json.dumps(res["verified_masks"]),
-            1 if res["living_subject_present"] else 0,
-            res["chosen_inanimate_label"],
-            res["template_id"],
-            res["spoken_response"],
-            res["latency_ms"],
-        ),
-    )
+    if not payload.preview_only:
+        await execute_patient_write(auth,
+            """
+            INSERT INTO reality_checks (
+                patient_id, event_uuid, timestamp_utc, user_query,
+                sam_verified, sam_masks_json, living_subject_present,
+                chosen_inanimate_label, template_id, spoken_response, latency_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(event_uuid) DO NOTHING
+            """,
+            (
+                auth.patient_id,
+                payload.event_uuid,
+                payload.timestamp_utc,
+                payload.user_query,
+                1 if res["sam_verified"] else 0,
+                json.dumps(res["verified_masks"]),
+                1 if res["living_subject_present"] else 0,
+                res["chosen_inanimate_label"],
+                res["template_id"],
+                res["spoken_response"],
+                res["latency_ms"],
+            ),
+        )
     return {"event_uuid": payload.event_uuid, **res}
 
 

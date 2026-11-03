@@ -564,9 +564,9 @@
   let controller = null;
   const liveStatus = $('liveStatus');
   const loginForm = $('loginForm');
-  const runButton = $('runSequence');
+  const judgeActions = ['judgeIntent', 'judgeSurroundings', 'judgeWriting', 'judgeVoice'];
+  const judgeLabels = Object.fromEntries(judgeActions.map(id => [id, $(id).textContent]));
   const signOutButton = $('signOut');
-  const results = $('liveResults');
   $('judgeLink').addEventListener('click', () => {
     pausePlayback();
     silence();
@@ -599,9 +599,9 @@
     return data;
   }
 
-  async function loadJudgeImage(name, signal) {
-    const sample = await fetch('/assets/walkthrough/' + name + '.jpg', {signal, redirect: 'error'});
-    if (!sample.ok) throw new Error('Could not load the illustrated sample.');
+  async function loadJudgeSample(name, signal) {
+    const sample = await fetch('/assets/walkthrough/' + name, {signal, redirect: 'error'});
+    if (!sample.ok) throw new Error('Could not load the demo sample.');
     const blob = await sample.blob();
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -611,15 +611,14 @@
     });
   }
 
-  function addResult(text) {
+  function addResult(results, text) {
     const item = document.createElement('li');
     item.textContent = text;
     results.appendChild(item);
   }
   function refreshControls() {
     $('signInSubmitBtn').disabled = busy;
-    runButton.disabled = busy;
-    runButton.textContent = busy ? 'Running…' : 'Run live demo ↗';
+    for (const id of judgeActions) $(id).disabled = busy;
   }
 
   async function signIn(username, password) {
@@ -638,11 +637,11 @@
       const identity = await apiCall('/api/v1/device/connection', undefined, revision);
       if (identity.patient_id !== 'hackathon-demo') {
         token = null;
-        throw new Error('Only the isolated hackathon-demo profile can run this sequence.');
+        throw new Error('Only the isolated hackathon-demo profile can run these actions.');
       }
       loginForm.hidden = true;
       signOutButton.hidden = false;
-      liveStatus.textContent = 'Signed in to the isolated demo profile. Run the sequence when you’re ready.';
+      liveStatus.textContent = 'Signed in to the isolated demo profile. Choose a tile when you’re ready.';
     } catch (error) {
       token = null;
       loginForm.hidden = false;
@@ -669,101 +668,104 @@
     busy = false;
     loginForm.hidden = false;
     signOutButton.hidden = true;
-    results.replaceChildren();
-    liveStatus.textContent = 'Signed out. Any records already saved remain in the demo diary.';
+    for (const id of judgeActions) {
+      $(id).textContent = judgeLabels[id];
+      $(id + 'Results').replaceChildren();
+    }
+    liveStatus.textContent = 'Signed out.';
     refreshControls();
   });
 
-  runButton.addEventListener('click', async () => {
-    if (busy) return;
-    if (!token) await signIn('demo-wearer', 'cadence-demo-2026');
-    if (!token) return;
-    busy = true;
-    const revision = sessionRevision;
-    controller = new AbortController();
-    const operation = controller;
-    const deadline = window.setTimeout(() => operation.abort(), 75000);
-    refreshControls();
-    results.replaceChildren();
-    liveStatus.textContent = 'Asking Meta to interpret a sample medication question…';
-    try {
-      const runId = 'walkthrough-' + crypto.randomUUID();
-      const now = new Date().toISOString();
-      const intent = await apiCall('/api/v1/companion/interpret', {text: 'Did I log my morning medication today?', history: []}, revision);
-      addResult(intent.source === 'meta_open_weights'
-        ? 'Meta model interpreted the request: ' + intent.intent + ' · ' + intent.model + (intent.provider ? ' via ' + intent.provider : '')
-        : 'Model interpretation was unavailable; the backend returned its local fallback. No patient answer was invented.');
-      liveStatus.textContent = 'Checking an illustrated photo with live Meta inference…';
-      let photoStatus = 'unavailable';
-      try {
-        const encoded = await loadJudgeImage('coatstand', operation.signal);
-        const photo = await apiCall('/api/v1/reality-check', {
-          event_uuid: runId + '-photo', timestamp_utc: now,
-          user_query: 'Illustrated judge sample: What objects can you identify in this photo?', image_base64: encoded
-        }, revision);
-        const evidence = photo.model_evidence || {};
-        const proposal = evidence.proposal || {};
-        const segmentation = evidence.segmentation || {};
-        photoStatus = photo.analysis_status || 'unavailable';
-        addResult(proposal.source === 'meta_open_weights' && proposal.model
-          ? 'Photo search terms proposed by ' + proposal.model + ' via ' + proposal.provider + '.'
-          : 'Photo search used preset terms.');
-        addResult(segmentation.source === 'meta_model_api' && segmentation.model
-          ? 'Meta segmentation · ' + segmentation.model + ' · ' + photoStatus.replaceAll('_', ' ') + '.'
-          : 'Live segmentation was unavailable.');
-        if (photo.spoken_response) addResult('Illustrated photo · ' + photo.spoken_response);
-      } catch (error) {
-        if (revision !== sessionRevision || operation.signal.aborted || !token) throw error;
-        addResult('Photo check could not finish: ' + error.message);
+  const judgeRuns = {
+    async judgeIntent(revision, signal, report) {
+      const intent = await apiCall('/api/v1/companion/interpret', {
+        text: 'Did I log my morning medication today?', history: []
+      }, revision);
+      report(intent.source === 'meta_open_weights'
+        ? 'Live intent · ' + intent.intent + ' · ' + intent.model + ' via ' + intent.provider
+        : 'Live interpretation was unavailable. Cadence used its local fallback.');
+    },
+
+    async judgeSurroundings(revision, signal, report) {
+      const photo = await apiCall('/api/v1/reality-check', {
+        event_uuid: crypto.randomUUID(), preview_only: true,
+        user_query: 'What objects can you identify in this illustrated photo?',
+        image_base64: await loadJudgeSample('coatstand.jpg', signal)
+      }, revision);
+      if (!photo.analysis_status) throw new Error('No photo result was returned.');
+      const evidence = photo.model_evidence || {};
+      const proposal = evidence.proposal || {};
+      const segmentation = evidence.segmentation || {};
+      report(proposal.source === 'meta_open_weights' && proposal.model
+        ? 'Search terms · ' + proposal.model + ' via ' + proposal.provider
+        : 'Search terms · preset labels');
+      report(segmentation.source === 'meta_model_api' && segmentation.model
+        ? 'Segmentation · ' + segmentation.model + ' · ' + photo.analysis_status.replaceAll('_', ' ')
+        : 'Live segmentation was unavailable.');
+      if (photo.spoken_response) report(photo.spoken_response);
+    },
+
+    async judgeWriting(revision, signal, report) {
+      const payload = {
+        event_uuid: crypto.randomUUID(), check_photo_quality: true, preview_only: true,
+        image_base64: await loadJudgeSample('handwriting-capture.jpg', signal)
+      };
+      let writing = await apiCall('/api/v1/handwriting/analyze', payload, revision);
+      if (writing.photo_quality?.status === 'unavailable') {
+        report('Waiting for Muse. Retrying once…');
+        writing = await apiCall('/api/v1/handwriting/analyze', payload, revision);
       }
-      liveStatus.textContent = 'Checking the illustrated handwriting photo with Muse and OpenCV…';
-      let liveWriting = false;
-      try {
-        const writingPayload = {
-          event_uuid: runId + '-writing', timestamp_utc: now,
-          image_base64: await loadJudgeImage('handwriting-capture', operation.signal),
-          check_photo_quality: true, preview_only: true
-        };
-        let writing = await apiCall('/api/v1/handwriting/analyze', writingPayload, revision);
-        if (writing.photo_quality?.status === 'unavailable') {
-          liveStatus.textContent = 'Muse did not return a handwriting review. Trying once more…';
-          writing = await apiCall('/api/v1/handwriting/analyze', writingPayload, revision);
-        }
-        const quality = writing.photo_quality || {};
-        liveWriting = Boolean(quality.model);
-        addResult(liveWriting
-          ? 'Handwriting photo quality · ' + quality.model + ' via ' + quality.provider + ' · ' + quality.status.replaceAll('_', ' ') + '.'
-          : 'Muse did not return a handwriting review. The OpenCV preview is shown separately below.');
-        if (quality.advice) addResult('Retake suggestion · ' + quality.advice);
-        if (writing.spoken_response) addResult('OpenCV · ' + writing.spoken_response + ' Illustrated sample only.');
-      } catch (error) {
-        if (revision !== sessionRevision || operation.signal.aborted || !token) throw error;
-        addResult('Handwriting preview could not finish: ' + error.message);
-      }
-      liveStatus.textContent = 'Saving synthetic records and checking the dashboard…';
-      await apiCall('/api/v1/medication/dose', {event_uuid: runId + '-dose', timestamp_utc: now, medication_name: 'SYNTHETIC WALKTHROUGH DOSE'}, revision);
-      addResult('Saved one clearly labeled synthetic dose to the demo diary.');
-      await apiCall('/api/v1/events/fog', {event_uuid: runId + '-walk', timestamp_utc: now, duration_sec: 5,
-        peak_freeze_index: 3.42, locomotor_band_power: 0.08, freeze_band_power: 0.27,
-        sampled_hz: 50, arming_mode: 'walking', cue_bpm: 100, recovery_latency_sec: 2.5}, revision);
-      addResult('Saved one synthetic walking event. No sensor capture or audio cue was performed in the browser.');
-      const report = await apiCall('/api/v1/report/neurologist', undefined, revision);
-      if (!report.medication_logs.some((item) => item.event_uuid === runId + '-dose') ||
-          !report.fog_events.some((item) => item.event_uuid === runId + '-walk')) throw new Error('Could not verify both saved records in the report. Please check the dashboard.');
-      addResult('Read both saved records back from the real care dashboard API.');
-      const liveIntent = intent.source === 'meta_open_weights';
-      const completePhoto = ['identified', 'no_supported_match'].includes(photoStatus);
-      liveStatus.textContent = liveIntent && completePhoto && liveWriting
-        ? 'Live demo complete. Both synthetic records were verified in the dashboard.'
-        : 'Synthetic records verified. Some model steps returned partial results or a fallback.';
-    } catch (error) {
-      if (revision === sessionRevision) liveStatus.textContent = error.name === 'AbortError' ? 'Sequence stopped. Records already saved are kept.' : 'Sequence stopped: ' + error.message + ' Records already saved are kept; running again creates a new demo sequence.';
-    } finally {
-      window.clearTimeout(deadline);
-      if (revision === sessionRevision) {
-        busy = false;
-        refreshControls();
-      }
+      const quality = writing.photo_quality || {};
+      report(quality.model
+        ? 'Photo quality · ' + quality.model + ' via ' + quality.provider + ' · ' + quality.status.replaceAll('_', ' ')
+        : 'Live handwriting photo review was unavailable.');
+      if (quality.advice) report(quality.advice);
+    },
+
+    async judgeVoice(revision, signal, report) {
+      const voice = await apiCall('/api/v1/speech/transcribe', {
+        purpose: 'companion', audio_base64: await loadJudgeSample('judge-voice.wav', signal)
+      }, revision);
+      report(voice.available && voice.transcript
+        ? 'Muse Voice Transcribe · “' + voice.transcript + '”'
+        : 'Muse Voice Transcribe did not return a transcript.');
     }
-  });
+  };
+
+  for (const id of judgeActions) {
+    const button = $(id);
+    button.addEventListener('click', async () => {
+      if (busy) return;
+      if (!token) await signIn('demo-wearer', 'cadence-demo-2026');
+      if (!token || busy) return;
+      busy = true;
+      const revision = sessionRevision;
+      controller = new AbortController();
+      const operation = controller;
+      const deadline = window.setTimeout(() => operation.abort(), 45000);
+      const results = $(id + 'Results');
+      button.textContent = 'Running…';
+      results.replaceChildren();
+      liveStatus.textContent = 'Running selected action…';
+      refreshControls();
+      try {
+        await judgeRuns[id](revision, operation.signal, message => {
+          if (revision === sessionRevision) addResult(results, message);
+        });
+        if (revision === sessionRevision) liveStatus.textContent = 'Action finished. Choose any tile to run again.';
+      } catch (error) {
+        if (revision === sessionRevision) {
+          addResult(results, error.name === 'AbortError' ? 'The request timed out. Try again.' : error.message);
+          liveStatus.textContent = 'Action could not finish.';
+        }
+      } finally {
+        window.clearTimeout(deadline);
+        if (revision === sessionRevision) {
+          button.textContent = judgeLabels[id];
+          busy = false;
+          refreshControls();
+        }
+      }
+    });
+  }
 })();
