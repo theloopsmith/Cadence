@@ -41,7 +41,7 @@ The phone saves candidate events locally and binds its outbox to account, destin
 3. Verify locked-screen/background behavior before claiming continuity. Everyday conversation currently requires the foreground. Native Hey Meta invocation and conversational barge-in are not integrated.
 4. Conduct a separately configured, consenting caregiver delivery/acknowledgment drill before claiming real delivery. Never induce a fall or provoke a freeze for testing.
 5. Verify actual notification delivery, backup/restore, incident retention and physical signal thresholds. Current metrics/heuristics are not clinically calibrated.
-6. Finish the accessible demo video and actual portal submission. Review the contributor, artwork and contribution declarations; organizer scope/media decisions and any required pre-event-work confirmation remain pending. Public judging accounts have a retirement cutoff of 2026-11-18 08:00 UTC; individual JWT expiration still applies.
+6. Accessible demo video and actual portal submission: the 3-minute hackathon submission video was published at [https://youtu.be/SCIVcCh8lok](https://youtu.be/SCIVcCh8lok). Review the contributor, artwork and contribution declarations; organizer scope/media decisions and any required pre-event-work confirmation remain pending. Public judging accounts have a retirement cutoff of 2026-11-18 08:00 UTC; individual JWT expiration still applies.
 
 ## Scope and positioning (Oct 29)
 

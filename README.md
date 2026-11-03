@@ -4,7 +4,7 @@
 
 **Your day. Still yours.** A voice-first iPhone companion for everyday life with Parkinson’s, paired with Meta glasses for available camera, audio and motion capabilities.
 
-[Try the experience](https://cadence-companion.duckdns.org/walkthrough) · [How it works](https://cadence-companion.duckdns.org/walkthrough#how-it-works) · [Care dashboard](https://cadence-companion.duckdns.org/dashboard)
+[Try the experience](https://cadence-companion.duckdns.org/walkthrough) · [How it works](https://cadence-companion.duckdns.org/walkthrough#how-it-works) · [Care dashboard](https://cadence-companion.duckdns.org/dashboard) · [Video demo (YouTube)](https://youtu.be/SCIVcCh8lok)
 
 ![Cadence overview: glasses, iPhone, protected backend and care connection](docs/assets/architecture-flow.gif)
 
