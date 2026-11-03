@@ -431,7 +431,7 @@ async def twilio_status_webhook(
     )
 
 
-# ==================== PIPELINE 3: DOSE & PLATE-NORMALIZED PROTEIN ====================
+# ==================== PIPELINE 3: DOSE & TIME-ONLY MEAL LOGGING ====================
 @app.post("/api/v1/medication/dose")
 async def log_medication_dose(
     payload: DoseLogCreate,

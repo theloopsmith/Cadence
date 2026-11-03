@@ -23,6 +23,8 @@ async def interpret(text: str, history: list[str]) -> dict:
     fallback = {'intent': 'unknown', 'source': 'local_fallback'}
     if settings.baseten_api_key:
         provider, base, key, model = ('baseten', settings.baseten_api_base_url, settings.baseten_api_key, settings.baseten_model)
+    elif settings.cadence_env.strip().lower() == 'public_demo':
+        return fallback
     else:
         provider, base, key, model = ('fireworks', settings.fireworks_api_base_url, settings.fireworks_api_key, settings.fireworks_llm_model)
     if not key or not circuit_breakers.is_available(provider, model):

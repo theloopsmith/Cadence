@@ -57,7 +57,7 @@ Owner-supplied organizer clarification says every runtime model call must use a 
 
 ## Repository and walkthrough maintenance
 
-Reviewed the tracked components and each maintained guide. Runtime adapters, recovery/state code, tests, deployment scripts, rules snapshot and static-art provenance remain necessary. Legacy research code is retained behind the forbidden-in-public flag because destructive schema/API removal would be a separate migration. Superseded tour/native-launch screenshots and the redundant initial caregiver readiness-only record were removed from the working tree; their history remains in Git. The failed caregiver attempt and initial failed photo result remain available above.
+Reviewed the tracked components and each maintained guide. Runtime adapters, recovery/state code, tests, deployment scripts, rules snapshot and static-art provenance remain necessary. At this historical checkpoint, legacy research code was still behind a flag. [The later removal](#removal-of-experimental-research-features) deleted the code and flag. Superseded tour/native-launch screenshots and the redundant initial caregiver readiness-only record were removed from the working tree; their history remains in Git. The failed caregiver attempt and initial failed photo result remain available above.
 
 The public README retains its original animated overview byte-for-byte and adds a source-checked implementation SVG. Detailed usage moved to the app guide; icon provenance was merged into the static-artwork guide; the doc index gives each retained guide a distinct purpose. Local setup now uses the same locked dependency manifest as CI/deployment; the redundant floating requirements list was removed.
 
@@ -98,7 +98,7 @@ All 430 silent Swift tests passed, including opt-in migration, quiet writing con
 
 Removed the feature flag and all conditional research execution. Deleted the motor/composite scoring service and protein estimator, medication-state/symptom classifiers and dose-effect helper, research-only schemas, the meal-protein endpoint, nutrition rendering, and obsolete iOS decoding properties. The diary now builds factual 30-minute event buckets without clinical states, symptom scores, nutrient estimates or medication-response comparisons. Handwriting returns measured stroke-height change only. The seed logs a meal timestamp without food inference.
 
-Old SQLite columns are retained solely for compatibility with installed databases; new observations do not populate scores/state/nutrition estimates. The old NOT NULL handwriting classification column receives an inert compatibility value, which is never exposed or interpreted. Unconditional projections exclude legacy findings from responses. An obsolete environment variable cannot restore removed code. Regression coverage checks route/schema absence, legacy-value projection and ordinary measurement/logging paths. Historical verification entries above describe earlier versions; this removal supersedes their flag-based boundary.
+At this checkpoint, old SQLite columns were retained for compatibility. [The later migration](#submission-closeout--november-2) removed them from the active schema. The old NOT NULL handwriting classification column receives an inert compatibility value, which is never exposed or interpreted. Unconditional projections exclude legacy findings from responses. An obsolete environment variable cannot restore removed code. Regression coverage checks route/schema absence, legacy-value projection and ordinary measurement/logging paths. Historical verification entries above describe earlier versions; this removal supersedes their flag-based boundary.
 
 Local verification: 246 backend tests, 430 silent Swift tests and 30 JavaScript checks passed; the native iOS Simulator build with Meta DAT, generated-diagram freshness, documentation links and diff checks passed. Tests for deleted formulas were removed; task validity, legacy-data upgrades, permission boundaries, durable recovery and factual measurements remain tested. Physical-device acceptance is separate.
 
@@ -141,3 +141,11 @@ Validation for this repair: 255 backend tests, 21 walkthrough/architecture JavaS
 ### November 2 — Short photo replies
 
 Removed the repeated whole-scene disclaimer from successful spoken object labels. Replies retain tentative wording; a persistent result-card note explains fallibility and lack of safety verification. Incomplete checks, missing matches, unanswered presence questions and explicit safety questions keep contextual spoken limitations. This copy change does not establish recognition accuracy. Changes are local and not deployed.
+
+### November 2 — Public demo recheck and review follow-up
+
+The review used older revisions. The deployed judge tiles now call a fixed-input endpoint with a persistent daily quota. The public writer is retired. The public HTTPS health, walkthrough and dashboard endpoints returned 200. The reviewer token still worked after the backend restart, and anonymous access, the shared development token and reviewer access to writer APIs were rejected. An unauthenticated GitHub API request confirmed that the repository is public.
+
+The active schema migration evidence records `retired_research_columns_absent: true`. See the [deployment evidence](verification/submission-closeout-2026-11-02.json). The older flag and compatibility-column descriptions above apply to historical versions.
+
+The local follow-up disables the Fireworks intent fallback in public-demo mode and adds a regression test. The backend suite passed 262 tests. Native simulated-result presentation, organizer scope confirmation, and the portal track and submission status are still open.

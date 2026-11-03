@@ -10,6 +10,10 @@
 
 [Static overview](docs/assets/architecture.svg)
 
+## Build for Your World
+
+Cadence helps people living with Parkinson’s carry out everyday routines by voice. The project combines guided tasks, local walking cues, confirmed photo descriptions, and an activity diary in one flow. The repository records the Cadence app, backend, and walkthrough work. It reuses Meta models and the DAT SDK, Apple system speech and sensing, OpenCV, SQLite, and other established dependencies. See the [submission declarations](docs/SUBMISSION_DECLARATIONS.md) for scope and provenance.
+
 ## What it does
 
 - **Guided motor check:** a voice sample, a slowly dictated handwritten sentence and an optional short walk. Skipped or unavailable tasks stay distinct from measurements.
@@ -24,7 +28,7 @@ Cadence is an accessibility prototype. It does not diagnose, recommend medicatio
 
 ## Try the demo
 
-The web tour is illustrative: **motor check → medication → walking → surroundings → care**. Its separate judge panel can run live Meta inference and save labeled synthetic records.
+The web tour is illustrative: **motor check → medication → walking → surroundings → care**. The separate judge panel runs live Meta inference on fixed demo inputs. The read-only dashboard shows previously seeded synthetic records.
 
 Use **1-Click Judge Sign-In**, or `demo-reviewer` / `cadence-demo-2026` for the read-only dashboard. The live tiles accept only predefined samples and require no sign-in. The temporary dashboard account and live demo expire at **2026-11-18 08:00 UTC**. [Deployment and access details](docs/GOOGLE_CLOUD_DEMO.md).
 
@@ -44,7 +48,7 @@ Swift owns sensing, speech, confirmations and local records. FastAPI owns bounde
 
 Handwriting uses OpenCV for letter-height measurement. An optional Muse Spark Open photo review checks for framing, glare, blur or multiple lines. The [live judge run](https://cadence-companion.duckdns.org/walkthrough#live) has separate live tiles for intent, surroundings, handwriting photo quality, and speech transcription.
 
-Installed Apple voices speak replies; Apple on-device recognition, CoreMotion/Accelerate, OpenCV and SQLite are platform/software components. All external runtime model calls use Meta models. A configured Fireworks/Meta Llama 3.3 alternate remains available when the Baseten key is absent. Models cannot invent diary facts or directly execute actions.
+Installed Apple voices speak replies; Apple on-device recognition, CoreMotion/Accelerate, OpenCV and SQLite are platform/software components. All external runtime model calls use Meta models. The public demo uses Muse for intent classification. If Baseten is unavailable, Cadence returns its local fallback. A Fireworks-hosted Meta Llama 3.3 alternate is available outside public demo when the Baseten key is absent. Models cannot invent diary facts or directly execute actions.
 
 ## Run locally
 

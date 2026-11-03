@@ -86,3 +86,16 @@ async def test_meta_questions_return_only_allowlisted_topic_not_generated_patien
     assert 'answer' not in result and 'patient_id' not in result
     prompt = client.post.call_args.kwargs['json']['messages'][0]['content']
     assert 'never logDose' in prompt
+
+
+@pytest.mark.asyncio
+async def test_public_demo_missing_baseten_key_does_not_call_fireworks(monkeypatch):
+    monkeypatch.setattr(settings, 'cadence_env', 'public_demo')
+    monkeypatch.setattr(settings, 'baseten_api_key', '')
+    monkeypatch.setattr(settings, 'fireworks_api_key', 'fixture-key')
+
+    def unexpected_client(*args, **kwargs):
+        pytest.fail('Public demo must not call the Fireworks fallback')
+
+    monkeypatch.setattr(companion.httpx, 'AsyncClient', unexpected_client)
+    assert await companion.interpret('help', []) == {'intent': 'unknown', 'source': 'local_fallback'}
