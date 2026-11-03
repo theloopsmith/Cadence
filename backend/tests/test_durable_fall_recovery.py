@@ -327,3 +327,35 @@ def test_cancel_never_reports_another_incidents_clear_count(db, monkeypatch):
         result = await manager.cancel_dispatched_fall('owner','durable-event')
         assert result['all_clear_sms_sent'] == 0
     asyncio.run(run())
+
+
+def test_cancelled_clear_sweep_releases_lease_immediately(db, calls, monkeypatch):
+    from app.services import fall_durability
+    leased = asyncio.Event()
+    real_send = twilio_client.send_all_clear_sms
+
+    async def slow_clear(phone, event_uuid):
+        leased.set()
+        await asyncio.sleep(10)
+        return await real_send(phone, event_uuid)
+
+    async def run():
+        manager = FallEscalationManager()
+        await manager.ingest_fall_event('owner', event(), False)
+        await fall_durability.cancel('owner', 'durable-event')
+        monkeypatch.setattr(twilio_client, 'send_all_clear_sms', slow_clear)
+        aborted = asyncio.create_task(fall_durability.send_pending_clears(twilio_client))
+        await leased.wait()
+        aborted.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await aborted
+        row = fetch_one_sync("SELECT state, lease_until FROM fall_clear_jobs WHERE event_uuid='durable-event'")
+        assert row['state'] == 'pending' and row['lease_until'] == 0
+        monkeypatch.setattr(twilio_client, 'send_all_clear_sms', real_send)
+        sent = await fall_durability.send_pending_clears(twilio_client)
+        assert sent == 1
+
+    asyncio.run(run())
+    clear_row = fetch_one_sync("SELECT COUNT(*) AS cnt FROM caregiver_alerts WHERE fall_event_uuid='durable-event' AND channel='all_clear_sms'")
+    assert clear_row['cnt'] == 1
+

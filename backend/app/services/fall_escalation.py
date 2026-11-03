@@ -411,7 +411,12 @@ class FallEscalationManager:
 
         await self._require_owned_event(patient_id, event_uuid)
         task = self._active_tasks.pop(event_uuid, None)
-        if task: task.cancel()
+        if task and task is not asyncio.current_task():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
         await durable.cancel(patient_id, event_uuid, data_generation=data_generation)
         await durable.send_pending_clears(twilio_client)
         # The sweep can finish other incidents too, or another worker can hold

@@ -167,27 +167,38 @@ async def due_jobs():
 
 
 async def send_pending_clears(client):
+    token = str(uuid.uuid4())
+    state = {"cancelled": False}
     def claim(c):
-        now=time.time(); token=str(uuid.uuid4())
+        if state["cancelled"]:
+            return []
+        now=time.time()
         rows=c.execute("""SELECT j.* FROM fall_clear_jobs j JOIN fall_jobs f ON f.event_uuid=j.event_uuid
           WHERE j.state!='sent' AND j.next_due<=? AND j.lease_until<=? AND f.lease_until<=?""",(now,now,now)).fetchall()
         for r in rows:
             c.execute("UPDATE fall_clear_jobs SET state='leased',lease_token=?,lease_until=? WHERE event_uuid=? AND to_phone=?",(token,now+settings.dispatch_lease_sec,r['event_uuid'],r['to_phone']))
-        return token,[dict(r) for r in rows]
-    token,rows=await transact(claim); sent=0
-    for r in rows:
-        try: result=await asyncio.wait_for(client.send_all_clear_sms(r['to_phone'],r['event_uuid']),settings.dispatch_timeout_sec)
-        except Exception: result={}
-        sid=result.get('sms_sid') or ''
-        def complete(c):
-            c.execute("UPDATE fall_clear_jobs SET state=?,provider_sid=?,next_due=?,lease_until=0 WHERE event_uuid=? AND to_phone=? AND lease_token=?",('sent' if sid else 'pending',sid,time.time()+settings.retry_interval_sec,r['event_uuid'],r['to_phone'],token))
-        await transact(complete)
-        if sid:
-            from datetime import datetime, timezone
-            from app.clients.twilio_client import mask_phone
-            from app.db import execute_write
-            await execute_write("""INSERT INTO caregiver_alerts(patient_id,fall_event_uuid,timestamp_utc,contact_role,contact_phone_masked,channel,provider_sid,delivery_status,retry_count)
-              VALUES(?,?,?,'notified_contact',?,'all_clear_sms',?,'canceled_by_user',0)""",
-              (r['patient_id'],r['event_uuid'],datetime.now(timezone.utc).isoformat(),mask_phone(r['to_phone']),sid))
-            sent+=1
-    return sent
+        return [dict(r) for r in rows]
+    try:
+        rows=await transact(claim); sent=0
+        for r in rows:
+            try: result=await asyncio.wait_for(client.send_all_clear_sms(r['to_phone'],r['event_uuid']),settings.dispatch_timeout_sec)
+            except Exception: result={}
+            sid=result.get('sms_sid') or ''
+            def complete(c):
+                c.execute("UPDATE fall_clear_jobs SET state=?,provider_sid=?,next_due=?,lease_until=0 WHERE event_uuid=? AND to_phone=? AND lease_token=?",('sent' if sid else 'pending',sid,time.time()+settings.retry_interval_sec,r['event_uuid'],r['to_phone'],token))
+            await asyncio.shield(transact(complete))
+            if sid:
+                from datetime import datetime, timezone
+                from app.clients.twilio_client import mask_phone
+                from app.db import execute_write
+                await asyncio.shield(execute_write("""INSERT INTO caregiver_alerts(patient_id,fall_event_uuid,timestamp_utc,contact_role,contact_phone_masked,channel,provider_sid,delivery_status,retry_count)
+                  VALUES(?,?,?,'notified_contact',?,'all_clear_sms',?,'canceled_by_user',0)""",
+                  (r['patient_id'],r['event_uuid'],datetime.now(timezone.utc).isoformat(),mask_phone(r['to_phone']),sid)))
+                sent+=1
+        return sent
+    except BaseException:
+        state["cancelled"] = True
+        def release(c):
+            c.execute("UPDATE fall_clear_jobs SET state='pending',lease_until=0,lease_token=NULL WHERE lease_token=? AND state='leased'",(token,))
+        await asyncio.shield(transact(release))
+        raise
