@@ -119,3 +119,11 @@ Harshal Vaidya confirmed sole human contribution and representative identity and
 ## Judging access extension — November 2
 
 At the owner's request, the judging-account retirement cutoff is extended to **2026-11-18 08:00 UTC (November 18, 00:00 Pacific)**. Source defaults, generated deployment configuration and current public instructions use the same cutoff. Earlier evidence records retain their original dates. Existing JWTs retain their immutable signed exp claims and normal lifetimes; this change does not silently extend an already issued JWT. Sign in again for a fresh token under the extended policy.
+
+## Speak-question dictation repair — November 2
+
+The old button mixed the shared on-device transcript with rolling six-second Muse command windows; later chunks could overwrite the beginning of a free-form question. The question button now invokes a dedicated cumulative system-recognition mode with rolling cloud windows excluded. Ordinary companion command recognition and the fall listener retain their existing behavior. A route failure during dictation now stops with a retained draft instead of silently restarting with only the tail of the question. Recognition errors in the assistant error domain are surfaced rather than all being discarded as cancellations.
+
+QuestionDictation waits for explicit permission, companion microphone teardown and the speech echo window. Preparing and Listening reflect different states. The typed question is retained until actual speech arrives. Done or four quiet seconds completes the editable draft; there is no automatic photo submission. Startup/no-speech failures are bounded and visible. Permission prompts do not count as background cancellation. Generation fences reject stale permissions and transcripts; camera, sign-in, leaving/backgrounding, reset and safety-check transitions stop dictation. Safety preemption and teardown are covered by mocked tests.
+
+All 439 silent Swift tests passed, including eight dedicated dictation regressions. The native iOS Simulator target built with Meta DAT; documentation and whitespace checks passed. Physical glasses microphone quality and word-recognition acceptance remain pending on the updated app build. No backend deployment or real caregiver contact was needed for this native repair.

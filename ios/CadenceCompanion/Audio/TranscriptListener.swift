@@ -9,12 +9,14 @@ public protocol TranscriptListening: AnyObject {
     var isReady: Bool { get }
     var failureReason: String? { get }
     func startListening(onTranscript: @escaping (String) -> Void)
+    func startQuestionDictation(onTranscript: @escaping (String) -> Void)
     func stopListening()
     func waitUntilStopped() async
     var waitsForMicrophoneReleaseBeforeSpeech: Bool { get }
 }
 
 public extension TranscriptListening {
+    func startQuestionDictation(onTranscript: @escaping (String) -> Void) { startListening(onTranscript: onTranscript) }
     var isReady: Bool { isListening }
     var failureReason: String? { nil }
     func waitUntilStopped() async {}
@@ -71,6 +73,7 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
     /// Builds the Muse Voice Transcribe listener beside the on-device one.
     public var cloudEarFactory: ((@escaping (String) -> Void) -> CloudEar)?
     private var cloudEar: CloudEar?
+    private var includesCloudForSession = true
 
     public override init() {
         super.init()
@@ -83,8 +86,14 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
                 guard let self, self.session == session, self.isListening,
                       !self.audioEngine.isRunning,
                       let callback = self.transcriptCallback else { return }
+                // A fresh recognizer after a route change would emit only the
+                // tail of a free-form question. Keep the draft and ask for retry.
+                guard self.includesCloudForSession else {
+                    self.fail(session: session, reason: "The audio input changed. Your captured words are kept. Edit the question, or reconnect and tap Speak question to record it again.")
+                    return
+                }
                 self.stopListening()
-                self.startListening(onTranscript: callback)
+                self.start(onTranscript: callback, includeCloud: true)
             }
         }
     }
@@ -95,7 +104,17 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
     }
 
     public func startListening(onTranscript: @escaping (String) -> Void) {
+        start(onTranscript: onTranscript, includeCloud: true)
+    }
+
+    /// Free-form text must not be overwritten by rolling cloud command windows.
+    public func startQuestionDictation(onTranscript: @escaping (String) -> Void) {
+        start(onTranscript: onTranscript, includeCloud: false)
+    }
+
+    private func start(onTranscript: @escaping (String) -> Void, includeCloud: Bool) {
         guard !isListening else { return }
+        includesCloudForSession = includeCloud
         isListening = true
         inputHasStarted = false
         failureReason = nil
@@ -103,9 +122,13 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
         session += 1
         let session = session
         echoFilter = EchoFilteredTranscript()
-        cloudEar = cloudEarFactory? { [weak self] text in
-            guard let self, self.isListening, self.session == session else { return }
-            onTranscript(text)
+        if includeCloud {
+            cloudEar = cloudEarFactory? { [weak self] text in
+                guard let self, self.isListening, self.session == session else { return }
+                onTranscript(text)
+            }
+        } else {
+            cloudEar = nil
         }
         audioQueue.async { [weak self] in
             self?.open(session: session, onTranscript: onTranscript)
@@ -140,10 +163,14 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
         }
 
 
+        guard let recognizer else {
+            fail(session: session, reason: "Speech recognition is unavailable for this language on this device. Type your question or choose one instead.")
+            return
+        }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         // Use on-device recognition when available; otherwise fall back smoothly.
-        if let recognizer, recognizer.supportsOnDeviceRecognition {
+        if recognizer.supportsOnDeviceRecognition {
             request.requiresOnDeviceRecognition = true
         }
         self.request = request
@@ -182,11 +209,11 @@ public final class LiveTranscriptListener: NSObject, TranscriptListening, @unche
         }
         guard self.session == session, isListening else { return }
         inputHasStarted = true
-        task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
+        task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             if let error {
                 let nsError = error as NSError
                 // Code 216 is cancelled, which is normal when stopping.
-                if nsError.domain != "kAFAssistantErrorDomain" && nsError.code != 216 {
+                if !(nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 216) {
                     print("[TranscriptListener] Recognition error: \(error)")
                     self?.fail(session: session, reason: error.localizedDescription)
                 }

@@ -12,10 +12,10 @@ public struct RealityCheckView: View {
     @State private var voiceFlowID = UUID()
     @State private var didLoadQuestion = false
     @State private var question: String = "What objects can you identify in this photo?"
-    @State private var isListeningToVoice: Bool = false
-    @State private var voiceErrorMessage: String?
-    @State private var dictationID = UUID()
-    @State private var dictationTask: Task<Void, Never>?
+    @StateObject private var dictation: QuestionDictation
+    @Environment(\.scenePhase) private var scenePhase
+    private var isListeningToVoice: Bool { dictation.isActive }
+    private var voiceErrorMessage: String? { dictation.error }
     @State private var showSignIn = false
     @State private var retryPhoto: Data?
     @State private var retryProfileID: String?
@@ -39,6 +39,25 @@ public struct RealityCheckView: View {
 
     public init(app: CadenceAppModel) {
         self.app = app
+        _dictation = StateObject(wrappedValue: QuestionDictation(
+            listener: app.transcripts,
+            permission: {
+                guard await AVCaptureDevice.requestAccess(for: .audio) else {
+                    return "Allow Microphone access for Cadence in device Settings to speak a question."
+                }
+                let allowed = await withCheckedContinuation { continuation in
+                    SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
+                }
+                return allowed ? nil : "Allow Speech Recognition for Cadence in device Settings, or type your question."
+            },
+            acquire: {
+                AudioCueEngine.shared.cancelNonEmergencySpeech()
+                await app.companion.releaseMicrophone(for: "Question dictation")
+            },
+            release: { app.companion.setPaused("Question dictation", false) },
+            canStart: { !app.fallAlert.isAlertVisible && !app.settings.restartRequired },
+            echoActive: { AudioCueEngine.shared.isInEchoWindow(at: Date()) }
+        ))
     }
 
     public var body: some View {
@@ -81,7 +100,16 @@ public struct RealityCheckView: View {
                     if app.companion.isEnabled, !app.companion.lastHeard.isEmpty { question = app.companion.lastHeard }
                 }
             }
+            .onReceive(dictation.$transcript) { text in
+                if !text.isEmpty { question = text }
+            }
+            .onChange(of: scenePhase) { phase in if phase == .background { stopVoiceInput() } }
+            .onReceive(app.fallAlert.$phase.removeDuplicates()) { phase in if phase != .idle { stopVoiceInput() } }
+            .onChange(of: showGlassesCamera) { shown in if shown { stopVoiceInput() } }
+            .onChange(of: showCamera) { shown in if shown { stopVoiceInput() } }
+            .onChange(of: showSignIn) { shown in if shown { stopVoiceInput() } }
             .onChange(of: app.settings.profile.id) { _ in
+                stopVoiceInput()
                 requestID = UUID(); requestTask?.cancel(); isChecking = false
                 retryPhoto = nil; retryProfileID = nil; checkResult = nil
             }
@@ -99,12 +127,12 @@ public struct RealityCheckView: View {
                 }
             }
             .onDisappear {
+                stopVoiceInput()
                 if showGlassesCamera || showCamera || showSignIn { return }
                 app.companion.leaveFlow(id: voiceFlowID)
                 requestID = UUID()
                 requestTask?.cancel()
                 app.glasses.cancelPhotoCapture()
-                stopVoiceInput()
                 retryPhoto = nil
             }
             .sheet(isPresented: $showSignIn) { SettingsView(app: app) }
@@ -189,7 +217,7 @@ public struct RealityCheckView: View {
                             .foregroundColor(CadenceTheme.accent)
                             .font(.title2)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Listening… speak your question now")
+                            Text(dictation.phase == .listening ? "Listening… speak your question now" : "Preparing voice input…")
                                 .font(.caption.weight(.semibold))
                                 .foregroundColor(CadenceTheme.accent)
                             Text(question.isEmpty ? "“Is someone standing there?”" : question)
@@ -208,7 +236,11 @@ public struct RealityCheckView: View {
                     GuardedButton(size: .big, style: .filled(CadenceTheme.accent), action: {
                         stopVoiceInput()
                     }) {
-                        Label("Done speaking", systemImage: "checkmark.circle.fill")
+                        Label(dictation.phase == .listening ? "Done speaking" : "Cancel voice input", systemImage: "checkmark.circle.fill")
+                    }
+                    if dictation.phase == .listening {
+                        Text("Speak at your own pace. Tap Done speaking, or pause for four seconds to finish. You can edit the question afterwards.")
+                            .font(.footnote).foregroundColor(.secondary)
                     }
                 }
             } else {
@@ -217,8 +249,13 @@ public struct RealityCheckView: View {
                 }) {
                     Label("Speak question", systemImage: "mic.fill")
                 }
+                .disabled(isChecking)
             }
 
+            if !dictation.isActive, !dictation.transcript.isEmpty, dictation.error == nil {
+                Text("Review your question above, then take a photo when you’re ready.")
+                    .font(.footnote).foregroundColor(.secondary)
+            }
             Divider().padding(.vertical, 2)
 
             Text("Or choose a common question:")
@@ -401,62 +438,8 @@ public struct RealityCheckView: View {
 
     // MARK: - Logic
 
-    private func startVoiceInput() {
-        stopVoiceInput()
-        voiceErrorMessage = nil
-        let id = UUID(); dictationID = id
-        dictationTask = Task { @MainActor in
-            let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-            if micStatus == .notDetermined {
-                _ = await AVCaptureDevice.requestAccess(for: .audio)
-            } else if micStatus == .denied || micStatus == .restricted {
-                voiceErrorMessage = "Microphone access is denied. Enable it in iPhone Settings to speak your question."
-                return
-            }
-
-            guard !Task.isCancelled, dictationID == id else { return }
-            let speechStatus = SFSpeechRecognizer.authorizationStatus()
-            if speechStatus == .notDetermined {
-                let granted = await withCheckedContinuation { continuation in
-                    SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
-                }
-                if !granted {
-                    voiceErrorMessage = "Speech recognition is required to transcribe questions. Enable it in Settings."
-                    return
-                }
-            } else if speechStatus == .denied || speechStatus == .restricted {
-                voiceErrorMessage = "Speech recognition is denied. Enable it in iPhone Settings to transcribe questions."
-                return
-            }
-
-            guard !Task.isCancelled, dictationID == id else { return }
-            app.companion.setPaused("Question dictation", true)
-            isListeningToVoice = true
-            question = ""
-            Haptics.tap()
-
-            app.transcripts.startListening { text in
-                Task { @MainActor in
-                    if dictationID == id, isListeningToVoice, !text.isEmpty {
-                        self.question = text
-                        Haptics.tap()
-                    }
-                }
-            }
-        }
-    }
-
-    private func stopVoiceInput() {
-        dictationID = UUID(); dictationTask?.cancel(); dictationTask = nil
-        if isListeningToVoice {
-            isListeningToVoice = false
-            app.transcripts.stopListening()
-            app.companion.setPaused("Question dictation", false)
-            if question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                question = "Check the room and tell me what is there."
-            }
-        }
-    }
+    private func startVoiceInput() { dictation.start() }
+    private func stopVoiceInput() { dictation.stop() }
 
     private func captureWithGlasses() {
         guard !isChecking else { return }
