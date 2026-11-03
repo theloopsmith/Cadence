@@ -42,6 +42,8 @@ Swift owns sensing, speech, confirmations and local records. FastAPI owns bounde
 - **Muse Spark Open** (`meta-models/muse-spark-open-1026`, Baseten): allowlisted intent interpretation and image search terms and selection from SAM-grounded labels.
 - **Muse Voice Transcribe** (`muse-voice-transcribe-1.0`, Meta Model API): optional online speech-to-text.
 
+Handwriting uses OpenCV for letter-height measurement. An optional Muse Spark Open photo review checks for framing, glare, blur or multiple lines. The [live judge run](https://cadence-companion.duckdns.org/walkthrough#live) previews both on an illustrated sample.
+
 Installed Apple voices speak replies; Apple on-device recognition, CoreMotion/Accelerate, OpenCV and SQLite are platform/software components. All external runtime model calls use Meta models. A configured Fireworks/Meta Llama 3.3 alternate remains available when the Baseten key is absent. Models cannot invent diary facts or directly execute actions.
 
 ## Run locally

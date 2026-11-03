@@ -67,13 +67,19 @@
       <details id="liveDetails" open>
         <summary id="judgeTitle">For Judges · Run Cadence live <span aria-hidden="true">+</span></summary>
         <div class="live-content">
-          <p>Follow a medication question and a surroundings check through the real backend. The run uses an illustrated sample image and saves synthetic routine and walking records to the shared demo diary.</p>
+          <p>Try a medication question, a surroundings check, and a handwriting photo review through the real backend. The run uses illustrated sample images and saves synthetic routine and walking records to the shared demo diary.</p>
           <div class="live-actions"><button id="runSequence" class="pill" type="button">Run live demo ↗</button><button id="signOut" type="button" hidden>Sign out</button></div>
           <p id="liveStatus" role="status">Ready to run with the sandbox judge account. No caregiver will be contacted.</p>
-          <figure class="judge-sample">
-            <img src="/assets/walkthrough/coatstand.jpg" width="1536" height="1024" loading="lazy" alt="Illustrated coat rack by a doorway">
-            <figcaption>Illustrated photo used for live inference</figcaption>
-          </figure>
+          <div class="judge-samples">
+            <figure class="judge-sample">
+              <img src="/assets/walkthrough/coatstand.jpg" width="1536" height="1024" loading="lazy" alt="Illustrated coat rack by a doorway">
+              <figcaption>Surroundings sample</figcaption>
+            </figure>
+            <figure class="judge-sample">
+              <img src="/assets/walkthrough/handwriting-capture.jpg" loading="lazy" alt="Illustrated notebook page with the writing exercise">
+              <figcaption>Handwriting sample</figcaption>
+            </figure>
+          </div>
           <ol id="liveResults" class="live-results" aria-label="Live demo results"></ol>
           <a href="/dashboard" class="text-link">View saved records in the dashboard ↗</a>
           <form id="loginForm" hidden><div class="form-row"><label>Demo username<input id="usernameInput" name="username" autocomplete="username" value="demo-wearer" required maxlength="120"></label><label>Password<input id="passwordInput" name="password" type="password" autocomplete="current-password" required></label><button class="pill" id="signInSubmitBtn" type="submit">Sign in</button></div></form>

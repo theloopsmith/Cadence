@@ -129,6 +129,8 @@ class HandwritingAnalyzeRequest(CadenceModel):
     simulated_letter_heights_px: Optional[List[float]] = None
     simulated_sam_decay_pct: Optional[float] = None
     source_context: Literal["ambient", "home_motor_exam"] = "ambient"
+    check_photo_quality: bool = False
+    preview_only: bool = False
 
 
 class HomeMotorExamCreate(CadenceModel):

@@ -79,6 +79,7 @@ final class CadenceAPIClientTests: XCTestCase {
         XCTAssertEqual(body["user_query"] as? String, "Is someone sitting in that chair?")
         XCTAssertEqual(body["image_base64"] as? String, photo.base64EncodedString())
         XCTAssertNil(body["simulated_sam_masks"], "a live photo must not carry simulated masks")
+        XCTAssertEqual(result.presentationResponse, "I can identify a coat in this photo.")
 
         XCTAssertFalse(result.livingSubjectPresent)
         XCTAssertEqual(result.chosenInanimateLabel, "coat")

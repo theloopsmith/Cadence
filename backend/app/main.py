@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
+from app.clients.baseten_llm import baseten_client
 from app.clients.circuit_breaker import RequestDeadlineContext
 from app.clients.meta_models import check_in_keywords, dose_keywords, meta_client
 from app.config import settings
@@ -57,7 +58,7 @@ from app.services.dose_clock import parse_utc
 from app.services.plain_language import describe_task_metrics
 from app.services.diary_engine import build_24h_diary_timeline
 from app.services.fall_escalation import fall_escalation_manager
-from app.services.handwriting import analyze_handwriting_opencv, handwriting_response
+from app.services.handwriting import PHOTO_QUALITY_ADVICE, analyze_handwriting_opencv, handwriting_response
 from app.services.exam_validity import measured_exam
 from app.services.report_snapshot import report_snapshot
 from app.services.plain_language import summarize_day
@@ -575,6 +576,22 @@ async def analyze_handwriting_endpoint(
         simulated_sam_decay_pct=payload.simulated_sam_decay_pct,
     )
 
+    if payload.check_photo_quality:
+        review = None
+        if img_bytes and payload.simulated_letter_heights_px is None and payload.simulated_sam_decay_pct is None:
+            review = await baseten_client.check_handwriting_photo(img_bytes, RequestDeadlineContext())
+        if review is None:
+            res["photo_quality"] = {"status": "unavailable"}
+        else:
+            labels = review["labels"]
+            quality = labels[0] if labels else "uncertain"
+            res["photo_quality"] = {
+                "status": quality,
+                "advice": PHOTO_QUALITY_ADVICE.get(quality),
+                "model": review["model"],
+                "provider": review["provider"],
+            }
+
     if not res["measured"]:
         return handwriting_response({
             "event_uuid": payload.event_uuid,
@@ -585,29 +602,30 @@ async def analyze_handwriting_endpoint(
             ),
         })
 
-    await execute_patient_write(auth,
-        """
-        INSERT INTO handwriting_logs (
-            patient_id, event_uuid, timestamp_utc, letter_boxes_json,
-            initial_stroke_height_px, final_stroke_height_px,
-            opencv_cc_decay_pct, sam_3_1_decay_pct,
-            deskew_angle_deg, source_context
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(event_uuid) DO NOTHING
-        """,
-        (
-            auth.patient_id,
-            payload.event_uuid,
-            payload.timestamp_utc,
-            json.dumps(res["letter_boxes"]),
-            res["initial_stroke_height_px"],
-            res["final_stroke_height_px"],
-            res["opencv_cc_decay_pct"],
-            res["sam_3_1_decay_pct"],
-            res["deskew_angle_deg"],
-            payload.source_context,
-        ),
-    )
+    if not payload.preview_only:
+        await execute_patient_write(auth,
+            """
+            INSERT INTO handwriting_logs (
+                patient_id, event_uuid, timestamp_utc, letter_boxes_json,
+                initial_stroke_height_px, final_stroke_height_px,
+                opencv_cc_decay_pct, sam_3_1_decay_pct,
+                deskew_angle_deg, source_context
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(event_uuid) DO NOTHING
+            """,
+            (
+                auth.patient_id,
+                payload.event_uuid,
+                payload.timestamp_utc,
+                json.dumps(res["letter_boxes"]),
+                res["initial_stroke_height_px"],
+                res["final_stroke_height_px"],
+                res["opencv_cc_decay_pct"],
+                res["sam_3_1_decay_pct"],
+                res["deskew_angle_deg"],
+                payload.source_context,
+            ),
+        )
 
     shrink = res["opencv_cc_decay_pct"]
     spoken = (

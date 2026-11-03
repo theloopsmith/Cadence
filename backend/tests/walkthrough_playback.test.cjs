@@ -329,6 +329,7 @@ test('full-day playback advances from the motor exam into medication next', asyn
 
 test('judges run live model requests and verify synthetic records with one click', async () => {
   const calls = [];
+  let handwritingAttempts = 0;
   const responses = {
     '/api/v1/auth/login': {role:'device_writer', access_token:'fixture'},
     '/api/v1/device/connection': {patient_id:'hackathon-demo'},
@@ -340,6 +341,10 @@ test('judges run live model requests and verify synthetic records with one click
         segmentation:{source:'meta_model_api', model:'fixture-sam'}
       }
     },
+    '/api/v1/handwriting/analyze': {
+      measured:true, spoken_response:'Letter size stayed about the same across the line.',
+      photo_quality:{status:'multiple_lines', advice:'Frame just the single line you wrote.', model:'fixture-muse', provider:'baseten'}
+    },
     '/api/v1/medication/dose': {},
     '/api/v1/events/fog': {},
     '/api/v1/report/neurologist': {
@@ -349,13 +354,22 @@ test('judges run live model requests and verify synthetic records with one click
   };
   const app = setup({request: async (url, options) => {
     calls.push(url);
-    if (url.endsWith('coatstand.jpg')) return {ok:true, blob:async () => ({})};
+    if (url.endsWith('.jpg')) return {ok:true, blob:async () => ({})};
     assert.ok(Object.hasOwn(responses, url));
     if (url === '/api/v1/reality-check') {
       const body = JSON.parse(options.body);
       assert.equal(body.image_base64, 'c2FtcGxl');
       assert.equal(body.simulated_sam_masks, undefined);
       assert.match(body.user_query, /Illustrated judge sample/);
+    }
+    if (url === '/api/v1/handwriting/analyze') {
+      const body = JSON.parse(options.body);
+      assert.equal(body.image_base64, 'c2FtcGxl');
+      assert.equal(body.check_photo_quality, true);
+      assert.equal(body.preview_only, true);
+      if (++handwritingAttempts === 1) {
+        return {ok:true, json:async () => ({photo_quality:{status:'unavailable'}})};
+      }
     }
     return {ok:true, json:async () => responses[url]};
   }});
@@ -365,8 +379,10 @@ test('judges run live model requests and verify synthetic records with one click
   assert.deepEqual(calls, [
     '/api/v1/auth/login', '/api/v1/device/connection', '/api/v1/companion/interpret',
     '/assets/walkthrough/coatstand.jpg', '/api/v1/reality-check',
+    '/assets/walkthrough/handwriting-capture.jpg', '/api/v1/handwriting/analyze', '/api/v1/handwriting/analyze',
     '/api/v1/medication/dose', '/api/v1/events/fog', '/api/v1/report/neurologist'
   ]);
   assert.match(app.get('liveStatus').textContent, /Live demo complete/);
   assert.ok(app.get('liveResults').children.some(item => item.textContent.includes('fixture-sam')));
+  assert.ok(app.get('liveResults').children.some(item => item.textContent.includes('Handwriting photo quality · fixture-muse')));
 });

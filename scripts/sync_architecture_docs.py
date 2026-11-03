@@ -198,7 +198,7 @@ def render_system(config, table_count):
     text(792,242,'Scoped API',18,'#edf2ef','600')
     lines(792,273,['Writer / reader JWTs; typed response contracts',f'Account inference quota: {config["inference_requests_per_minute"]}/minute',f'Photo pipeline: {config["interactive_request_budget_sec"]:g}-second shared deadline'])
     text(792,376,'Services and recovery',18,'#edf2ef','600')
-    lines(792,407,['Grounded photo replies + optional transcription','OpenCV handwriting observations','Durable fall jobs, leases and signed callbacks'])
+    lines(792,407,['Grounded photo replies + optional transcription','OpenCV writing + optional Muse photo review','Durable fall jobs, leases and signed callbacks'])
     text(792,507,'Persistent storage',18,'#edf2ef','600')
     lines(792,538,[f'SQLite · {table_count} declared tables · patient-scoped', 'Caddy HTTPS + persistent Google Cloud VM disk'])
 

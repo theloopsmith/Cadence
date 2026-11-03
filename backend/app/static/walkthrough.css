@@ -1643,6 +1643,12 @@ footer .brand {
 .chapter-sticky { margin-block: 0; }
 html, body { overflow-anchor: none; }
 
+.judge-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
 .judge-sample {
   width: min(100%, 240px);
   margin: 18px 0;

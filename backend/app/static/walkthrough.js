@@ -599,6 +599,18 @@
     return data;
   }
 
+  async function loadJudgeImage(name, signal) {
+    const sample = await fetch('/assets/walkthrough/' + name + '.jpg', {signal, redirect: 'error'});
+    if (!sample.ok) throw new Error('Could not load the illustrated sample.');
+    const blob = await sample.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
   function addResult(text) {
     const item = document.createElement('li');
     item.textContent = text;
@@ -670,7 +682,7 @@
     const revision = sessionRevision;
     controller = new AbortController();
     const operation = controller;
-    const deadline = window.setTimeout(() => operation.abort(), 45000);
+    const deadline = window.setTimeout(() => operation.abort(), 75000);
     refreshControls();
     results.replaceChildren();
     liveStatus.textContent = 'Asking Meta to interpret a sample medication question…';
@@ -684,15 +696,7 @@
       liveStatus.textContent = 'Checking an illustrated photo with live Meta inference…';
       let photoStatus = 'unavailable';
       try {
-        const sample = await fetch('/assets/walkthrough/coatstand.jpg', {signal: operation.signal, redirect: 'error'});
-        if (!sample.ok) throw new Error('Could not load the illustrated sample.');
-        const blob = await sample.blob();
-        const encoded = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result.split(',')[1]);
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        });
+        const encoded = await loadJudgeImage('coatstand', operation.signal);
         const photo = await apiCall('/api/v1/reality-check', {
           event_uuid: runId + '-photo', timestamp_utc: now,
           user_query: 'Illustrated judge sample: What objects can you identify in this photo?', image_base64: encoded
@@ -712,6 +716,30 @@
         if (revision !== sessionRevision || operation.signal.aborted || !token) throw error;
         addResult('Photo check could not finish: ' + error.message);
       }
+      liveStatus.textContent = 'Checking the illustrated handwriting photo with Muse and OpenCV…';
+      let liveWriting = false;
+      try {
+        const writingPayload = {
+          event_uuid: runId + '-writing', timestamp_utc: now,
+          image_base64: await loadJudgeImage('handwriting-capture', operation.signal),
+          check_photo_quality: true, preview_only: true
+        };
+        let writing = await apiCall('/api/v1/handwriting/analyze', writingPayload, revision);
+        if (writing.photo_quality?.status === 'unavailable') {
+          liveStatus.textContent = 'Muse did not return a handwriting review. Trying once more…';
+          writing = await apiCall('/api/v1/handwriting/analyze', writingPayload, revision);
+        }
+        const quality = writing.photo_quality || {};
+        liveWriting = Boolean(quality.model);
+        addResult(liveWriting
+          ? 'Handwriting photo quality · ' + quality.model + ' via ' + quality.provider + ' · ' + quality.status.replaceAll('_', ' ') + '.'
+          : 'Muse did not return a handwriting review. The OpenCV preview is shown separately below.');
+        if (quality.advice) addResult('Retake suggestion · ' + quality.advice);
+        if (writing.spoken_response) addResult('OpenCV · ' + writing.spoken_response + ' Illustrated sample only.');
+      } catch (error) {
+        if (revision !== sessionRevision || operation.signal.aborted || !token) throw error;
+        addResult('Handwriting preview could not finish: ' + error.message);
+      }
       liveStatus.textContent = 'Saving synthetic records and checking the dashboard…';
       await apiCall('/api/v1/medication/dose', {event_uuid: runId + '-dose', timestamp_utc: now, medication_name: 'SYNTHETIC WALKTHROUGH DOSE'}, revision);
       addResult('Saved one clearly labeled synthetic dose to the demo diary.');
@@ -725,7 +753,7 @@
       addResult('Read both saved records back from the real care dashboard API.');
       const liveIntent = intent.source === 'meta_open_weights';
       const completePhoto = ['identified', 'no_supported_match'].includes(photoStatus);
-      liveStatus.textContent = liveIntent && completePhoto
+      liveStatus.textContent = liveIntent && completePhoto && liveWriting
         ? 'Live demo complete. Both synthetic records were verified in the dashboard.'
         : 'Synthetic records verified. Some model steps returned partial results or a fallback.';
     } catch (error) {

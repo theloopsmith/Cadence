@@ -33,7 +33,8 @@ public struct URLSessionJSONTransport: JSONTransporting {
 
     public func send(_ request: URLRequest, bearerToken: String) async throws -> Data {
         var req = request
-        req.timeoutInterval = request.url?.path == "/api/v1/reality-check" ? max(timeoutSec, 20) : timeoutSec
+        let photoPaths = ["/api/v1/reality-check", "/api/v1/handwriting/analyze"]
+        req.timeoutInterval = photoPaths.contains(request.url?.path ?? "") ? max(timeoutSec, 20) : timeoutSec
         if !bearerToken.isEmpty {
             req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         }
@@ -73,6 +74,14 @@ public struct RealityCheckResult: Decodable {
     public let chosenInanimateLabel: String?
     public let templateID: String
     public let spokenResponse: String
+    // Older servers appended this generic sentence even to successful detections.
+    public var presentationResponse: String {
+        let legacySuffix = " I cannot verify the whole scene."
+        let hasMatch = analysisStatus == "identified" || (analysisStatus == nil && !verifiedMasks.isEmpty)
+        guard hasMatch, spokenResponse.hasSuffix(legacySuffix) else { return spokenResponse }
+        return String(spokenResponse.dropLast(legacySuffix.count))
+    }
+
     public let verifiedMasks: [DetectedMask]
     public let latencyMs: Int
 
@@ -114,6 +123,11 @@ public struct HandwritingResult: Decodable {
     public let opencvDecayPct: Double?
     public let sam31DecayPct: Double?
     public let spokenResponse: String
+    public let photoQuality: PhotoQuality?
+
+    public struct PhotoQuality: Decodable {
+        public let advice: String?
+    }
 
     enum CodingKeys: String, CodingKey {
         case eventUUID = "event_uuid"
@@ -121,6 +135,7 @@ public struct HandwritingResult: Decodable {
         case opencvDecayPct = "opencv_cc_decay_pct"
         case sam31DecayPct = "sam_3_1_decay_pct"
         case spokenResponse = "spoken_response"
+        case photoQuality = "photo_quality"
     }
 }
 
@@ -280,7 +295,8 @@ public struct CadenceAPIClient {
 
     public func analyzeHandwriting(
         jpeg: Data,
-        sourceContext: HandwritingSourceContext = .ambient
+        sourceContext: HandwritingSourceContext = .ambient,
+        checkPhotoQuality: Bool = false
     ) async throws -> HandwritingResult {
         try await post(
             "/api/v1/handwriting/analyze",
@@ -289,6 +305,7 @@ public struct CadenceAPIClient {
                 "timestamp_utc": Self.nowISO(),
                 "image_base64": jpeg.base64EncodedString(),
                 "source_context": sourceContext.rawValue,
+                "check_photo_quality": checkPhotoQuality,
             ]
         )
     }

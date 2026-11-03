@@ -1,3 +1,7 @@
+import base64
+from pathlib import Path
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -115,3 +119,26 @@ def test_default_real_image_input_is_allowed_without_demo_fields(client, monkeyp
     assert response.status_code == 200
     assert response.json()["measured"] is False
     assert "micrographia_detected" not in response.json()
+
+def test_handwriting_quality_is_opt_in_and_preview_does_not_save(client, monkeypatch):
+    from app.clients.baseten_llm import baseten_client
+
+    photo = Path(__file__).resolve().parents[1] / "app/static/walkthrough/handwriting-capture.jpg"
+    review = AsyncMock(return_value={"labels": ["multiple_lines"], "model": "test-muse", "provider": "baseten"})
+    monkeypatch.setattr(baseten_client, "check_handwriting_photo", review)
+    headers = {"Authorization": f"Bearer {settings.cadence_device_token}"}
+    payload = {"event_uuid": "writing-photo-preview", "image_base64": base64.b64encode(photo.read_bytes()).decode(),
+               "preview_only": True}
+
+    standard = client.post("/api/v1/handwriting/analyze", headers=headers, json=payload)
+    assert standard.status_code == 200
+    assert standard.json()["measured"] is True
+    assert "photo_quality" not in standard.json()
+    review.assert_not_awaited()
+
+    reviewed = client.post("/api/v1/handwriting/analyze", headers=headers, json={**payload, "check_photo_quality": True})
+    assert reviewed.status_code == 200
+    assert reviewed.json()["photo_quality"]["advice"] == "Frame just the single line you wrote."
+    assert reviewed.json()["opencv_cc_decay_pct"] == standard.json()["opencv_cc_decay_pct"]
+    review.assert_awaited_once()
+    assert client.get("/api/v1/report/neurologist", headers=headers).json()["handwriting_logs"] == []

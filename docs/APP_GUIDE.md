@@ -32,7 +32,7 @@ Try:
 
 Known questions use local saved facts. Unfamiliar wording can use Meta interpretation when online; the model supplies an intent, not patient facts. Dose records, Undo, calls and protection changes require a separate clear confirmation. Unclear speech repeats the current step rather than restarting the menu. Calls open the iOS dialer and may require OS confirmation.
 
-The motor check prepares the microphone before its spoken start cue, then records a five-second voice sample. Insufficient input offers retry/skip. Writing uses the displayed sentence in three slow phrases with pauses; say “repeat” or use replay. The ten-second walk starts after its cue and only when the user chooses to proceed. Leaving or backgrounding cancels measurement. Results are observations, not a diagnosis.
+The motor check prepares the microphone before its spoken start cue, then records a five-second voice sample. Insufficient input offers retry/skip. Writing uses the displayed sentence in three slow phrases with pauses; say “repeat” or use replay. In the handwriting step, **Help me get a clearer photo** opts the next photo into Muse Spark Open on Baseten. Cadence sends a smaller copy for framing, glare, blur or multiple-line hints. If OpenCV cannot measure the photo, Cadence can use that hint to guide a retake. The ten-second walk starts after its cue and only when the user chooses to proceed. Leaving or backgrounding cancels measurement. Results are observations, not a diagnosis.
 
 ## Use native Hey Meta
 

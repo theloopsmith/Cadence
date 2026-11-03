@@ -52,6 +52,7 @@ def main():
                CAREGIVER_PRIMARY_PHONE='', CAREGIVER_SECONDARY_PHONE='')
     # Fail before initializing an account if another server owns the port.
     probe = socket.socket()
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         probe.bind(('0.0.0.0', args.port))
     except OSError:

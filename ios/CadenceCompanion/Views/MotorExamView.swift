@@ -37,6 +37,7 @@ public struct MotorExamView: View {
     @State private var showGlassesCamera = false
     @State private var showCamera = false
     @State private var handwritingStatus: String?
+    @State private var checkHandwritingPhotoQuality = false
     @State private var isAnalyzingHandwriting = false
 
     public init(app: CadenceAppModel) {
@@ -284,6 +285,7 @@ public struct MotorExamView: View {
         isVoiceCountingDown = false
         voiceErrorMessage = nil
         handwritingStatus = nil
+        checkHandwritingPhotoQuality = false
         isAnalyzingHandwriting = false
         exam.startExam()
     }
@@ -386,6 +388,12 @@ public struct MotorExamView: View {
                 }
             }
 
+            Toggle("Help me get a clearer photo", isOn: $checkHandwritingPhotoQuality)
+                .disabled(isAnalyzingHandwriting)
+            Text("For the next photo only, share a smaller copy with Meta’s Muse model on Baseten for retake suggestions.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+
             Button("Hear the sentence slowly again") { announceStep() }
                 .disabled(isAnalyzingHandwriting)
 
@@ -438,12 +446,14 @@ public struct MotorExamView: View {
     private func analyzeHandwriting(jpeg: Data) {
         guard exam.currentStep == .task2PromptedHandwriting else { return }
         let session = exam.examSessionID
+        let checkPhotoQuality = checkHandwritingPhotoQuality
+        checkHandwritingPhotoQuality = false
         isAnalyzingHandwriting = true
         handwritingStatus = nil
         analysisTask?.cancel()
         analysisTask = Task {
             do {
-                let result = try await app.settings.api.analyzeHandwriting(jpeg: jpeg, sourceContext: .homeMotorExam)
+                let result = try await app.settings.api.analyzeHandwriting(jpeg: jpeg, sourceContext: .homeMotorExam, checkPhotoQuality: checkPhotoQuality)
                 await MainActor.run {
                     guard !Task.isCancelled, exam.examSessionID == session, exam.currentStep == .task2PromptedHandwriting else { return }
                     isAnalyzingHandwriting = false
@@ -455,7 +465,7 @@ public struct MotorExamView: View {
                         exam.advanceToTimedWalk()
                     } else {
                         // Stay on this step: an unreadable photo is not a result.
-                        handwritingStatus = "Couldn't read enough of the line. Try another photo with the whole line in view, or skip."
+                        handwritingStatus = result.photoQuality?.advice ?? "Couldn't read enough of the line. Try another photo with the whole line in view, or skip."
                         app.companion.say(handwritingStatus!)
                     }
                 }

@@ -30,7 +30,7 @@ def test_architecture_tab_and_assets_share_the_nonce_policy():
     assert 'id="buildTab" role="tab"' in response.text
     assert 'id="buildPanel"' in response.text
     assert '__CADENCE_HOW_IT_WORKS__' not in response.text
-    assert 'SAM is not the primary handwriting' in response.text
+    assert 'OpenCV computes the letter-height change' in response.text
     nonce = re.search(r"nonce-([^']+)", response.headers['Content-Security-Policy']).group(1)
     for asset in ('walkthrough.js', 'how-it-works.js'):
         assert f'nonce="{nonce}" src="/assets/{asset}"' in response.text

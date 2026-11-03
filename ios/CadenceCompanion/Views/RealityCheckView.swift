@@ -165,7 +165,7 @@ public struct RealityCheckView: View {
             IconBadge(systemName: "eye.fill", color: CadenceTheme.accent, size: 48)
             Text("Describe Surroundings")
                 .font(.title2.weight(.bold))
-            Text("Cadence suggests possible objects in a photo when you ask. Detections can be wrong. It cannot verify the whole scene or confirm that an area is safe.")
+            Text("Cadence suggests possible objects in a photo. Detections can be wrong or miss things.")
                 .font(.body)
                 .foregroundColor(.secondary)
         }
@@ -365,7 +365,7 @@ public struct RealityCheckView: View {
                     .foregroundColor(.secondary)
             }
 
-            Text(result.spokenResponse)
+            Text(result.presentationResponse)
                 .font(.title3.weight(.medium))
                 .foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -394,7 +394,7 @@ public struct RealityCheckView: View {
 
             HStack(spacing: 12) {
                 GuardedButton(size: .big, style: .tinted(CadenceTheme.accent), action: {
-                    AudioCueEngine.shared.speakPrompt(result.spokenResponse, priority: 2)
+                    AudioCueEngine.shared.speakPrompt(result.presentationResponse, priority: 2)
                 }) {
                     Label("Read Aloud", systemImage: "speaker.wave.2.fill")
                 }
@@ -479,8 +479,8 @@ public struct RealityCheckView: View {
                       app.settings.api.baseURL == client.baseURL else { return }
                 isChecking = false
                 checkResult = result
-                app.recordDiary(.environmentCheck, detail: result.spokenResponse)
-                AudioCueEngine.shared.speakPrompt(result.spokenResponse, priority: 2)
+                app.recordDiary(.environmentCheck, detail: result.presentationResponse)
+                AudioCueEngine.shared.speakPrompt(result.presentationResponse, priority: 2)
                 if !result.detectedLabels.isEmpty { Haptics.success() }
             } catch {
                 guard !Task.isCancelled, requestID == id, !app.settings.restartRequired,

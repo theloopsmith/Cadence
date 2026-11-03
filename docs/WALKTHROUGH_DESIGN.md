@@ -12,6 +12,10 @@ Each chapter has three scroll-driven beats. Captions, the highlighted step, and 
 
 The story is illustrative. It never writes data on scroll, runs a real motor exam, claims delivery/acknowledgment occurred, or presents a glasses HUD as implemented hardware. Synthetic safety behavior is labeled. Removed the prior page's invented medication replies and nutrition/absorption advice.
 
+## Live judge run
+
+**For Judges → Run live demo** shows the medication intent, surroundings check, and handwriting photo preview. The two illustrated images appear beside the run. Muse Spark Open reviews the handwriting photo for capture quality, and OpenCV returns a separate measurement observation. The handwriting preview does not create a wearer record. The synthetic dose and walking events are saved and read back through the dashboard.
+
 ## Live backend proof
 
 The judge panel is collapsed below the story. Explicit sign-in is required, using a device-writer account bound to `hackathon-demo`; a clinician-reader account cannot run it. Tokens remain in browser memory and are discarded on reload/sign-out. Password inputs are cleared after submission. API redirects are rejected. Login and sequence operations have bounded deadlines; sign-out aborts in-flight requests and invalidates late responses.
