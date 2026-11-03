@@ -105,7 +105,7 @@ class BasetenLLMClient:
                   "Choose the most obvious photo issue. Choose ready if a complete readable line is visible. "
                   "Do not transcribe the writing, assess handwriting ability or estimate measurements."),
             question="Is this photo suitable for measuring one handwritten line?",
-            stage_budget=settings.interactive_request_budget_sec, breaker="baseten_handwriting",
+            stage_budget=deadline.total_budget_sec, breaker="baseten_handwriting",
         )
 
     async def _image_labels(

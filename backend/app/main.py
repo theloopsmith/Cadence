@@ -580,7 +580,11 @@ async def analyze_handwriting_endpoint(
     if payload.check_photo_quality:
         review = None
         if img_bytes and payload.simulated_letter_heights_px is None and payload.simulated_sam_decay_pct is None:
-            review = await baseten_client.check_handwriting_photo(img_bytes, RequestDeadlineContext())
+            deadline = (
+                RequestDeadlineContext(total_budget_sec=25)
+                if payload.preview_only else RequestDeadlineContext()
+            )
+            review = await baseten_client.check_handwriting_photo(img_bytes, deadline)
         if review is None:
             res["photo_quality"] = {"status": "unavailable"}
         else:

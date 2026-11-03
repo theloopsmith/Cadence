@@ -742,7 +742,7 @@
       const revision = sessionRevision;
       controller = new AbortController();
       const operation = controller;
-      const deadline = window.setTimeout(() => operation.abort(), 45000);
+      const deadline = window.setTimeout(() => operation.abort(), id === 'judgeWriting' ? 60000 : 45000);
       const results = $(id + 'Results');
       button.textContent = 'Running…';
       results.replaceChildren();
