@@ -10,6 +10,8 @@ def test_walkthrough_route_delivers_html_and_csp():
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "Cadence on Ray-Ban Meta" in response.text
+    assert 'href="https://youtu.be/SCIVcCh8lok"' in response.text
+    assert 'id="videoDemoLink"' in response.text
     assert "Content-Security-Policy" in response.headers
     csp = response.headers["Content-Security-Policy"]
     assert "default-src 'none'" in csp

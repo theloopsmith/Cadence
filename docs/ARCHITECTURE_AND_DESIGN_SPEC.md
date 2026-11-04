@@ -29,7 +29,7 @@ Ordinary scene evidence requires a bounding box covering at least 1.5% of the fr
 
 The public demo uses Muse for intent classification and returns a local fallback when Muse is unavailable. Outside public demo, the configured **Meta Llama 3.3** Fireworks path is an alternate when the Baseten key is absent. Legacy Llama vision adapters remain in the source; the current photo route uses SAM and bounded selection. Public-demo startup pins the reviewed model IDs. Development configuration is separate from the submitted demo.
 
-**Meta Muse Voice Transcribe** (`muse-voice-transcribe-1.0`) provides optional online transcription. Apple's on-device recognizer and installed Premium/Enhanced/Standard voices are OS features. Spoken replies use `AVSpeechSynthesizer`; the browser tour uses browser speech synthesis. No ElevenLabs runtime model is integrated.
+**Meta Muse Voice Transcribe** (`muse-voice-transcribe-1.0`) provides optional online transcription. Apple's on-device recognizer and installed Premium/Enhanced/Standard voices are OS features. Spoken replies use `AVSpeechSynthesizer`; the browser tour uses browser speech synthesis.
 
 **Ordinary local processing:** CoreMotion/Accelerate, OpenCV, SQLite and platform audio/haptic/location APIs. FoG detection and letter-height measurement use deterministic processing. With explicit per-photo permission, Muse Spark Open reviews a resized handwriting image for capture quality.
 

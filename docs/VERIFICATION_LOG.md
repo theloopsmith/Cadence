@@ -158,3 +158,17 @@ The public backend was restarted with the Muse-only intent configuration. On the
 Handwriting responses now distinguish device measurements, simulated results, and unavailable results. Swift uses explicit provenance to accept a handwriting measurement and labels simulated SAM results in the interface and speech. Demo exams stay out of local measured trends. Older records without a source remain on disk but are excluded from comparisons because their source cannot be established. The local backend suite passed 262 tests and the Swift package passed 440 tests.
 
 The owner confirmed the Indie Developer entry shows Submitted and attested that the synced folder was never shared. The portal receipt and listed participants remain unverified. The organizer scope question has not been sent.
+
+### November 3 — Architect review follow-up
+
+Reviewed commit b818cc8. Its GitHub CI run [41607999026](https://github.com/theloopsmith/Cadence/actions/runs/41607999026) completed successfully. Local verification executed 263 backend tests, 440 silent Swift tests and 32 JavaScript renderer/walkthrough/architecture tests with zero failures. Documentation links and generated architecture freshness checks passed. The standalone browser security suite and native iOS build were covered by the passing CI run and were not rerun locally in this follow-up.
+
+Updated the stale acceptance-gate wording and declarations date. The portal remains owner-attested as Submitted in Indie Developer. A receipt has not been independently checked. The owner previously chose to skip the organizer clarification. Scope and offline-artwork acceptance remain unresolved.
+
+Local 1080p and 1440p upload masters run 179.02 seconds and have identical SRT captions. Both exports passed full ffmpeg decode checks during video preparation. This verifies local media properties, not the contents or captions of the final YouTube upload. Removed the unsupported declaration that these materials establish a live glasses connection. App screenshots and exported glasses photos do not establish DAT capture, audio routing or background operation.
+
+Cadence uses Apple speech synthesis in the app and browser speech synthesis on the website. Video production is separate from application runtime. No provider requests or caregiver messages were sent during this follow-up.
+
+### November 3 — Owner physical-device confirmation
+
+Harshal confirmed that Cadence works on physical Meta glasses. This supersedes the blanket statement that physical-device operation is unverified. Individual capture, microphone/speaker routing, reconnect, permission-denial, locked-screen/background and measured detection-threshold checks have not yet been enumerated in this confirmation. Real caregiver delivery and acknowledgment remain separately unverified.

@@ -18,9 +18,9 @@ The app and backend are implemented and CI-tested; physical acceptance remains s
 
 1. Record organizer decisions on accessibility scope and the October 26/27 start boundary. Preserve actual Git history and identify eligible new contributions.
 2. The [real-photo SAM + Muse cloud journey](verification/real-photo-meta-2026-11-01.json) is verified with an approved iPhone image. A [supplied Meta glasses JPEG](verification/glasses-photo-meta-2026-11-01.json) is also verified through both models. A [general-question pipeline trace](verification/general-scene-meta-2026-11-01.json) verifies Muse image proposals followed by independent SAM grounding; a [deployed HTTP check](verification/general-scene-http-2026-11-01.json) exercises the same general question through authentication and response contracts. These exports do not establish live capture within Cadence DAT or audio routing. The [initial filtered result](verification/real-photo-meta-2026-11-01-initial.json) and [decoded SAM diagnostic](verification/sam-live-2026-11-01.json) remain alongside the successful result.
-3. Install the current iPhone build and test the glasses camera, audible prompts/cues, stop, interruption, disconnect/reconnect and microphone denial. Narrow the demo's claims for any unverified path.
+3. Harshal confirmed physical Meta glasses operation on November 3. Record which glasses camera, audible prompts/cues, stop, interruption, disconnect/reconnect, microphone-denial and background paths were tested. Scope claims to those checks.
 4. Keep caregiver transport explicitly simulated until a consenting, configured live delivery/acknowledgment drill is recorded.
-5. Finish the accessible three-minute video and portal submission. Review [the declarations](SUBMISSION_DECLARATIONS.md), confirm input/asset rights and obtain any required organizer reply.
+5. The demo video is published and the owner reports the Indie Developer entry shows Submitted. Verify the final uploaded video duration, captions, narration and hardware claims, and retain a portal receipt. Review [the declarations](SUBMISSION_DECLARATIONS.md) for asset provenance and unresolved organizer questions.
 
 ## Maintenance
 
