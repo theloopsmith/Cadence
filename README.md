@@ -14,19 +14,19 @@
 
 Competition track: **Indie Developer** (owner confirmed).
 
-Cadence helps people living with Parkinson’s carry out everyday routines by voice. The project combines guided tasks, local walking cues, confirmed photo descriptions, and an activity diary in one flow. The repository records the Cadence app, backend, and walkthrough work. It reuses Meta models and the DAT SDK, Apple system speech and sensing, OpenCV, SQLite, and other established dependencies. See the [submission declarations](docs/SUBMISSION_DECLARATIONS.md) for scope and provenance.
+Cadence helps people living with Parkinson’s carry out everyday routines by voice. The project combines guided tasks, local walking cues, tentative photo descriptions, and an activity diary in one flow. The repository records the Cadence app, backend, and walkthrough work. It reuses Meta models and the DAT SDK, Apple system speech and sensing, OpenCV, SQLite, and other established dependencies. See the [submission declarations](docs/SUBMISSION_DECLARATIONS.md) for scope and provenance.
 
 ## What it does
 
 - **Guided motor check:** a voice sample, a slowly dictated handwritten sentence and an optional short walk. Skipped or unavailable tasks stay distinct from measurements.
 - **Medication routine:** reminders of a saved prescribed schedule, factual history questions, and dose logging after explicit confirmation. Meal logging shares a timestamp; optional reviewed photos and notes stay on the phone.
-- **Walking support:** local motion processing triggers bounded rhythmic cues. Walking protection on/off is the first action on Today.
+- **Walking support:** local motion processing triggers bounded rhythmic cues. Walking support on/off is the first action on Today.
 - **Surroundings:** review a glasses photo, confirm its use, then hear tentative object labels from the photo check. Detections can be wrong; this does not verify a scene or its safety.
 - **Care connection:** possible-fall check-ins, an account-bound offline queue, and a read-only diary/dashboard that separates queued alerts, provider acceptance and human acknowledgment.
 
-Say “start a motor exam,” “help with my medication,” “check my surroundings,” or “I need help.” The foreground companion guides the current task and asks for separate confirmation before sensitive actions. [App setup and voice guide](docs/APP_GUIDE.md).
+Say “start a motor check,” “help with my medication,” “check my surroundings,” or “I need help.” The foreground companion guides the current task and asks for separate confirmation before sensitive actions. [App setup and voice guide](docs/APP_GUIDE.md).
 
-Cadence is an accessibility prototype. It does not diagnose, recommend medication or nutrition changes, or establish that a scene is safe. The public demo simulates caregiver delivery; it is not an emergency response service.
+Cadence is a daily-living and wellness companion prototype. It does not diagnose, recommend medication or nutrition changes, or establish that a scene is safe. The public demo simulates caregiver delivery; it is not an emergency response service.
 
 ## Try the demo
 

@@ -34,7 +34,7 @@
     },
     walking: {
       replies: ['A familiar beat, through your audio.', 'A steady rhythm to follow, one step at a time.', 'The walking event stays in your day’s record.'],
-      receipts: ['Walking protection · Monitoring', 'Rhythmic audio cue · Playing in this example', 'Walking event · Saved in this example']
+      receipts: ['Walking support · Monitoring', 'Rhythmic audio cue · Playing in this example', 'Walking event · Saved in this example']
     },
     surroundings: {
       you: ['“Help me check what’s by the door.”', '“Use this photo.”', '“What does the photo show?”'],
@@ -201,7 +201,7 @@
       {group:2,user:'Later: “Did I log my morning medication?”',reply:'Yes. You confirmed your morning dose at eight.',receipt:'Later question · Answered from the saved record',visual:'saved',title:'The answer is still there later',detail:'Confirmed record → a factual answer',duration:5000}
     ],
     motor: [
-      {group:0,user:'“I want to do a motor exam.”',reply:'We’ll do three short tasks: your voice, your handwriting, and a short walk. You can skip any task or stop whenever you need.',receipt:'Daily check · Three guided tasks',visual:'overview',title:'One instruction at a time',detail:'Voice → Writing → Walking',duration:4500},
+      {group:0,user:'“I want to do a motor check.”',reply:'We’ll do three short tasks: your voice, your handwriting, and a short walk. You can skip any task or stop whenever you need.',receipt:'Daily check · Three guided tasks',visual:'overview',title:'One instruction at a time',detail:'Voice → Writing → Walking',duration:4500},
       {group:0,user:'“Ready.”',reply:'Sit comfortably. Use a comfortable breath and voice. After I say begin, hold a steady ah for five seconds.',receipt:'Voice sample · Waiting to begin',visual:'voiceReady',title:'First, his voice',detail:'A comfortable, steady “ah” for 5 seconds.',duration:3500},
       {group:0,user:'“Ahhhhh…”',reply:'Begin.',receipt:'Voice sample · Five-second illustration',visual:'voice',title:'Hold a comfortable “ah”',detail:'Illustrative sample · The browser is not recording.',count:5,duration:5000},
       {group:1,user:'“I’m ready for the writing part.”',reply:'Sit comfortably with paper and a pen. Write at your usual size. I’ll read the sentence in three short parts, with time to write each part.',receipt:'Writing · Paper and pen ready',visual:'writing',title:'Time to write, at his own pace',detail:'Repeat or skip is always available.',chunk:-1,duration:3500},
@@ -214,7 +214,7 @@
       {group:2,user:'“What gets saved?”',reply:'Your voice sample, handwriting observations, and walking observations stay together in your diary. You can share the record with your care team.',receipt:'Daily check · Sample summary ready',visual:'summary',title:'Something concrete to look back on',detail:'Illustrative summary · No exam or measurements were performed here.',duration:6500}
     ],
     walking: [
-      {group:0,user:'He heads toward the garden.',reply:'With walking protection enabled, Cadence can watch for a possible pause in movement.',receipt:'Walking protection · Enabled in this example',visual:'walking',title:'A day already in motion',detail:'His hands stay free. Head motion is tracked through his glasses.',duration:4500},
+      {group:0,user:'He heads toward the garden.',reply:'With walking support enabled, Cadence can watch for a possible pause in movement.',receipt:'Walking support · Enabled in this example',visual:'walking',title:'A day already in motion',detail:'His hands stay free. Head motion is tracked through his glasses.',duration:4500},
       {group:0,user:'A step does not come easily.',reply:'A possible walking pause has been noticed. A rhythmic cue can offer something steady to follow.',receipt:'Possible movement pause · Noticed',visual:'pause',title:'A moment to pause',detail:'An illustrative event, not live sensor detection.',duration:4500},
       {group:1,user:'A little rhythm, through his audio.',reply:'The cue is there to support him, one step at a time. It does not guarantee recovery.',receipt:'Rhythmic cue · Illustrated',visual:'rhythm',title:'A steady beat to follow',detail:'Visual rhythm only · No metronome is played by this tour.',duration:5000},
       {group:2,user:'The moment has a place in his record.',reply:'The walking event is kept in the diary, so it does not have to be recalled later.',receipt:'Walking event · Saved in the sample day',visual:'saved',title:'A small moment, remembered',detail:'Walking event → today’s diary',duration:4500}
@@ -338,7 +338,7 @@
   function updatePlaybackControls() {
     for (const chapter of chapters) {
       const selected = playback && playback.chapter === chapter;
-      chapter.querySelector('[data-play]').textContent = selected ? playback.playing ? 'Pause this moment Ⅱ' : playback.finished ? 'Replay this moment ↻' : 'Continue this moment ▶' : chapter.id === 'motor' ? 'Watch the guided exam ▶' : 'Play this moment ▶';
+      chapter.querySelector('[data-play]').textContent = selected ? playback.playing ? 'Pause this moment Ⅱ' : playback.finished ? 'Replay this moment ↻' : 'Continue this moment ▶' : chapter.id === 'motor' ? 'Watch the daily check ▶' : 'Play this moment ▶';
       chapter.querySelector('[data-previous]').disabled = !selected || playback.index === 0;
       chapter.querySelector('[data-next]').disabled = Boolean(selected && playback.finished);
       chapter.querySelector('[data-step-count]').textContent = selected ? `${playback.index + 1} / ${journeys[chapter.id].length}` : 'Guided preview';

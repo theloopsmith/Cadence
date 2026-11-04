@@ -47,7 +47,7 @@ Cloud resources consume trial credit, including compute, IPv4 and storage. This 
 ## Acceptance before sharing
 
 1. Confirm public HTTPS and read-only dashboard access.
-2. Check that the retired writer and anonymous patient data access are rejected.
+2. Check that the retired writer and anonymous wearer data access are rejected.
 3. Run a fixed sample from **For Judges** and confirm live model output.
 
 Use the reusable smoke checker with the actual HTTPS origin:

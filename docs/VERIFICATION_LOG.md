@@ -189,3 +189,9 @@ Harshal confirmed the [YouTube demo](https://www.youtube.com/watch?v=SCIVcCh8lok
 ### November 3 — Owner video playback and caption acceptance
 
 Harshal confirmed that the public [YouTube demo](https://www.youtube.com/watch?v=SCIVcCh8lok) plays successfully and its captions work. This closes final uploaded playback and caption availability as owner-verified acceptance, superseding the pending descriptions above. Uploaded duration was not independently measured; the local upload masters run 179.02 seconds.
+
+### November 3 — Companion and wellness language review
+
+Reviewed the maintained README and documentation, website copy and iOS presentation for diagnosis, treatment and medication-advice claims. Public descriptions now consistently use daily-living/wellness companion language. Replaced visible guided-exam and walking-protection wording in the walkthrough with daily check and walking support. The dashboard seed prompt describes a sample day. README voice examples use motor check, which the existing interpreter supports.
+
+Existing explicit scope boundaries remain: factual observations and routine logs, tentative photo labels, experimental motion thresholds and simulated public caregiver delivery. Historical evidence, model/data identifiers and legacy accepted voice commands retain their technical names. Functional physical-device acceptance does not establish therapeutic efficacy or detection accuracy.

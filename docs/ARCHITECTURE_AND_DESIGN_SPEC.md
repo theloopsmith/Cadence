@@ -13,7 +13,7 @@ Open [the editable five-page diagram](cadence_architecture.drawio) for the syste
 ## Ownership
 
 - **Glasses adapter:** the pinned Meta DAT SDK supplies supported camera, audio-route, motion and input capabilities. Bluetooth pairing alone does not establish app access. `GlassesSessionManager` displays actual capability/readiness; phone motion is the fallback. Mock-kit inputs remain labeled simulated.
-- **iPhone:** `CadenceAppModel` coordinates foreground `VoiceCompanion`, guarded task flows, local DSP, medication reminders, diary files and account/destination-bound sync. Known spoken questions use saved facts. Models do not create patient facts, place calls or write dose records.
+- **iPhone:** `CadenceAppModel` coordinates foreground `VoiceCompanion`, guarded task flows, local DSP, medication reminders, diary files and account/destination-bound sync. Known spoken questions use saved facts. Models do not create wearer facts, place calls or write dose records.
 - **Backend:** scoped writer/reader authentication, image/audio validation, constrained inference, event persistence, a fall-job recovery loop and consistent report snapshots. `backend/app/main.py` remains the route layer; service and client modules own the underlying work.
 - **Care connection:** dashboard/PDF observations and separately tracked alert states. Queued, provider-accepted, delivered and human-acknowledged are different facts. A call opened in the phone dialer is not a verified server acknowledgment.
 
@@ -84,7 +84,7 @@ Reports use a consistent trailing-24-hour snapshot, explicit coverage/freshness,
 
 ## Native experience and limits
 
-Today, My routine and Settings are the three root tabs. Today puts walking protection on/off first, before voice status, medication and guided actions. Diary is a home-screen action; glasses/audio diagnostics expand separately. The help footer is inset directly into the scroll view inside NavigationStack so it reserves space instead of covering the final controls. Walking-support failures remain visible. The graphite/mint palette, large guarded targets, Dynamic Type and semantic labels are defined in `DesignSystem.swift`.
+Today, My routine and Settings are the three root tabs. Today puts walking support on/off first, before voice status, medication and guided actions. Diary is a home-screen action; glasses/audio diagnostics expand separately. The help footer is inset directly into the scroll view inside NavigationStack so it reserves space instead of covering the final controls. Walking-support failures remain visible. The graphite/mint palette, large guarded targets, Dynamic Type and semantic labels are defined in `DesignSystem.swift`.
 
 Cadence's microphone route and native Hey Meta are separate. A spoken handoff releases Cadence audio/camera; reopening through Siri returns to the foreground companion. Meta connector preview was applied for, but approval and native voice invocation are not integrated. The existing companion does not depend on them. Background/locked-screen conversational operation is not an acceptance claim.
 

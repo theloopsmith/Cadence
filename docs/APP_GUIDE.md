@@ -25,7 +25,7 @@ Tap **Talk to Cadence** on Today to start a conversation, and **Pause listening*
 Try:
 
 - “I need help” to choose a task.
-- “Start a motor exam,” “check my surroundings,” or “help with my medication.”
+- “Start a motor check,” “check my surroundings,” or “help with my medication.”
 - “When is my next dose?”, “Did I record my medication today?”, “What about yesterday?”, or “What were my last motor check results?”
 - “Capture,” “use this photo,” “retake,” “retry,” or “cancel” within the current task.
 - “Stop listening” to disable the companion.
