@@ -69,6 +69,12 @@ for username, role, password_key in (
 PYTHON
 rm /etc/cadence/accounts.env
 ln -sfn "$release" /opt/cadence/current
+# Keep only the current release and 2 previous releases to avoid disk exhaustion
+for old_release in $(ls -1dt /opt/cadence/releases/* 2>/dev/null | tail -n +4); do
+    if [[ "$old_release" != "$(readlink -f /opt/cadence/current)" ]]; then
+        rm -rf "$old_release"
+    fi
+done
 chown root:cadence /etc/cadence/backend.env
 chmod 640 /etc/cadence/backend.env
 cat > /etc/systemd/system/cadence.service <<'UNIT'
