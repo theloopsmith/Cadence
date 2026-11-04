@@ -215,6 +215,29 @@ h1, h2, h3, p {
   border-color: var(--border-card);
 }
 
+#soundButton {
+  background: rgba(48, 209, 88, 0.14);
+  color: #30d158;
+  border: 1px solid rgba(48, 209, 88, 0.35);
+  font-weight: 550;
+  box-shadow: 0 0 10px rgba(48, 209, 88, 0.12);
+}
+
+#soundButton:hover {
+  background: rgba(48, 209, 88, 0.22);
+  border-color: rgba(48, 209, 88, 0.55);
+  color: #5ef381;
+  box-shadow: 0 0 16px rgba(48, 209, 88, 0.22);
+}
+
+#soundButton[aria-pressed="false"] {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+  box-shadow: none;
+  font-weight: 450;
+}
+
 .nav-cta {
   font-size: 12px;
   font-weight: 550;
@@ -231,12 +254,12 @@ h1, h2, h3, p {
 
 .nav-video {
   font-size: 12px;
-  font-weight: 500;
-  padding: 6px 14px;
+  font-weight: 550;
+  padding: 6px 15px;
   border-radius: 980px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-card);
   transition: all 0.2s ease;
   display: inline-flex;
   align-items: center;
@@ -245,8 +268,8 @@ h1, h2, h3, p {
   white-space: nowrap;
 }
 .nav-video:hover {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: var(--border-card);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: var(--border-highlight);
   color: #ffffff;
   transform: scale(1.02);
 }
