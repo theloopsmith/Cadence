@@ -172,3 +172,20 @@ Cadence uses Apple speech synthesis in the app and browser speech synthesis on t
 ### November 3 — Owner physical-device confirmation
 
 Harshal confirmed that Cadence works on physical Meta glasses. This supersedes the blanket statement that physical-device operation is unverified. Individual capture, microphone/speaker routing, reconnect, permission-denial, locked-screen/background and measured detection-threshold checks have not yet been enumerated in this confirmation. Real caregiver delivery and acknowledgment remain separately unverified.
+
+### November 3 — Detailed owner device acceptance
+
+Harshal confirmed that all of the following were tested using physical Meta glasses and Cadence:
+
+- Photo capture from the glasses, including real photos taken using the glasses.
+- Microphone input, spoken replies and walking cues.
+- Stop/cancel, disconnect/reconnect and recovery after interruptions.
+- Locked-screen and background behavior.
+
+This closes the listed functional checks as owner-verified physical-device acceptance and supersedes the earlier pending descriptions for these paths. The confirmation did not include hardware model, operating-system version, app build, test durations or independent traces. It does not establish detection accuracy, general background reliability or clinical efficacy. Microphone-permission denial, notification delivery, real caregiver delivery/acknowledgment and measured FoG/fall thresholds remain separate checks.
+
+Harshal confirmed the [YouTube demo](https://www.youtube.com/watch?v=SCIVcCh8lok) is public and supplied the [public experience](https://cadence-companion.duckdns.org/walkthrough#experience). Both supplied URLs returned HTTP 200 to independent GET requests during this follow-up. This confirms page reachability; video playback and public visibility are owner-confirmed. Local upload-master duration and SRT checks are recorded above; final YouTube playback and caption availability have not been independently inspected.
+
+### November 3 — Owner video playback and caption acceptance
+
+Harshal confirmed that the public [YouTube demo](https://www.youtube.com/watch?v=SCIVcCh8lok) plays successfully and its captions work. This closes final uploaded playback and caption availability as owner-verified acceptance, superseding the pending descriptions above. Uploaded duration was not independently measured; the local upload masters run 179.02 seconds.
